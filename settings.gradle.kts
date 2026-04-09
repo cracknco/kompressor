@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kompressor"
-include(":library")
+include(":kompressor")
