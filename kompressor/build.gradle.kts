@@ -1,5 +1,4 @@
 import com.android.build.api.dsl.androidLibrary
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -23,10 +22,12 @@ kotlin {
         }
 
         compilations.configureEach {
-            compilerOptions.configure {
-                jvmTarget.set(
-                    JvmTarget.JVM_11
-                )
+            compileTaskProvider.configure {
+                compilerOptions {
+                    jvmTarget.set(
+                        org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+                    )
+                }
             }
         }
     }
