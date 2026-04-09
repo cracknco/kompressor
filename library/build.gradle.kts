@@ -7,13 +7,13 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish)
 }
 
-group = "io.github.kotlin"
-version = "1.0.0"
+group = "co.crackn.kompressor"
+version = "0.1.0"
 
 kotlin {
     jvm()
     androidLibrary {
-        namespace = "org.jetbrains.kotlinx.multiplatform.library.template"
+        namespace = "co.crackn.kompressor"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
@@ -52,31 +52,31 @@ mavenPublishing {
 
     signAllPublications()
 
-    coordinates(group.toString(), "library", version.toString())
+    coordinates(group.toString(), "kompressor", version.toString())
 
     pom {
-        name = "My library"
-        description = "A library."
-        inceptionYear = "2024"
-        url = "https://github.com/kotlin/multiplatform-library-template/"
+        name = "Kompressor"
+        description = "Compress images, videos and audio on Android & iOS — one Kotlin API, native hardware, zero binaries"
+        inceptionYear = "2025"
+        url = "https://github.com/cracknco/kompressor"
         licenses {
             license {
-                name = "XXX"
-                url = "YYY"
-                distribution = "ZZZ"
+                name = "Apache-2.0"
+                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                distribution = "repo"
             }
         }
         developers {
             developer {
-                id = "XXX"
-                name = "YYY"
-                url = "ZZZ"
+                id = "cracknco"
+                name = "crackn.co"
+                url = "https://crackn.co"
             }
         }
         scm {
-            url = "XXX"
-            connection = "YYY"
-            developerConnection = "ZZZ"
+            url = "https://github.com/cracknco/kompressor"
+            connection = "scm:git:git://github.com/cracknco/kompressor.git"
+            developerConnection = "scm:git:ssh://git@github.com/cracknco/kompressor.git"
         }
     }
 }
