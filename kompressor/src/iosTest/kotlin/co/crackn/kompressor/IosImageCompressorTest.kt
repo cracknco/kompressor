@@ -8,7 +8,10 @@ import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSize
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.writeToURL
 import platform.UIKit.UIColor
@@ -33,14 +36,14 @@ class IosImageCompressorTest {
     @BeforeTest
     fun setUp() {
         testDir = NSTemporaryDirectory() + "kompressor-test-${NSUUID().UUIDString}/"
-        platform.Foundation.NSFileManager.defaultManager.createDirectoryAtPath(
+        NSFileManager.defaultManager.createDirectoryAtPath(
             testDir, withIntermediateDirectories = true, attributes = null, error = null,
         )
     }
 
     @AfterTest
     fun tearDown() {
-        platform.Foundation.NSFileManager.defaultManager.removeItemAtPath(testDir, null)
+        NSFileManager.defaultManager.removeItemAtPath(testDir, null)
     }
 
     @Test
@@ -133,14 +136,15 @@ class IosImageCompressorTest {
 
         val path = testDir + "input_${width}x$height.png"
         val data = UIImagePNGRepresentation(image)!!
-        val url = platform.Foundation.NSURL.fileURLWithPath(path)
+        val url = NSURL.fileURLWithPath(path)
         data.writeToURL(url, atomically = true)
         return path
     }
 
     private fun fileSize(path: String): Long {
-        val attrs = platform.Foundation.NSFileManager.defaultManager
+        val attrs = NSFileManager.defaultManager
             .attributesOfItemAtPath(path, null) ?: error("File not found: $path")
-        return (attrs[platform.Foundation.NSFileSize] as? Number)?.toLong() ?: 0L
+        return (attrs[NSFileSize] as? Number)?.toLong()
+            ?: error("Cannot read file size: $path")
     }
 }

@@ -18,14 +18,12 @@ internal class AndroidImageCompressor : ImageCompressor {
         config: ImageCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
+        require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         val startNanos = System.nanoTime()
         onProgress(0f)
 
-        val inputFile = File(inputPath)
-        require(inputFile.exists()) { "Input file does not exist: $inputPath" }
-        val inputSize = inputFile.length()
-
         val originalDims = decodeImageDimensions(inputPath)
+        val inputSize = File(inputPath).length()
         coroutineContext.ensureActive()
         onProgress(0.1f)
 
@@ -37,19 +35,25 @@ internal class AndroidImageCompressor : ImageCompressor {
         coroutineContext.ensureActive()
         onProgress(0.3f)
 
-        val scaled = resizeBitmapIfNeeded(bitmap, target)
-        coroutineContext.ensureActive()
-        onProgress(0.6f)
-
-        writeBitmapAsJpeg(scaled, outputPath, config.quality)
-        if (scaled !== bitmap) scaled.recycle()
-        bitmap.recycle()
+        resizeAndWrite(bitmap, target, outputPath, config.quality)
         onProgress(1f)
 
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
-
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    private fun resizeAndWrite(bitmap: Bitmap, target: ImageDimensions, outputPath: String, quality: Int) {
+        try {
+            val scaled = resizeBitmapIfNeeded(bitmap, target)
+            try {
+                writeBitmapAsJpeg(scaled, outputPath, quality)
+            } finally {
+                if (scaled !== bitmap) scaled.recycle()
+            }
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun decodeImageDimensions(path: String): ImageDimensions {

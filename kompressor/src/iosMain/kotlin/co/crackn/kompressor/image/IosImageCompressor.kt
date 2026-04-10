@@ -30,12 +30,13 @@ internal class IosImageCompressor : ImageCompressor {
         config: ImageCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
+        require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
 
         val inputSize = fileSize(inputPath)
         val image = loadImage(inputPath)
-        val cgImage = image.CGImage ?: error("Cannot get CGImage from: $inputPath")
+        val cgImage = image.CGImage ?: error("Cannot decode image: $inputPath")
         coroutineContext.ensureActive()
         onProgress(0.3f)
 
@@ -59,13 +60,9 @@ internal class IosImageCompressor : ImageCompressor {
     }
 
     private fun loadImage(path: String): UIImage {
-        require(NSFileManager.defaultManager.fileExistsAtPath(path)) {
-            "Input file does not exist: $path"
-        }
         return UIImage(contentsOfFile = path)
     }
 
-    @Suppress("MagicNumber")
     private fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
             ?: error("File not found: $path")
@@ -83,11 +80,13 @@ internal class IosImageCompressor : ImageCompressor {
 
         val targetSize = CGSizeMake(target.width.toDouble(), target.height.toDouble())
         UIGraphicsBeginImageContextWithOptions(targetSize, true, SCALE_PIXELS)
-        image.drawInRect(CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()))
-        val resized = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        return resized ?: error("Failed to resize image")
+        try {
+            image.drawInRect(CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()))
+            return UIGraphicsGetImageFromCurrentImageContext()
+                ?: error("Failed to resize image")
+        } finally {
+            UIGraphicsEndImageContext()
+        }
     }
 
     private fun writeJpeg(image: UIImage, path: String, quality: Int) {
