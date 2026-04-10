@@ -9,8 +9,9 @@ data class CompressionResult(
     val inputSize: Long,
     /** Size of the compressed output file in bytes. */
     val outputSize: Long,
-    /** Ratio of output/input size (< 1.0 means compression reduced size). */
-    val compressionRatio: Float,
     /** Time taken for the compression in milliseconds. */
     val durationMs: Long,
-)
+) {
+    /** Ratio of output/input size (< 1.0 means compression reduced size). */
+    val compressionRatio: Float get() = outputSize.toFloat() / inputSize.toFloat()
+}

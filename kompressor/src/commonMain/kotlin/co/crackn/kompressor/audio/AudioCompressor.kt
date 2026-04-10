@@ -8,6 +8,8 @@ interface AudioCompressor {
     /**
      * Compress an audio file.
      *
+     * Cancel the calling coroutine scope to abort the compression (structured concurrency).
+     *
      * @param inputPath Absolute filesystem path to the source audio.
      * @param outputPath Absolute filesystem path for the compressed output.
      * @param config Compression settings (codec, bitrate, sample rate, channels).

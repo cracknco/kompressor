@@ -4,11 +4,18 @@ import android.content.Context
 import androidx.startup.Initializer
 
 internal object KompressorContext {
-    lateinit var appContext: Context
-        private set
+    private lateinit var _appContext: Context
+
+    val appContext: Context
+        get() {
+            check(::_appContext.isInitialized) {
+                "Kompressor is not initialized. Ensure App Startup is not disabled for KompressorInitializer."
+            }
+            return _appContext
+        }
 
     fun init(context: Context) {
-        appContext = context.applicationContext
+        _appContext = context.applicationContext
     }
 }
 
