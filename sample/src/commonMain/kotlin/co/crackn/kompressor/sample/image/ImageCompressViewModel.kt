@@ -13,6 +13,7 @@ import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -95,8 +96,8 @@ class ImageCompressViewModel(
     }
 
     private suspend fun runCompression(inputPath: String) {
+        val outputFile = createTempFile("output")
         try {
-            val outputFile = createTempFile("output")
             kompressor.image.compress(
                 inputPath = inputPath,
                 outputPath = outputFile.path,
@@ -106,10 +107,12 @@ class ImageCompressViewModel(
                 },
             ).fold(
                 onSuccess = { handleSuccess(outputFile.path, it) },
-                onFailure = { handleFailure(it) },
+                onFailure = { handleFailure(it, outputFile.path) },
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            handleFailure(e)
+            handleFailure(e, outputFile.path)
         } finally {
             _state.update {
                 if (it.isCompressing) it.copy(isCompressing = false) else it
@@ -146,7 +149,12 @@ class ImageCompressViewModel(
         }
     }
 
-    private fun handleFailure(error: Throwable) {
+    private fun handleFailure(error: Throwable, outputPath: String? = null) {
+        outputPath?.let { path ->
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { PlatformFile(path).delete(mustExist = false) }
+            }
+        }
         _state.update {
             it.copy(
                 isCompressing = false,

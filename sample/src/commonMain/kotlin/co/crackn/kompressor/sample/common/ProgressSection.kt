@@ -28,7 +28,7 @@ fun ProgressSection(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             LinearProgressIndicator(
-                progress = { progress },
+                progress = { progress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(

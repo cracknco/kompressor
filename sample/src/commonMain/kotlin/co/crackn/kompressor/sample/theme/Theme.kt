@@ -22,6 +22,7 @@ private val LightColorScheme = lightColorScheme(
     error = Error40,
     onError = Neutral99,
     errorContainer = Error90,
+    onErrorContainer = Error40,
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -40,6 +41,7 @@ private val DarkColorScheme = darkColorScheme(
     error = Error80,
     onError = Neutral10,
     errorContainer = Error40,
+    onErrorContainer = Error90,
 )
 
 @Composable
