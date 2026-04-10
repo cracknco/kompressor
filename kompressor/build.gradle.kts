@@ -75,12 +75,8 @@ kover {
                 classes(
                     "co.crackn.kompressor.*.Android*",
                     "co.crackn.kompressor.*.Ios*",
-                    "co.crackn.kompressor.audio.AudioPipeline",
-                    "co.crackn.kompressor.audio.AudioRemuxer",
-                    "co.crackn.kompressor.audio.PipelineState",
-                    "co.crackn.kompressor.audio.PipelineConstants",
-                    "co.crackn.kompressor.audio.EncoderSink",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                    "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.IosKompressor",
                     "co.crackn.kompressor.IosFileUtils*",
