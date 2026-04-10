@@ -48,7 +48,7 @@ jobs:
       - name: Run Detekt
         run: ./gradlew detekt
       - name: Upload Detekt report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         if: always()
         with:
           name: detekt-report
@@ -90,7 +90,7 @@ jobs:
       - name: Kover — quality gate
         run: ./gradlew koverVerify
       - name: Upload Kover report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         if: always()
         with:
           name: kover-report
