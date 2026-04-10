@@ -9,7 +9,6 @@ import co.crackn.kompressor.image.ImagePresets
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
-import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
@@ -38,7 +37,7 @@ class ImageCompressViewModel(
             try {
                 deleteTempFiles()
                 val inputFile = createTempFile("input")
-                file.copyTo(inputFile)
+                importPickedImage(file, inputFile)
                 _state.update {
                     it.copy(
                         selectedImagePath = inputFile.path,
