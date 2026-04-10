@@ -48,6 +48,8 @@ class ImageCompressViewModel(
                         progress = 0f,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
