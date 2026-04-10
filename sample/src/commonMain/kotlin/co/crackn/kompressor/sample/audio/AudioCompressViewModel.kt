@@ -17,11 +17,13 @@ import io.github.vinceglb.filekit.path
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 
 @Inject
@@ -33,6 +35,7 @@ class AudioCompressViewModel(
     val state: StateFlow<AudioCompressState> = _state.asStateFlow()
 
     fun onAudioPicked(file: PlatformFile) {
+        if (_state.value.isCompressing) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 deleteTempFiles()
@@ -42,6 +45,7 @@ class AudioCompressViewModel(
                     it.copy(
                         selectedAudioPath = inputFile.path,
                         selectedFileName = file.name,
+                        compressedAudioPath = null,
                         result = null,
                         error = null,
                         progress = 0f,
@@ -52,6 +56,7 @@ class AudioCompressViewModel(
                     it.copy(
                         selectedAudioPath = null,
                         selectedFileName = null,
+                        compressedAudioPath = null,
                         result = null,
                         progress = 0f,
                         error = e.message ?: "Failed to import audio",
@@ -128,7 +133,7 @@ class AudioCompressViewModel(
 
     override fun onCleared() {
         val paths = currentTempPaths()
-        viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) { deletePaths(paths) }
         super.onCleared()
     }
 
@@ -158,11 +163,16 @@ class AudioCompressViewModel(
             AudioPresetOption.PODCAST -> AudioPresets.PODCAST
             AudioPresetOption.HIGH_QUALITY -> AudioPresets.HIGH_QUALITY
             AudioPresetOption.CUSTOM -> AudioCompressionConfig(
-                bitrate = (_state.value.customBitrate.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_BITRATE_KBPS) * KBPS_MULTIPLIER,
+                bitrate = parseBitrateKbps() * KBPS_MULTIPLIER,
                 sampleRate = _state.value.customSampleRate,
                 channels = _state.value.customChannels,
             )
         }
+
+    private fun parseBitrateKbps(): Int =
+        _state.value.customBitrate.toIntOrNull()
+            ?.coerceIn(1, MAX_BITRATE_KBPS)
+            ?: DEFAULT_BITRATE_KBPS
 
     private fun currentTempPaths(): List<String> = listOfNotNull(
         _state.value.selectedAudioPath,
@@ -187,6 +197,7 @@ class AudioCompressViewModel(
 
     private companion object {
         const val DEFAULT_BITRATE_KBPS = 128
+        const val MAX_BITRATE_KBPS = 2_000
         const val KBPS_MULTIPLIER = 1_000
     }
 }

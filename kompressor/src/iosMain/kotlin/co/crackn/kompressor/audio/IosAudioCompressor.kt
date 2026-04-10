@@ -5,6 +5,7 @@ import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -76,6 +77,9 @@ internal class IosAudioCompressor : AudioCompressor {
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
+    // AVAssetExportSession uses Apple's internal preset quality — it does NOT honour
+    // the exact bitrate/sampleRate/channels from AudioCompressionConfig. We only use it
+    // when the caller passes the default config (no custom expectations to violate).
     private fun canUseExportSession(config: AudioCompressionConfig): Boolean =
         config == AudioCompressionConfig()
 
@@ -127,16 +131,26 @@ private class IosPipeline(
         val (reader, readerOutput) = createReader(audioTrack)
         val (writer, writerInput) = createWriter()
 
-        reader.startReading()
-        writer.startWriting()
-        writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
-        onProgress(PROGRESS_READ_START)
+        try {
+            check(reader.startReading()) {
+                "AVAssetReader failed to start: ${reader.error?.localizedDescription}"
+            }
+            check(writer.startWriting()) {
+                "AVAssetWriter failed to start: ${writer.error?.localizedDescription}"
+            }
+            writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
+            onProgress(PROGRESS_READ_START)
 
-        copySamples(readerOutput, writerInput, totalDurationSec, onProgress)
-        writerInput.markAsFinished()
-        checkReaderStatus(reader)
-        awaitWriterFinish(writer)
-        checkWriterCompleted(writer)
+            copySamples(readerOutput, writerInput, totalDurationSec, onProgress)
+            writerInput.markAsFinished()
+            checkReaderStatus(reader)
+            awaitWriterFinish(writer)
+            checkWriterCompleted(writer)
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            reader.cancelReading()
+            writer.cancelWriting()
+            throw e
+        }
     }
 
     private fun createReader(
@@ -154,7 +168,7 @@ private class IosPipeline(
     private fun createWriter(): Pair<AVAssetWriter, AVAssetWriterInput> {
         val writer = AVAssetWriter.assetWriterWithURL(
             outputUrl, fileType = AVFileTypeAppleM4A, error = null,
-        ) ?: error("Failed to create AVAssetWriter")
+        ) ?: error("Failed to create AVAssetWriter for: $outputUrl")
         val input = AVAssetWriterInput.assetWriterInputWithMediaType(
             mediaType = AVMediaTypeAudio,
             outputSettings = encodingSettings,
@@ -209,6 +223,7 @@ private class IosPipeline(
 
     private suspend fun awaitWriterFinish(writer: AVAssetWriter) {
         suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { writer.cancelWriting() }
             writer.finishWritingWithCompletionHandler {
                 if (writer.status == AVAssetWriterStatusCompleted) {
                     continuation.resume(Unit)
@@ -277,7 +292,6 @@ private class IosExportSessionPipeline(
 
     private suspend fun awaitExport(session: AVAssetExportSession) {
         suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { session.cancelExport() }
             session.exportAsynchronouslyWithCompletionHandler {
                 when (session.status) {
                     AVAssetExportSessionStatusCompleted ->
@@ -290,14 +304,15 @@ private class IosExportSessionPipeline(
                     }
                     AVAssetExportSessionStatusCancelled ->
                         continuation.resumeWithException(
-                            IllegalStateException("Export cancelled"),
+                            CancellationException("Export cancelled"),
                         )
                     else ->
                         continuation.resumeWithException(
-                            IllegalStateException("Unexpected status: ${session.status}"),
+                            IllegalStateException("Unexpected export status: ${session.status}"),
                         )
                 }
             }
+            continuation.invokeOnCancellation { session.cancelExport() }
         }
     }
 

@@ -47,8 +47,8 @@ internal class AndroidAudioCompressor : AudioCompressor {
 /** Shared constants for the transcode pipeline. */
 private object PipelineConstants {
     const val CODEC_TIMEOUT_US = 0L
-    const val MAX_INPUT_SIZE = 16_384
-    const val REMUX_BUFFER_SIZE = 64 * 1024
+    const val ENCODER_MAX_INPUT_SIZE = 65_536
+    const val REMUX_BUFFER_SIZE = 256 * 1024
     const val CHANNEL_CAPACITY = 8
     const val PROGRESS_SETUP = 0.05f
     const val PROGRESS_TRANSCODE_RANGE = 0.90f
@@ -82,7 +82,7 @@ private class AudioPipeline(
             MediaFormat.KEY_AAC_PROFILE,
             MediaCodecInfo.CodecProfileLevel.AACObjectLC,
         )
-        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, PipelineConstants.MAX_INPUT_SIZE)
+        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, PipelineConstants.ENCODER_MAX_INPUT_SIZE)
     }
 
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
@@ -94,7 +94,7 @@ private class AudioPipeline(
             currentCoroutineContext().ensureActive()
 
             if (canRemux(trackFormat)) {
-                AudioRemuxer(extractor, outputPath).remux(totalDurationUs, onProgress)
+                AudioRemuxer(extractor, outputPath, trackIndex).remux(totalDurationUs, onProgress)
             } else {
                 val inputMime = trackFormat.getString(MediaFormat.KEY_MIME)
                     ?: error("Input track has no MIME type")
@@ -214,6 +214,7 @@ private class AudioPipeline(
     ): PcmChunk {
         val data = if (info.size > 0) {
             val output = decoder.getOutputBuffer(index) ?: error("Decoder output null")
+            output.position(info.offset)
             ByteArray(info.size).also { output.get(it) }
         } else {
             EMPTY_BYTES
@@ -251,15 +252,16 @@ private class AudioPipeline(
 private class AudioRemuxer(
     private val extractor: MediaExtractor,
     outputPath: String,
+    private val trackIndex: Int,
 ) {
     private val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
     suspend fun remux(totalDurationUs: Long, onProgress: suspend (Float) -> Unit) {
-        val format = extractor.getTrackFormat(extractor.sampleTrackIndex)
-        val trackIndex = muxer.addTrack(format)
+        val format = extractor.getTrackFormat(trackIndex)
+        val muxerTrack = muxer.addTrack(format)
         muxer.start()
         try {
-            copyFrames(trackIndex, totalDurationUs, onProgress)
+            copyFrames(muxerTrack, totalDurationUs, onProgress)
         } finally {
             try { muxer.stop() } catch (_: IllegalStateException) { /* empty */ }
             muxer.release()
@@ -267,7 +269,7 @@ private class AudioRemuxer(
     }
 
     private suspend fun copyFrames(
-        trackIndex: Int,
+        muxerTrack: Int,
         totalDurationUs: Long,
         onProgress: suspend (Float) -> Unit,
     ) {
@@ -280,7 +282,7 @@ private class AudioRemuxer(
             val size = extractor.readSampleData(buffer, 0)
             if (size < 0) break
             info.set(0, size, extractor.sampleTime, extractor.sampleFlags)
-            muxer.writeSampleData(trackIndex, buffer, info)
+            muxer.writeSampleData(muxerTrack, buffer, info)
             lastReported = reportProgress(totalDurationUs, lastReported, onProgress)
             extractor.advance()
             yield()
@@ -310,21 +312,33 @@ private suspend fun encodeFromChannel(
     totalDurationUs: Long,
     onProgress: suspend (Float) -> Unit,
 ) {
+    var eosDrained = false
     for (chunk in channel) {
         currentCoroutineContext().ensureActive()
         if (chunk.size > 0) feedEncoderChunk(encoder, chunk)
         if (chunk.isEndOfStream) signalEncoderEos(encoder)
-        sink.drainAllReady(encoder, totalDurationUs, onProgress)
+        if (sink.drainAllReady(encoder, totalDurationUs, onProgress)) {
+            eosDrained = true
+            break
+        }
     }
-    while (!sink.drainAllReady(encoder, totalDurationUs, onProgress)) { yield() }
+    if (!eosDrained) {
+        while (!sink.drainAllReady(encoder, totalDurationUs, onProgress)) { yield() }
+    }
 }
 
 private suspend fun feedEncoderChunk(encoder: MediaCodec, chunk: PcmChunk) {
-    val idx = awaitInputBuffer(encoder)
-    val buf = encoder.getInputBuffer(idx) ?: error("Encoder input null")
-    buf.clear()
-    buf.put(chunk.data, 0, chunk.size)
-    encoder.queueInputBuffer(idx, 0, chunk.size, chunk.presentationTimeUs, 0)
+    var offset = 0
+    while (offset < chunk.size) {
+        val idx = awaitInputBuffer(encoder)
+        val buf = encoder.getInputBuffer(idx) ?: error("Encoder input null")
+        buf.clear()
+        val bytesToWrite = minOf(chunk.size - offset, buf.capacity())
+        buf.put(chunk.data, offset, bytesToWrite)
+        val pts = if (offset == 0) chunk.presentationTimeUs else chunk.presentationTimeUs + offset
+        encoder.queueInputBuffer(idx, 0, bytesToWrite, pts, 0)
+        offset += bytesToWrite
+    }
 }
 
 private suspend fun signalEncoderEos(encoder: MediaCodec) {

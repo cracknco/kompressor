@@ -17,6 +17,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -132,9 +133,8 @@ class ImageCompressViewModel(
     }
 
     override fun onCleared() {
-        // Best-effort cleanup — cache files are ephemeral by nature
         val paths = currentTempPaths()
-        viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) { deletePaths(paths) }
         super.onCleared()
     }
 
