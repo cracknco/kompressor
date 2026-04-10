@@ -5,6 +5,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
 import java.io.File
@@ -20,6 +21,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
+        require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = File(inputPath).length()
@@ -34,6 +36,15 @@ internal class AndroidAudioCompressor : AudioCompressor {
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
     }
+}
+
+/** Shared constants for the transcode pipeline. */
+private object PipelineConstants {
+    const val CODEC_TIMEOUT_US = 10_000L
+    const val MAX_INPUT_SIZE = 16_384
+    const val PROGRESS_SETUP = 0.05f
+    const val PROGRESS_TRANSCODE_RANGE = 0.90f
+    const val PROGRESS_REPORT_THRESHOLD = 0.01f
 }
 
 /**
@@ -61,7 +72,7 @@ private class AudioPipeline(
             MediaFormat.KEY_AAC_PROFILE,
             MediaCodecInfo.CodecProfileLevel.AACObjectLC,
         )
-        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
+        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, PipelineConstants.MAX_INPUT_SIZE)
     }
 
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
@@ -69,7 +80,7 @@ private class AudioPipeline(
             val (trackIndex, trackFormat) = findAudioTrack()
             extractor.selectTrack(trackIndex)
             val totalDurationUs = trackFormat.safeLong(MediaFormat.KEY_DURATION)
-            onProgress(PROGRESS_SETUP)
+            onProgress(PipelineConstants.PROGRESS_SETUP)
             currentCoroutineContext().ensureActive()
 
             val inputMime = trackFormat.getString(MediaFormat.KEY_MIME)
@@ -109,14 +120,13 @@ private class AudioPipeline(
     ) {
         val sink = EncoderSink(outputPath)
         try {
-            val info = MediaCodec.BufferInfo()
+            val decoderInfo = MediaCodec.BufferInfo()
             val state = PipelineState()
             while (!state.encoderDone) {
                 currentCoroutineContext().ensureActive()
                 if (!state.extractorDone) state.extractorDone = feedDecoder(decoder)
-                if (!state.decoderDone) state.decoderDone = drainDecoder(decoder, encoder, info)
-                sink.drainEncoder(encoder, info, totalDurationUs, onProgress)
-                state.encoderDone = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                if (!state.decoderDone) state.decoderDone = drainDecoder(decoder, encoder, decoderInfo)
+                state.encoderDone = sink.drainAllReady(encoder, totalDurationUs, onProgress)
             }
         } finally {
             sink.release()
@@ -124,7 +134,7 @@ private class AudioPipeline(
     }
 
     private fun feedDecoder(decoder: MediaCodec): Boolean {
-        val idx = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+        val idx = decoder.dequeueInputBuffer(PipelineConstants.CODEC_TIMEOUT_US)
         if (idx < 0) return false
         val buf = decoder.getInputBuffer(idx) ?: error("Decoder input buffer is null")
         val size = extractor.readSampleData(buf, 0)
@@ -139,36 +149,38 @@ private class AudioPipeline(
     }
 
     @Suppress("ReturnCount")
-    private fun drainDecoder(
+    private suspend fun drainDecoder(
         decoder: MediaCodec,
         encoder: MediaCodec,
         info: MediaCodec.BufferInfo,
     ): Boolean {
-        val status = decoder.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)
+        val status = decoder.dequeueOutputBuffer(info, PipelineConstants.CODEC_TIMEOUT_US)
         if (status < 0) return false
         val isEos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
         if (info.size > 0) copyDecodedToEncoder(decoder, encoder, status, info)
         decoder.releaseOutputBuffer(status, false)
         if (isEos) {
-            val encIdx = spinForInputBuffer(encoder)
+            val encIdx = awaitInputBuffer(encoder)
             encoder.queueInputBuffer(encIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
         }
         return isEos
     }
 
-    private fun copyDecodedToEncoder(
+    private suspend fun copyDecodedToEncoder(
         decoder: MediaCodec,
         encoder: MediaCodec,
         decoderIdx: Int,
         info: MediaCodec.BufferInfo,
     ) {
         val decoded = decoder.getOutputBuffer(decoderIdx) ?: error("Decoder output null")
-        val encIdx = spinForInputBuffer(encoder)
+        val encIdx = awaitInputBuffer(encoder)
         val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
         encBuf.clear()
         val bytes = minOf(decoded.remaining(), encBuf.capacity())
-        val slice = decoded.slice().apply { limit(bytes) }
-        encBuf.put(slice)
+        val savedLimit = decoded.limit()
+        decoded.limit(decoded.position() + bytes)
+        encBuf.put(decoded)
+        decoded.limit(savedLimit)
         encoder.queueInputBuffer(encIdx, 0, bytes, info.presentationTimeUs, 0)
     }
 
@@ -181,9 +193,10 @@ private class AudioPipeline(
         throw IllegalArgumentException("No audio track found in input file")
     }
 
-    private fun spinForInputBuffer(codec: MediaCodec): Int {
+    private suspend fun awaitInputBuffer(codec: MediaCodec): Int {
         while (true) {
-            val index = codec.dequeueInputBuffer(CODEC_TIMEOUT_US)
+            currentCoroutineContext().ensureActive()
+            val index = codec.dequeueInputBuffer(PipelineConstants.CODEC_TIMEOUT_US)
             if (index >= 0) return index
         }
     }
@@ -194,13 +207,6 @@ private class AudioPipeline(
     private fun MediaCodec.safeRelease() {
         try { stop() } catch (_: IllegalStateException) { /* may not be started */ }
         release()
-    }
-
-    private companion object {
-        const val CODEC_TIMEOUT_US = 10_000L
-        const val MAX_INPUT_SIZE = 16_384
-        const val PROGRESS_SETUP = 0.05f
-        const val PROGRESS_TRANSCODE_RANGE = 0.90f
     }
 }
 
@@ -214,28 +220,50 @@ private class EncoderSink(outputPath: String) {
     private val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     private var trackIndex = -1
     private var started = false
+    private var lastReportedProgress = 0f
 
-    suspend fun drainEncoder(
+    /**
+     * Drains all ready encoder output buffers. Returns `true` if the
+     * encoder signalled end-of-stream.
+     */
+    suspend fun drainAllReady(
         encoder: MediaCodec,
+        totalDurationUs: Long,
+        onProgress: suspend (Float) -> Unit,
+    ): Boolean {
+        val info = MediaCodec.BufferInfo()
+        while (true) {
+            val status = encoder.dequeueOutputBuffer(info, PipelineConstants.CODEC_TIMEOUT_US)
+            if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                trackIndex = muxer.addTrack(encoder.outputFormat)
+                muxer.start()
+                started = true
+                continue
+            }
+            if (status < 0) return false
+            writeAndReport(encoder, status, info, totalDurationUs, onProgress)
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
+        }
+    }
+
+    private suspend fun writeAndReport(
+        encoder: MediaCodec,
+        status: Int,
         info: MediaCodec.BufferInfo,
         totalDurationUs: Long,
         onProgress: suspend (Float) -> Unit,
     ) {
-        val status = encoder.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)
-        if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-            trackIndex = muxer.addTrack(encoder.outputFormat)
-            muxer.start()
-            started = true
-            return
-        }
-        if (status < 0) return
         val buf = encoder.getOutputBuffer(status) ?: error("Encoder output null")
         if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
         if (info.size > 0 && started) muxer.writeSampleData(trackIndex, buf, info)
         encoder.releaseOutputBuffer(status, false)
         if (totalDurationUs > 0 && info.presentationTimeUs > 0) {
             val fraction = (info.presentationTimeUs.toFloat() / totalDurationUs).coerceAtMost(1f)
-            onProgress(PROGRESS_SETUP + PROGRESS_TRANSCODE_RANGE * fraction)
+            val progress = PipelineConstants.PROGRESS_SETUP + PipelineConstants.PROGRESS_TRANSCODE_RANGE * fraction
+            if (progress - lastReportedProgress >= PipelineConstants.PROGRESS_REPORT_THRESHOLD) {
+                lastReportedProgress = progress
+                onProgress(progress)
+            }
         }
     }
 
@@ -244,11 +272,5 @@ private class EncoderSink(outputPath: String) {
             try { muxer.stop() } catch (_: IllegalStateException) { /* may not be started */ }
         }
         muxer.release()
-    }
-
-    private companion object {
-        const val CODEC_TIMEOUT_US = 10_000L
-        const val PROGRESS_SETUP = 0.05f
-        const val PROGRESS_TRANSCODE_RANGE = 0.90f
     }
 }

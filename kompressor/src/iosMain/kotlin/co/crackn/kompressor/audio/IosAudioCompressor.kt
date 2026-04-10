@@ -1,6 +1,8 @@
 package co.crackn.kompressor.audio
 
+import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.currentCoroutineContext
@@ -29,11 +31,10 @@ import platform.AVFoundation.tracksWithMediaType
 import platform.CoreAudioTypes.kAudioFormatLinearPCM
 import platform.CoreAudioTypes.kAudioFormatMPEG4AAC
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
+import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeMake
 import platform.CoreMedia.CMTimeGetSeconds
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSURL
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -48,22 +49,16 @@ internal class IosAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
+        require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
-        val inputSize = fileSize(inputPath)
+        val inputSize = nsFileSize(inputPath)
         val pipeline = IosPipeline(inputPath, outputPath, config)
         pipeline.execute(onProgress)
         onProgress(1f)
-        val outputSize = fileSize(outputPath)
+        val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
-    }
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
-            ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong()
-            ?: error("Cannot read file size: $path")
     }
 
     private companion object {
@@ -161,10 +156,14 @@ private class IosPipeline(
         while (true) {
             currentCoroutineContext().ensureActive()
             val buffer = readerOutput.copyNextSampleBuffer() ?: break
-            lastReported = reportSampleProgress(
-                buffer, totalDurationSec, lastReported, onProgress,
-            )
-            writerInput.appendSampleBuffer(buffer)
+            try {
+                lastReported = reportSampleProgress(
+                    buffer, totalDurationSec, lastReported, onProgress,
+                )
+                writerInput.appendSampleBuffer(buffer)
+            } finally {
+                CFRelease(buffer)
+            }
         }
     }
 

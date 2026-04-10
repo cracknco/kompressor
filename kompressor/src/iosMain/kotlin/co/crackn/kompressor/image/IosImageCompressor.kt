@@ -1,6 +1,7 @@
 package co.crackn.kompressor.image
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
@@ -9,8 +10,6 @@ import kotlinx.coroutines.ensureActive
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSURL
 import platform.Foundation.writeToURL
 import platform.UIKit.UIGraphicsBeginImageContextWithOptions
@@ -33,7 +32,7 @@ internal class IosImageCompressor : ImageCompressor {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
 
-        val inputSize = fileSize(inputPath)
+        val inputSize = nsFileSize(inputPath)
         val image = loadImage(inputPath)
         currentCoroutineContext().ensureActive()
         onProgress(0.3f)
@@ -50,7 +49,7 @@ internal class IosImageCompressor : ImageCompressor {
         writeJpeg(resized, outputPath, config.quality)
         onProgress(1f)
 
-        val outputSize = fileSize(outputPath)
+        val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
 
         CompressionResult(inputSize, outputSize, durationMs)
@@ -73,13 +72,6 @@ internal class IosImageCompressor : ImageCompressor {
     @Suppress("USELESS_ELVIS")
     private fun loadImage(path: String): UIImage =
         UIImage(contentsOfFile = path) ?: error("Failed to decode image: $path")
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
-            ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong()
-            ?: error("Cannot read file size: $path")
-    }
 
     private fun resizeImageIfNeeded(
         image: UIImage,

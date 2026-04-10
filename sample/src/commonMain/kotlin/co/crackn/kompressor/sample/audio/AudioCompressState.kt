@@ -8,6 +8,7 @@ enum class AudioPresetOption { VOICE_MESSAGE, PODCAST, HIGH_QUALITY, CUSTOM }
 data class AudioCompressState(
     val selectedAudioPath: String? = null,
     val selectedFileName: String? = null,
+    val compressedAudioPath: String? = null,
     val selectedPreset: AudioPresetOption = AudioPresetOption.PODCAST,
     val customBitrate: String = "128",
     val customSampleRate: Int = 44_100,

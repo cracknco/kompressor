@@ -95,6 +95,7 @@ class AudioCompressViewModel(
     private suspend fun runCompression(inputPath: String) {
         try {
             val outputFile = createTempFile("output")
+            _state.update { it.copy(compressedAudioPath = outputFile.path) }
             kompressor.audio.compress(
                 inputPath = inputPath,
                 outputPath = outputFile.path,
@@ -165,6 +166,7 @@ class AudioCompressViewModel(
 
     private fun currentTempPaths(): List<String> = listOfNotNull(
         _state.value.selectedAudioPath,
+        _state.value.compressedAudioPath,
     )
 
     private suspend fun deleteTempFiles() {
