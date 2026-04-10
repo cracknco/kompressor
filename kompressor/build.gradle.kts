@@ -64,6 +64,19 @@ kotlin {
 
 kover {
     reports {
+        filters {
+            excludes {
+                // Platform implementations that require device/simulator tests (not host JVM)
+                classes(
+                    "co.crackn.kompressor.image.AndroidImageCompressor",
+                    "co.crackn.kompressor.video.AndroidVideoCompressor",
+                    "co.crackn.kompressor.audio.AndroidAudioCompressor",
+                    "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.KompressorInitializer",
+                    "co.crackn.kompressor.KompressorContext",
+                )
+            }
+        }
         verify {
             rule {
                 bound {
