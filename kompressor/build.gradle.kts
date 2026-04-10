@@ -11,6 +11,10 @@ group = "co.crackn.kompressor"
 version = "0.1.0"
 
 kotlin {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
+
     androidLibrary {
         namespace = "co.crackn.kompressor"
         compileSdk = libs.versions.android.compileSdk.get().toInt()

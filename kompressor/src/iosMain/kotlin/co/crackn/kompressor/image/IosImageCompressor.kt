@@ -3,6 +3,7 @@ package co.crackn.kompressor.image
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreGraphics.CGImageGetHeight
@@ -18,7 +19,6 @@ import platform.UIKit.UIGraphicsEndImageContext
 import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageJPEGRepresentation
-import kotlin.coroutines.coroutineContext
 
 /** iOS image compressor backed by [UIImage] and Core Graphics. */
 @OptIn(ExperimentalForeignApi::class)
@@ -37,7 +37,7 @@ internal class IosImageCompressor : ImageCompressor {
         val inputSize = fileSize(inputPath)
         val image = loadImage(inputPath)
         val cgImage = image.CGImage ?: error("Cannot decode image: $inputPath")
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         onProgress(0.3f)
 
         val origWidth = CGImageGetWidth(cgImage).toInt()
@@ -47,7 +47,7 @@ internal class IosImageCompressor : ImageCompressor {
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
         val resized = resizeImageIfNeeded(image, origWidth, origHeight, target)
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         onProgress(0.6f)
 
         writeJpeg(resized, outputPath, config.quality)

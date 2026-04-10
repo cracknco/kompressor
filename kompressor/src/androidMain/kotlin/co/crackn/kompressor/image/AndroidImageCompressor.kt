@@ -4,10 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.coroutines.coroutineContext
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
 internal class AndroidImageCompressor : ImageCompressor {
@@ -24,7 +24,7 @@ internal class AndroidImageCompressor : ImageCompressor {
 
         val originalDims = decodeImageDimensions(inputPath)
         val inputSize = File(inputPath).length()
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         onProgress(0.1f)
 
         val target = calculateTargetDimensions(
@@ -32,7 +32,7 @@ internal class AndroidImageCompressor : ImageCompressor {
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
         val bitmap = decodeSampledBitmap(inputPath, originalDims, target)
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         onProgress(0.3f)
 
         resizeAndWrite(bitmap, target, outputPath, config.quality)
