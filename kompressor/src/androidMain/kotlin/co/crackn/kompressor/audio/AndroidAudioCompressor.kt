@@ -193,10 +193,8 @@ private class TranscodeLoop(
         if (decoderInfo.size > 0) {
             val decoded = decoder.getOutputBuffer(status) ?: error("Decoder output null")
             decoded.position(decoderInfo.offset)
-            decoded.limit(decoderInfo.offset + decoderInfo.size)
-
-            var isFirstChunk = true
-            while (decoded.remaining() > 0) {
+            var presentationTimeUs = decoderInfo.presentationTimeUs
+            while (decoded.hasRemaining()) {
                 val encIdx = awaitEncoderInput()
                 val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
                 encBuf.clear()
@@ -205,9 +203,8 @@ private class TranscodeLoop(
                 decoded.limit(decoded.position() + bytes)
                 encBuf.put(decoded)
                 decoded.limit(savedLimit)
-                val timestampUs = if (isFirstChunk) decoderInfo.presentationTimeUs else 0L
-                encoder.queueInputBuffer(encIdx, 0, bytes, timestampUs, 0)
-                isFirstChunk = false
+                encoder.queueInputBuffer(encIdx, 0, bytes, presentationTimeUs, 0)
+                presentationTimeUs = 0L
             }
         }
 

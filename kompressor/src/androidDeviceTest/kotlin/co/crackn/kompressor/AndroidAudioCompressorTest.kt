@@ -55,19 +55,20 @@ class AndroidAudioCompressorTest {
         val outputLow = File(tempDir, "low.m4a")
         val outputHigh = File(tempDir, "high.m4a")
 
-        val resultLow = compressor.compress(
+        val lowResult = compressor.compress(
             input.absolutePath,
             outputLow.absolutePath,
             AudioCompressionConfig(bitrate = 32_000),
         )
-        assertTrue(resultLow.isSuccess, "Low bitrate compression failed: ${resultLow.exceptionOrNull()?.message}")
-
-        val resultHigh = compressor.compress(
+        val highResult = compressor.compress(
             input.absolutePath,
             outputHigh.absolutePath,
             AudioCompressionConfig(bitrate = 192_000),
         )
-        assertTrue(resultHigh.isSuccess, "High bitrate compression failed: ${resultHigh.exceptionOrNull()?.message}")
+        assertTrue(lowResult.isSuccess)
+        assertTrue(highResult.isSuccess)
+        assertTrue(outputLow.exists())
+        assertTrue(outputHigh.exists())
 
         assertTrue(
             outputLow.length() < outputHigh.length(),
@@ -82,19 +83,20 @@ class AndroidAudioCompressorTest {
         val outputStereo = File(tempDir, "stereo.m4a")
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        val resultMono = compressor.compress(
+        val monoResult = compressor.compress(
             input.absolutePath,
             outputMono.absolutePath,
             config.copy(channels = AudioChannels.MONO),
         )
-        assertTrue(resultMono.isSuccess, "Mono compression failed: ${resultMono.exceptionOrNull()?.message}")
-
-        val resultStereo = compressor.compress(
+        val stereoResult = compressor.compress(
             input.absolutePath,
             outputStereo.absolutePath,
             config.copy(channels = AudioChannels.STEREO),
         )
-        assertTrue(resultStereo.isSuccess, "Stereo compression failed: ${resultStereo.exceptionOrNull()?.message}")
+        assertTrue(monoResult.isSuccess)
+        assertTrue(stereoResult.isSuccess)
+        assertTrue(outputMono.exists())
+        assertTrue(outputStereo.exists())
 
         assertTrue(
             outputMono.length() <= outputStereo.length(),

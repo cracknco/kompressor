@@ -17,12 +17,12 @@ import kompressor.sample.generated.resources.preset_voice_message
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-private val presetLabels: Map<AudioPresetOption, StringResource> = mapOf(
-    AudioPresetOption.VOICE_MESSAGE to Res.string.preset_voice_message,
-    AudioPresetOption.PODCAST to Res.string.preset_podcast,
-    AudioPresetOption.HIGH_QUALITY to Res.string.preset_high_quality,
-    AudioPresetOption.CUSTOM to Res.string.preset_custom,
-)
+private fun presetLabel(preset: AudioPresetOption): StringResource = when (preset) {
+    AudioPresetOption.VOICE_MESSAGE -> Res.string.preset_voice_message
+    AudioPresetOption.PODCAST -> Res.string.preset_podcast
+    AudioPresetOption.HIGH_QUALITY -> Res.string.preset_high_quality
+    AudioPresetOption.CUSTOM -> Res.string.preset_custom
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -39,7 +39,7 @@ fun AudioPresetSelector(
             FilterChip(
                 selected = preset == selectedPreset,
                 onClick = { onPresetSelected(preset) },
-                label = { Text(stringResource(presetLabels.getValue(preset))) },
+                label = { Text(stringResource(presetLabel(preset))) },
             )
         }
     }

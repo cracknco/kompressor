@@ -62,11 +62,10 @@ class IosAudioCompressorTest {
         val outputLow = testDir + "low.m4a"
         val outputHigh = testDir + "high.m4a"
 
-        val resultLow = compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
-        resultLow.getOrThrow()
-
-        val resultHigh = compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
-        resultHigh.getOrThrow()
+        val lowResult = compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
+        val highResult = compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        assertTrue(lowResult.isSuccess)
+        assertTrue(highResult.isSuccess)
 
         val sizeLow = fileSize(outputLow)
         val sizeHigh = fileSize(outputHigh)
@@ -80,16 +79,13 @@ class IosAudioCompressorTest {
         val outputStereo = testDir + "stereo.m4a"
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        val resultMono = compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
-        resultMono.getOrThrow()
-
-        val resultStereo = compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
-        resultStereo.getOrThrow()
+        val monoResult = compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
+        val stereoResult = compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        assertTrue(monoResult.isSuccess)
+        assertTrue(stereoResult.isSuccess)
 
         val sizeMono = fileSize(outputMono)
         val sizeStereo = fileSize(outputStereo)
-        assertTrue(sizeMono > 0, "Mono output should have positive size")
-        assertTrue(sizeStereo > 0, "Stereo output should have positive size")
         assertTrue(sizeMono <= sizeStereo, "mono ($sizeMono) should be <= stereo ($sizeStereo)")
     }
 
@@ -160,7 +156,8 @@ class IosAudioCompressorTest {
             NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
         }
         val url = NSURL.fileURLWithPath(path)
-        data.writeToURL(url, atomically = true)
+        val written = data.writeToURL(url, atomically = true)
+        check(written) { "Failed to write test WAV file: $path" }
         return path
     }
 
