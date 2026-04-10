@@ -86,7 +86,8 @@ fun AudioScreen(
 
             AudioResultCard(
                 visible = state.result != null,
-                fileName = state.selectedFileName,
+                originalPath = state.selectedAudioPath,
+                compressedPath = state.compressedAudioPath,
                 result = state.result,
             )
 

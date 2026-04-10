@@ -49,6 +49,7 @@ kotlin {
             implementation(libs.navigation.compose)
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.gadulka)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
