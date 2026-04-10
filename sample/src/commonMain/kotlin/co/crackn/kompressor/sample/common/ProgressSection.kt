@@ -22,17 +22,18 @@ fun ProgressSection(
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(visible = visible, modifier = modifier) {
+        val clampedProgress = progress.coerceIn(0f, 1f)
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
+                progress = { clampedProgress },
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = stringResource(Res.string.compressing_percent, "${(progress * 100).toInt()}%"),
+                text = stringResource(Res.string.compressing_percent, "${(clampedProgress * 100).toInt()}%"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
