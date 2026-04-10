@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -35,7 +36,13 @@ import org.jetbrains.compose.resources.stringResource
 private data class TabItem<T : Any>(
     val route: T,
     val labelRes: StringResource,
-    val icon: @Composable () -> Unit,
+    val icon: ImageVector,
+)
+
+private val tabs = listOf(
+    TabItem(route = Route.Image, labelRes = Res.string.tab_image, icon = Icons.Filled.Image),
+    TabItem(route = Route.Video, labelRes = Res.string.tab_video, icon = Icons.Filled.Videocam),
+    TabItem(route = Route.Audio, labelRes = Res.string.tab_audio, icon = Icons.Filled.MusicNote),
 )
 
 @Composable
@@ -45,31 +52,13 @@ fun App(appComponent: AppComponent) {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
 
-        val tabs = listOf(
-            TabItem(
-                route = Route.Image,
-                labelRes = Res.string.tab_image,
-                icon = { Icon(Icons.Filled.Image, contentDescription = null) },
-            ),
-            TabItem(
-                route = Route.Video,
-                labelRes = Res.string.tab_video,
-                icon = { Icon(Icons.Filled.Videocam, contentDescription = null) },
-            ),
-            TabItem(
-                route = Route.Audio,
-                labelRes = Res.string.tab_audio,
-                icon = { Icon(Icons.Filled.MusicNote, contentDescription = null) },
-            ),
-        )
-
         Scaffold(
             bottomBar = {
                 NavigationBar {
                     tabs.forEach { tab ->
                         val label = stringResource(tab.labelRes)
                         NavigationBarItem(
-                            icon = tab.icon,
+                            icon = { Icon(tab.icon, contentDescription = label) },
                             label = { Text(label) },
                             selected = currentDestination?.hasRoute(tab.route::class) == true,
                             onClick = {
@@ -92,8 +81,8 @@ fun App(appComponent: AppComponent) {
                 modifier = Modifier.padding(innerPadding),
             ) {
                 composable<Route.Image> {
-                    val viewModel = viewModel { appComponent.imageCompressViewModelFactory() }
-                    ImageScreen(viewModel = viewModel)
+                    val vm = viewModel { appComponent.imageCompressViewModelFactory() }
+                    ImageScreen(viewModel = vm)
                 }
                 composable<Route.Video> {
                     ComingSoonScreen(mediaType = stringResource(Res.string.tab_video))

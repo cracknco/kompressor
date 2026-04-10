@@ -33,6 +33,7 @@ import kompressor.sample.generated.resources.duration_ms
 import kompressor.sample.generated.resources.input_size
 import kompressor.sample.generated.resources.output_size
 import kompressor.sample.generated.resources.size_reduction_percent
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -80,44 +81,41 @@ private fun BeforeAfterImages(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
+        ImageColumn(
+            labelRes = Res.string.before,
+            imagePath = inputImagePath,
             modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = stringResource(Res.string.before),
-                style = MaterialTheme.typography.labelMedium,
-            )
-            AsyncImage(
-                model = "file://$inputImagePath",
-                contentDescription = stringResource(Res.string.before),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop,
-            )
-        }
-        Column(
+        )
+        ImageColumn(
+            labelRes = Res.string.after,
+            imagePath = outputImagePath,
             modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = stringResource(Res.string.after),
-                style = MaterialTheme.typography.labelMedium,
-            )
-            AsyncImage(
-                model = "file://$outputImagePath",
-                contentDescription = stringResource(Res.string.after),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop,
-            )
-        }
+        )
+    }
+}
+
+@Composable
+private fun ImageColumn(
+    labelRes: StringResource,
+    imagePath: String,
+    modifier: Modifier = Modifier,
+) {
+    val label = stringResource(labelRes)
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelMedium)
+        AsyncImage(
+            model = "file://$imagePath",
+            contentDescription = label,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop,
+        )
     }
 }
 
@@ -139,11 +137,17 @@ private fun StatsRow(result: CompressionResult) {
         )
         StatItem(
             label = stringResource(Res.string.compression_ratio),
-            value = stringResource(Res.string.size_reduction_percent, "${reductionPercent}%"),
+            value = stringResource(
+                Res.string.size_reduction_percent,
+                "${reductionPercent}%",
+            ),
         )
         StatItem(
             label = stringResource(Res.string.duration),
-            value = stringResource(Res.string.duration_ms, result.durationMs.toString()),
+            value = stringResource(
+                Res.string.duration_ms,
+                result.durationMs.toString(),
+            ),
         )
     }
 }

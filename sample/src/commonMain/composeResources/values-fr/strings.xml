@@ -38,9 +38,8 @@
 
     <!-- Coming soon -->
     <string name="coming_soon">Bientôt disponible</string>
-    <string name="coming_soon_description">La compression %s est en cours de développement</string>
+    <string name="coming_soon_description">La compression %1$s est en cours de développement</string>
 
     <!-- Errors -->
     <string name="error_compression_failed">Échec de la compression</string>
-    <string name="error_no_image_selected">Veuillez d\'abord sélectionner une image</string>
 </resources>

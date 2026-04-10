@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kompressor.sample.generated.resources.Res
 import kompressor.sample.generated.resources.compress
-import kompressor.sample.generated.resources.compressing
 import org.jetbrains.compose.resources.stringResource
 
 @Composable

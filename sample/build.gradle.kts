@@ -48,7 +48,6 @@ kotlin {
             implementation(libs.kotlin.inject.runtime)
             implementation(libs.navigation.compose)
             implementation(libs.lifecycle.viewmodel.compose)
-            implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
         }
         androidMain.dependencies {
