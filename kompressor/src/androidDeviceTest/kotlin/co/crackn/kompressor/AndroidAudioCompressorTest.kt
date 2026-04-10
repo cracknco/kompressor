@@ -55,16 +55,19 @@ class AndroidAudioCompressorTest {
         val outputLow = File(tempDir, "low.m4a")
         val outputHigh = File(tempDir, "high.m4a")
 
-        compressor.compress(
+        val resultLow = compressor.compress(
             input.absolutePath,
             outputLow.absolutePath,
             AudioCompressionConfig(bitrate = 32_000),
         )
-        compressor.compress(
+        assertTrue(resultLow.isSuccess, "Low bitrate compression failed: ${resultLow.exceptionOrNull()?.message}")
+
+        val resultHigh = compressor.compress(
             input.absolutePath,
             outputHigh.absolutePath,
             AudioCompressionConfig(bitrate = 192_000),
         )
+        assertTrue(resultHigh.isSuccess, "High bitrate compression failed: ${resultHigh.exceptionOrNull()?.message}")
 
         assertTrue(
             outputLow.length() < outputHigh.length(),
@@ -79,16 +82,19 @@ class AndroidAudioCompressorTest {
         val outputStereo = File(tempDir, "stereo.m4a")
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        compressor.compress(
+        val resultMono = compressor.compress(
             input.absolutePath,
             outputMono.absolutePath,
             config.copy(channels = AudioChannels.MONO),
         )
-        compressor.compress(
+        assertTrue(resultMono.isSuccess, "Mono compression failed: ${resultMono.exceptionOrNull()?.message}")
+
+        val resultStereo = compressor.compress(
             input.absolutePath,
             outputStereo.absolutePath,
             config.copy(channels = AudioChannels.STEREO),
         )
+        assertTrue(resultStereo.isSuccess, "Stereo compression failed: ${resultStereo.exceptionOrNull()?.message}")
 
         assertTrue(
             outputMono.length() <= outputStereo.length(),
@@ -116,8 +122,8 @@ class AndroidAudioCompressorTest {
         )
 
         assertTrue(progressValues.isNotEmpty())
-        assertEquals(0f, progressValues.first())
-        assertEquals(1f, progressValues.last())
+        assertEquals(0f, progressValues.first(), 1e-6f)
+        assertEquals(1f, progressValues.last(), 1e-6f)
         for (i in 1 until progressValues.size) {
             assertTrue(progressValues[i] >= progressValues[i - 1])
         }

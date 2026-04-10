@@ -292,27 +292,30 @@ private class IosExportSessionPipeline(
 
     private suspend fun awaitExport(session: AVAssetExportSession) {
         suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { session.cancelExport() }
             session.exportAsynchronouslyWithCompletionHandler {
                 when (session.status) {
-                    AVAssetExportSessionStatusCompleted ->
+                    AVAssetExportSessionStatusCompleted -> {
                         continuation.resume(Unit)
+                    }
                     AVAssetExportSessionStatusFailed -> {
                         val msg = session.error?.localizedDescription ?: "unknown"
                         continuation.resumeWithException(
                             IllegalStateException("Export failed: $msg"),
                         )
                     }
-                    AVAssetExportSessionStatusCancelled ->
+                    AVAssetExportSessionStatusCancelled -> {
                         continuation.resumeWithException(
                             CancellationException("Export cancelled"),
                         )
-                    else ->
+                    }
+                    else -> {
                         continuation.resumeWithException(
                             IllegalStateException("Unexpected export status: ${session.status}"),
                         )
+                    }
                 }
             }
-            continuation.invokeOnCancellation { session.cancelExport() }
         }
     }
 

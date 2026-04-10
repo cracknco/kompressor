@@ -62,8 +62,11 @@ class IosAudioCompressorTest {
         val outputLow = testDir + "low.m4a"
         val outputHigh = testDir + "high.m4a"
 
-        compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
-        compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        val resultLow = compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
+        resultLow.getOrThrow()
+
+        val resultHigh = compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        resultHigh.getOrThrow()
 
         val sizeLow = fileSize(outputLow)
         val sizeHigh = fileSize(outputHigh)
@@ -77,11 +80,16 @@ class IosAudioCompressorTest {
         val outputStereo = testDir + "stereo.m4a"
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
-        compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        val resultMono = compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
+        resultMono.getOrThrow()
+
+        val resultStereo = compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        resultStereo.getOrThrow()
 
         val sizeMono = fileSize(outputMono)
         val sizeStereo = fileSize(outputStereo)
+        assertTrue(sizeMono > 0, "Mono output should have positive size")
+        assertTrue(sizeStereo > 0, "Stereo output should have positive size")
         assertTrue(sizeMono <= sizeStereo, "mono ($sizeMono) should be <= stereo ($sizeStereo)")
     }
 

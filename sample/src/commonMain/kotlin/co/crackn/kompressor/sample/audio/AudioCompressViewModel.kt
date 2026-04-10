@@ -15,9 +15,11 @@ import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,9 +39,10 @@ class AudioCompressViewModel(
     fun onAudioPicked(file: PlatformFile) {
         if (_state.value.isCompressing) return
         viewModelScope.launch(Dispatchers.IO) {
+            var inputFile: PlatformFile? = null
             try {
                 deleteTempFiles()
-                val inputFile = createTempFile("input")
+                inputFile = createTempFile("input")
                 file.copyTo(inputFile)
                 _state.update {
                     it.copy(
@@ -52,6 +55,7 @@ class AudioCompressViewModel(
                     )
                 }
             } catch (e: Exception) {
+                inputFile?.let { runCatching { it.delete(mustExist = false) } }
                 _state.update {
                     it.copy(
                         selectedAudioPath = null,
@@ -133,7 +137,7 @@ class AudioCompressViewModel(
 
     override fun onCleared() {
         val paths = currentTempPaths()
-        viewModelScope.launch(Dispatchers.IO + NonCancellable) { deletePaths(paths) }
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { deletePaths(paths) }
         super.onCleared()
     }
 
