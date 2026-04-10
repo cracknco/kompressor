@@ -95,8 +95,8 @@ class ImageCompressViewModel(
     }
 
     private suspend fun runCompression(inputPath: String) {
+        val outputFile = createTempFile("output")
         try {
-            val outputFile = createTempFile("output")
             kompressor.image.compress(
                 inputPath = inputPath,
                 outputPath = outputFile.path,
@@ -106,10 +106,10 @@ class ImageCompressViewModel(
                 },
             ).fold(
                 onSuccess = { handleSuccess(outputFile.path, it) },
-                onFailure = { handleFailure(it) },
+                onFailure = { handleFailure(it, outputFile.path) },
             )
         } catch (e: Exception) {
-            handleFailure(e)
+            handleFailure(e, outputFile.path)
         } finally {
             _state.update {
                 if (it.isCompressing) it.copy(isCompressing = false) else it
@@ -146,7 +146,12 @@ class ImageCompressViewModel(
         }
     }
 
-    private fun handleFailure(error: Throwable) {
+    private fun handleFailure(error: Throwable, outputPath: String? = null) {
+        outputPath?.let { path ->
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { PlatformFile(path).delete(mustExist = false) }
+            }
+        }
         _state.update {
             it.copy(
                 isCompressing = false,

@@ -86,11 +86,10 @@ public expect fun PlatformFile.stopAccessingSecurityScopedResource()
  */
 public inline fun <T> PlatformFile.withScopedAccess(block: (PlatformFile) -> T): T {
     val accessGranted = startAccessingSecurityScopedResource()
+    check(accessGranted) { "Security-scoped resource access denied for: $this" }
     try {
         return block(this)
     } finally {
-        if (accessGranted) {
-            stopAccessingSecurityScopedResource()
-        }
+        stopAccessingSecurityScopedResource()
     }
 }

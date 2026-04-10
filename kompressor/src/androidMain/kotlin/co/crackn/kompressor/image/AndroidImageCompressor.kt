@@ -98,7 +98,7 @@ internal class AndroidImageCompressor : ImageCompressor {
         val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
         return try {
             applyExifRotation(decoded, exifRotation)
-        } catch (e: Exception) {
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             decoded.recycle()
             throw e
         }
