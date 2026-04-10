@@ -80,6 +80,24 @@ class IosImageCompressorTest {
     }
 
     @Test
+    fun compressImage_noResize_flattenOrientation() = runTest {
+        val inputPath = createTestImage(500, 500)
+        val outputPath = testDir + "no_resize.jpg"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = ImageCompressionConfig(maxWidth = 500, maxHeight = 500),
+        )
+
+        assertTrue(result.isSuccess)
+        val outputImage = UIImage(contentsOfFile = outputPath)
+        val cgImage = outputImage.CGImage!!
+        assertEquals(500, CGImageGetWidth(cgImage).toInt())
+        assertEquals(500, CGImageGetHeight(cgImage).toInt())
+    }
+
+    @Test
     fun compressImage_qualityAffectsSize() = runTest {
         val inputPath = createTestImage(1000, 1000)
         val outputLow = testDir + "low.jpg"

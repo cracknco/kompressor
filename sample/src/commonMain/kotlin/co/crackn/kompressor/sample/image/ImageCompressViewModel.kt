@@ -13,6 +13,7 @@ import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -108,6 +109,8 @@ class ImageCompressViewModel(
                 onSuccess = { handleSuccess(outputFile.path, it) },
                 onFailure = { handleFailure(it, outputFile.path) },
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             handleFailure(e, outputFile.path)
         } finally {
