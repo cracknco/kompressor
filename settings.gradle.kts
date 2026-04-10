@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "kompressor"
 include(":kompressor")
+include(":sample")

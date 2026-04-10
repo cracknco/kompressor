@@ -1,0 +1,46 @@
+<resources>
+    <string name="app_name">Kompressor</string>
+
+    <!-- Tabs -->
+    <string name="tab_image">Image</string>
+    <string name="tab_video">Video</string>
+    <string name="tab_audio">Audio</string>
+
+    <!-- Image screen -->
+    <string name="select_image">Select Image</string>
+    <string name="select_image_description">Choose an image from your gallery to compress</string>
+    <string name="compress">Compress</string>
+    <string name="try_another">Try Another</string>
+    <string name="compressing">Compressing…</string>
+    <string name="compressing_percent">%1$s</string>
+
+    <!-- Presets -->
+    <string name="preset_thumbnail">Thumbnail</string>
+    <string name="preset_web">Web</string>
+    <string name="preset_high_quality">High Quality</string>
+    <string name="preset_custom">Custom</string>
+
+    <!-- Custom config -->
+    <string name="quality">Quality</string>
+    <string name="max_width">Max Width</string>
+    <string name="max_height">Max Height</string>
+    <string name="pixels_suffix">px</string>
+
+    <!-- Results -->
+    <string name="input_size">Original</string>
+    <string name="output_size">Compressed</string>
+    <string name="compression_ratio">Reduction</string>
+    <string name="duration">Duration</string>
+    <string name="duration_ms">%1$s ms</string>
+    <string name="size_reduction_percent">%1$s smaller</string>
+    <string name="before">Before</string>
+    <string name="after">After</string>
+
+    <!-- Coming soon -->
+    <string name="coming_soon">Coming Soon</string>
+    <string name="coming_soon_description">%s compression is under development</string>
+
+    <!-- Errors -->
+    <string name="error_compression_failed">Compression failed</string>
+    <string name="error_no_image_selected">Please select an image first</string>
+</resources>
