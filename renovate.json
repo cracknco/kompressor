@@ -3,6 +3,11 @@
   "extends": ["config:recommended"],
   "packageRules": [
     {
+      "matchPackagePatterns": ["*"],
+      "automerge": false
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
     }

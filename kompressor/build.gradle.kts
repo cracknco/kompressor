@@ -62,6 +62,18 @@ kotlin {
     }
 }
 
+kover {
+    reports {
+        verify {
+            rule {
+                bound {
+                    minValue = 80
+                }
+            }
+        }
+    }
+}
+
 mavenPublishing {
     publishToMavenCentral()
 

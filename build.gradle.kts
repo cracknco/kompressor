@@ -10,10 +10,16 @@ plugins {
 
 detekt {
     buildUponDefaultConfig = true
+    allRules = false
     config.setFrom("$rootDir/config/detekt/detekt.yml")
     source.setFrom(
         "kompressor/src/commonMain/kotlin",
         "kompressor/src/androidMain/kotlin",
         "kompressor/src/iosMain/kotlin",
     )
+}
+
+ktlint {
+    version.set("1.3.1")
+    android.set(false)
 }
