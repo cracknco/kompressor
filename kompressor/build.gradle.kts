@@ -16,7 +16,7 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
-        withJava() // enable java compilation support
+        withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
             sourceSetTreeName = "test"
