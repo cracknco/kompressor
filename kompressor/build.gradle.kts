@@ -11,6 +11,10 @@ group = "co.crackn.kompressor"
 version = "0.1.0"
 
 kotlin {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
+
     androidLibrary {
         namespace = "co.crackn.kompressor"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -64,6 +68,19 @@ kotlin {
 
 kover {
     reports {
+        filters {
+            excludes {
+                // Platform implementations that require device/simulator tests (not host JVM)
+                classes(
+                    "co.crackn.kompressor.image.AndroidImageCompressor",
+                    "co.crackn.kompressor.video.AndroidVideoCompressor",
+                    "co.crackn.kompressor.audio.AndroidAudioCompressor",
+                    "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.KompressorInitializer",
+                    "co.crackn.kompressor.KompressorContext",
+                )
+            }
+        }
         verify {
             rule {
                 bound {
