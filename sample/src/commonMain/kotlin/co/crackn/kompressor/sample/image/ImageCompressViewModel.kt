@@ -48,7 +48,16 @@ class ImageCompressViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(error = e.message) }
+                _state.update {
+                    it.copy(
+                        selectedImagePath = null,
+                        selectedFileName = null,
+                        compressedImagePath = null,
+                        result = null,
+                        progress = 0f,
+                        error = e.message ?: "Failed to import image",
+                    )
+                }
             }
         }
     }
@@ -72,7 +81,15 @@ class ImageCompressViewModel(
     fun compress() {
         val inputPath = _state.value.selectedImagePath ?: return
 
-        _state.update { it.copy(isCompressing = true, progress = 0f, error = null) }
+        _state.update {
+            it.copy(
+                isCompressing = true,
+                progress = 0f,
+                error = null,
+                compressedImagePath = null,
+                result = null,
+            )
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -89,19 +106,22 @@ class ImageCompressViewModel(
                     onFailure = { handleFailure(it) },
                 )
             } finally {
-                _state.update { if (it.isCompressing) it.copy(isCompressing = false) else it }
+                _state.update {
+                    if (it.isCompressing) it.copy(isCompressing = false) else it
+                }
             }
         }
     }
 
     fun reset() {
-        viewModelScope.launch(Dispatchers.IO) { deleteTempFiles() }
+        val paths = currentTempPaths()
         _state.update { ImageCompressState() }
+        viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
     }
 
     override fun onCleared() {
-        // viewModelScope is still active before super.onCleared() cancels it
-        viewModelScope.launch(Dispatchers.IO) { deleteTempFiles() }
+        val paths = currentTempPaths()
+        viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
         super.onCleared()
     }
 
@@ -120,6 +140,9 @@ class ImageCompressViewModel(
         _state.update {
             it.copy(
                 isCompressing = false,
+                compressedImagePath = null,
+                result = null,
+                progress = 0f,
                 error = error.message ?: "Unknown error",
             )
         }
@@ -132,16 +155,22 @@ class ImageCompressViewModel(
             PresetOption.HIGH_QUALITY -> ImagePresets.HIGH_QUALITY
             PresetOption.CUSTOM -> ImageCompressionConfig(
                 quality = _state.value.customQuality,
-                maxWidth = _state.value.customMaxWidth.toIntOrNull(),
-                maxHeight = _state.value.customMaxHeight.toIntOrNull(),
+                maxWidth = _state.value.customMaxWidth.toIntOrNull()?.takeIf { it > 0 },
+                maxHeight = _state.value.customMaxHeight.toIntOrNull()?.takeIf { it > 0 },
             )
         }
 
+    private fun currentTempPaths(): List<String> = listOfNotNull(
+        _state.value.selectedImagePath,
+        _state.value.compressedImagePath,
+    )
+
     private suspend fun deleteTempFiles() {
-        listOfNotNull(
-            _state.value.selectedImagePath,
-            _state.value.compressedImagePath,
-        ).forEach { path ->
+        deletePaths(currentTempPaths())
+    }
+
+    private suspend fun deletePaths(paths: List<String>) {
+        paths.forEach { path ->
             runCatching { PlatformFile(path).delete(mustExist = false) }
         }
     }

@@ -32,6 +32,7 @@ import kompressor.sample.generated.resources.duration
 import kompressor.sample.generated.resources.duration_ms
 import kompressor.sample.generated.resources.input_size
 import kompressor.sample.generated.resources.output_size
+import kompressor.sample.generated.resources.size_increase_percent
 import kompressor.sample.generated.resources.size_reduction_percent
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -121,7 +122,12 @@ private fun ImageColumn(
 
 @Composable
 private fun StatsRow(result: CompressionResult) {
-    val reductionPercent = ((1f - result.compressionRatio) * 100).toInt()
+    val deltaPercent = ((1f - result.compressionRatio) * 100).toInt()
+    val sizeChangeText = if (deltaPercent >= 0) {
+        stringResource(Res.string.size_reduction_percent, "${deltaPercent}%")
+    } else {
+        stringResource(Res.string.size_increase_percent, "${-deltaPercent}%")
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -137,10 +143,7 @@ private fun StatsRow(result: CompressionResult) {
         )
         StatItem(
             label = stringResource(Res.string.compression_ratio),
-            value = stringResource(
-                Res.string.size_reduction_percent,
-                "${reductionPercent}%",
-            ),
+            value = sizeChangeText,
         )
         StatItem(
             label = stringResource(Res.string.duration),

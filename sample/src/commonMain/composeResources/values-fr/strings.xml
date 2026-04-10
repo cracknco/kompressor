@@ -33,6 +33,7 @@
     <string name="duration">Durée</string>
     <string name="duration_ms">%1$s ms</string>
     <string name="size_reduction_percent">%1$s plus petit</string>
+    <string name="size_increase_percent">%1$s plus grand</string>
     <string name="before">Avant</string>
     <string name="after">Après</string>
 
