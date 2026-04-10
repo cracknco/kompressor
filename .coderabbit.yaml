@@ -15,8 +15,6 @@ reviews:
   tools:
     detekt:
       enabled: false
-    ktlint:
-      enabled: false
 
 chat:
   auto_reply: true
