@@ -45,6 +45,10 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
 
+        androidMain.dependencies {
+            implementation(libs.androidx.startup.runtime)
+        }
+
         getByName("androidDeviceTest").dependencies {
             implementation(libs.junit)
             implementation(libs.androidx.test.runner)
