@@ -94,8 +94,7 @@ private class IosPipeline(
     outputPath: String,
     config: AudioCompressionConfig,
 ) {
-    private val channelCount =
-        if (config.channels == AudioChannels.MONO) 1 else 2
+    private val channelCount = config.channels.count
 
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
@@ -292,27 +291,30 @@ private class IosExportSessionPipeline(
 
     private suspend fun awaitExport(session: AVAssetExportSession) {
         suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { session.cancelExport() }
             session.exportAsynchronouslyWithCompletionHandler {
                 when (session.status) {
-                    AVAssetExportSessionStatusCompleted ->
+                    AVAssetExportSessionStatusCompleted -> {
                         continuation.resume(Unit)
+                    }
                     AVAssetExportSessionStatusFailed -> {
                         val msg = session.error?.localizedDescription ?: "unknown"
                         continuation.resumeWithException(
                             IllegalStateException("Export failed: $msg"),
                         )
                     }
-                    AVAssetExportSessionStatusCancelled ->
+                    AVAssetExportSessionStatusCancelled -> {
                         continuation.resumeWithException(
                             CancellationException("Export cancelled"),
                         )
-                    else ->
+                    }
+                    else -> {
                         continuation.resumeWithException(
                             IllegalStateException("Unexpected export status: ${session.status}"),
                         )
+                    }
                 }
             }
-            continuation.invokeOnCancellation { session.cancelExport() }
         }
     }
 

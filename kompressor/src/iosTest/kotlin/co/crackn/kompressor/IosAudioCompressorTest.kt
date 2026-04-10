@@ -63,8 +63,10 @@ class IosAudioCompressorTest {
         val outputLow = testDir + "low.m4a"
         val outputHigh = testDir + "high.m4a"
 
-        compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
-        compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        val lowResult = compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 32_000))
+        val highResult = compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        assertTrue(lowResult.isSuccess)
+        assertTrue(highResult.isSuccess)
 
         val sizeLow = fileSize(outputLow)
         val sizeHigh = fileSize(outputHigh)
@@ -78,8 +80,10 @@ class IosAudioCompressorTest {
         val outputStereo = testDir + "stereo.m4a"
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
-        compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        val monoResult = compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
+        val stereoResult = compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        assertTrue(monoResult.isSuccess)
+        assertTrue(stereoResult.isSuccess)
 
         val sizeMono = fileSize(outputMono)
         val sizeStereo = fileSize(outputStereo)
@@ -241,7 +245,8 @@ class IosAudioCompressorTest {
             NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
         }
         val url = NSURL.fileURLWithPath(path)
-        data.writeToURL(url, atomically = true)
+        val written = data.writeToURL(url, atomically = true)
+        check(written) { "Failed to write test WAV file: $path" }
         return path
     }
 

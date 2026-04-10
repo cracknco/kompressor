@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import co.crackn.kompressor.CompressionResult
+import kotlin.math.roundToInt
 import kompressor.sample.generated.resources.Res
 import kompressor.sample.generated.resources.compression_ratio
 import kompressor.sample.generated.resources.duration
@@ -26,7 +27,7 @@ fun StatsRow(
     result: CompressionResult,
     modifier: Modifier = Modifier,
 ) {
-    val deltaPercent = ((1f - result.compressionRatio) * PERCENT_MULTIPLIER).toInt()
+    val deltaPercent = ((1f - result.compressionRatio) * PERCENT_MULTIPLIER).roundToInt()
     val sizeChangeText = if (deltaPercent >= 0) {
         stringResource(Res.string.size_reduction_percent, "${deltaPercent}%")
     } else {

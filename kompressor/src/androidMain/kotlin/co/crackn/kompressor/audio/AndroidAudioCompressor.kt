@@ -60,7 +60,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
 // ── Remux fast-path: AAC → AAC bitstream copy ───────────────────────
 
 private fun canRemux(trackFormat: MediaFormat, config: AudioCompressionConfig): Boolean {
-    val channelCount = if (config.channels == AudioChannels.MONO) 1 else 2
+    val channelCount = config.channels.count
     val mime = trackFormat.getString(MediaFormat.KEY_MIME)
     val inputRate = trackFormat.safeInt(MediaFormat.KEY_SAMPLE_RATE)
     val inputChannels = trackFormat.safeInt(MediaFormat.KEY_CHANNEL_COUNT)
@@ -129,7 +129,7 @@ private suspend fun transcode(
     totalDurationUs: Long,
     onProgress: suspend (Float) -> Unit,
 ) {
-    val outputChannels = if (config.channels == AudioChannels.MONO) 1 else 2
+    val outputChannels = config.channels.count
     val processor = createProcessor(inputFormat, config, outputChannels)
     val outputFormat = MediaFormat.createAudioFormat(
         MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, outputChannels,
@@ -272,6 +272,7 @@ private class TranscodeLoop(
         val bytesPerFrame = outputChannels * BYTES_PER_SAMPLE
         outputSamplesWritten += bytes / bytesPerFrame
     }
+
 
     @Suppress("ReturnCount")
     private suspend fun drainEncoder(

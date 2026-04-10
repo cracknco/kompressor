@@ -79,7 +79,7 @@ fun AudioScreen(
 
                 CompressButton(
                     isCompressing = state.isCompressing,
-                    enabled = state.selectedAudioPath != null,
+                    enabled = true,
                     onClick = viewModel::compress,
                 )
             }
