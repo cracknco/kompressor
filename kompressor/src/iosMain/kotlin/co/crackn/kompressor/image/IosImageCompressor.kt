@@ -3,11 +3,10 @@ package co.crackn.kompressor.image
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
-import platform.CoreGraphics.CGImageGetHeight
-import platform.CoreGraphics.CGImageGetWidth
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSFileManager
@@ -36,17 +35,15 @@ internal class IosImageCompressor : ImageCompressor {
 
         val inputSize = fileSize(inputPath)
         val image = loadImage(inputPath)
-        val cgImage = image.CGImage ?: error("Cannot decode image: $inputPath")
         currentCoroutineContext().ensureActive()
         onProgress(0.3f)
 
-        val origWidth = CGImageGetWidth(cgImage).toInt()
-        val origHeight = CGImageGetHeight(cgImage).toInt()
+        val (pixelWidth, pixelHeight) = orientedPixelDimensions(image)
         val target = calculateTargetDimensions(
-            origWidth, origHeight,
+            pixelWidth, pixelHeight,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        val resized = resizeImageIfNeeded(image, origWidth, origHeight, target)
+        val resized = resizeImageIfNeeded(image, pixelWidth, pixelHeight, target)
         currentCoroutineContext().ensureActive()
         onProgress(0.6f)
 
@@ -59,9 +56,23 @@ internal class IosImageCompressor : ImageCompressor {
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
-    private fun loadImage(path: String): UIImage {
-        return UIImage(contentsOfFile = path)
+    /**
+     * Returns pixel dimensions that respect the EXIF/UIImage orientation.
+     * [UIImage.size] returns points in the display orientation;
+     * multiplying by [UIImage.scale] gives the actual pixel count.
+     */
+    private fun orientedPixelDimensions(image: UIImage): Pair<Int, Int> {
+        val size = image.size.useContents { Pair(width, height) }
+        val scale = image.scale
+        return Pair(
+            (size.first * scale).toInt(),
+            (size.second * scale).toInt(),
+        )
     }
+
+    @Suppress("USELESS_ELVIS")
+    private fun loadImage(path: String): UIImage =
+        UIImage(contentsOfFile = path) ?: error("Failed to decode image: $path")
 
     private fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
@@ -75,15 +86,21 @@ internal class IosImageCompressor : ImageCompressor {
         origWidth: Int,
         origHeight: Int,
         target: ImageDimensions,
-    ): UIImage {
-        if (origWidth == target.width && origHeight == target.height) return image
+    ): UIImage = if (origWidth == target.width && origHeight == target.height) {
+        // No resize needed — flatten orientation by redrawing at original size and scale
+        val size = image.size.useContents { Pair(width, height) }
+        redrawInContext(image, size.first, size.second, image.scale)
+    } else {
+        redrawInContext(image, target.width.toDouble(), target.height.toDouble(), SCALE_PIXELS)
+    }
 
-        val targetSize = CGSizeMake(target.width.toDouble(), target.height.toDouble())
-        UIGraphicsBeginImageContextWithOptions(targetSize, true, SCALE_PIXELS)
+    /** Draws [image] into a new bitmap context, flattening its orientation transform. */
+    private fun redrawInContext(image: UIImage, width: Double, height: Double, scale: Double): UIImage {
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(width, height), true, scale)
         try {
-            image.drawInRect(CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()))
+            image.drawInRect(CGRectMake(0.0, 0.0, width, height))
             return UIGraphicsGetImageFromCurrentImageContext()
-                ?: error("Failed to resize image")
+                ?: error("Failed to draw image into context")
         } finally {
             UIGraphicsEndImageContext()
         }
