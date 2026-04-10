@@ -82,7 +82,8 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun writeBitmapAsJpeg(bitmap: Bitmap, outputPath: String, quality: Int) {
         FileOutputStream(outputPath).use { stream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+            val success = bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+            check(success) { "Failed to compress bitmap as JPEG to: $outputPath" }
         }
     }
 

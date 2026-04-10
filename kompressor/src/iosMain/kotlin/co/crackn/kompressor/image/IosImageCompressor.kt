@@ -94,7 +94,8 @@ internal class IosImageCompressor : ImageCompressor {
         val data = UIImageJPEGRepresentation(image, compressionQuality)
             ?: error("Failed to create JPEG data")
         val url = NSURL.fileURLWithPath(path)
-        data.writeToURL(url, atomically = true)
+        val written = data.writeToURL(url, atomically = true)
+        check(written) { "Failed to write JPEG to: $path (quality=$quality)" }
     }
 
     private companion object {
