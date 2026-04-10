@@ -94,8 +94,7 @@ private class IosPipeline(
     outputPath: String,
     config: AudioCompressionConfig,
 ) {
-    private val channelCount =
-        if (config.channels == AudioChannels.MONO) 1 else 2
+    private val channelCount = config.channels.count
 
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)

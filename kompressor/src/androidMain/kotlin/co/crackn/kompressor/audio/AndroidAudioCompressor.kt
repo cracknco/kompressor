@@ -60,7 +60,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
 // ── Remux fast-path: AAC → AAC bitstream copy ───────────────────────
 
 private fun canRemux(trackFormat: MediaFormat, config: AudioCompressionConfig): Boolean {
-    val channelCount = if (config.channels == AudioChannels.MONO) 1 else 2
+    val channelCount = config.channels.count
     val mime = trackFormat.getString(MediaFormat.KEY_MIME)
     val inputRate = trackFormat.safeInt(MediaFormat.KEY_SAMPLE_RATE)
     val inputChannels = trackFormat.safeInt(MediaFormat.KEY_CHANNEL_COUNT)
@@ -114,7 +114,7 @@ private suspend fun transcode(
     totalDurationUs: Long,
     onProgress: suspend (Float) -> Unit,
 ) {
-    val channelCount = if (config.channels == AudioChannels.MONO) 1 else 2
+    val channelCount = config.channels.count
     val outputFormat = MediaFormat.createAudioFormat(
         MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, channelCount,
     ).apply {
@@ -193,19 +193,7 @@ private class TranscodeLoop(
         if (decoderInfo.size > 0) {
             val decoded = decoder.getOutputBuffer(status) ?: error("Decoder output null")
             decoded.position(decoderInfo.offset)
-            var presentationTimeUs = decoderInfo.presentationTimeUs
-            while (decoded.hasRemaining()) {
-                val encIdx = awaitEncoderInput()
-                val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
-                encBuf.clear()
-                val bytes = minOf(decoded.remaining(), encBuf.capacity())
-                val savedLimit = decoded.limit()
-                decoded.limit(decoded.position() + bytes)
-                encBuf.put(decoded)
-                decoded.limit(savedLimit)
-                encoder.queueInputBuffer(encIdx, 0, bytes, presentationTimeUs, 0)
-                presentationTimeUs = 0L
-            }
+            copyDecodedToEncoder(decoded, decoderInfo.presentationTimeUs)
         }
 
         decoder.releaseOutputBuffer(status, false)
@@ -214,6 +202,22 @@ private class TranscodeLoop(
             val eosIdx = awaitEncoderInput()
             encoder.queueInputBuffer(eosIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             decoderDone = true
+        }
+    }
+
+    private suspend fun copyDecodedToEncoder(decoded: ByteBuffer, initialTimestampUs: Long) {
+        var presentationTimeUs = initialTimestampUs
+        while (decoded.hasRemaining()) {
+            val encIdx = awaitEncoderInput()
+            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
+            encBuf.clear()
+            val bytes = minOf(decoded.remaining(), encBuf.capacity())
+            val savedLimit = decoded.limit()
+            decoded.limit(decoded.position() + bytes)
+            encBuf.put(decoded)
+            decoded.limit(savedLimit)
+            encoder.queueInputBuffer(encIdx, 0, bytes, presentationTimeUs, 0)
+            presentationTimeUs = 0L
         }
     }
 
