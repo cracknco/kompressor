@@ -13,4 +13,5 @@ internal class IosKompressor : Kompressor {
     override val audio: AudioCompressor by lazy { IosAudioCompressor() }
 }
 
+/** Creates an iOS [Kompressor] backed by AVFoundation and VideoToolbox. */
 actual fun createKompressor(): Kompressor = IosKompressor()

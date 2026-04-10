@@ -13,4 +13,5 @@ internal class AndroidKompressor : Kompressor {
     override val audio: AudioCompressor by lazy { AndroidAudioCompressor() }
 }
 
+/** Creates an Android [Kompressor] backed by MediaCodec and BitmapFactory. */
 actual fun createKompressor(): Kompressor = AndroidKompressor()
