@@ -8,5 +8,7 @@ fun formatFileSize(bytes: Long): String {
     val kb = bytes / 1_024.0
     if (kb < 1_024) return "${(kb * 10).roundToInt() / 10.0} KB"
     val mb = kb / 1_024.0
-    return "${(mb * 10).roundToInt() / 10.0} MB"
+    if (mb < 1_024) return "${(mb * 10).roundToInt() / 10.0} MB"
+    val gb = mb / 1_024.0
+    return "${(gb * 10).roundToInt() / 10.0} GB"
 }

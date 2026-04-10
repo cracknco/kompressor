@@ -39,6 +39,7 @@ fun ImageScreen(
     LaunchedEffect(state.error) {
         state.error?.let { error ->
             snackbarHostState.showSnackbar("$errorMessage: $error")
+            viewModel.clearError()
         }
     }
 

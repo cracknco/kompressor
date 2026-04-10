@@ -70,8 +70,9 @@ internal class IosImageCompressor : ImageCompressor {
         )
     }
 
+    @Suppress("USELESS_ELVIS")
     private fun loadImage(path: String): UIImage =
-        UIImage(contentsOfFile = path)
+        UIImage(contentsOfFile = path) ?: error("Failed to decode image: $path")
 
     private fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)

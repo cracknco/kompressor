@@ -91,24 +91,28 @@ class ImageCompressViewModel(
             )
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val outputFile = createTempFile("output")
-                kompressor.image.compress(
-                    inputPath = inputPath,
-                    outputPath = outputFile.path,
-                    config = buildConfig(),
-                    onProgress = { progress ->
-                        _state.update { it.copy(progress = progress) }
-                    },
-                ).fold(
-                    onSuccess = { handleSuccess(outputFile.path, it) },
-                    onFailure = { handleFailure(it) },
-                )
-            } finally {
-                _state.update {
-                    if (it.isCompressing) it.copy(isCompressing = false) else it
-                }
+        viewModelScope.launch(Dispatchers.IO) { runCompression(inputPath) }
+    }
+
+    private suspend fun runCompression(inputPath: String) {
+        try {
+            val outputFile = createTempFile("output")
+            kompressor.image.compress(
+                inputPath = inputPath,
+                outputPath = outputFile.path,
+                config = buildConfig(),
+                onProgress = { progress ->
+                    _state.update { it.copy(progress = progress) }
+                },
+            ).fold(
+                onSuccess = { handleSuccess(outputFile.path, it) },
+                onFailure = { handleFailure(it) },
+            )
+        } catch (e: Exception) {
+            handleFailure(e)
+        } finally {
+            _state.update {
+                if (it.isCompressing) it.copy(isCompressing = false) else it
             }
         }
     }
@@ -119,7 +123,13 @@ class ImageCompressViewModel(
         viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
     }
 
+    /** Clears the current error so the same message can retrigger the snackbar. */
+    fun clearError() {
+        _state.update { it.copy(error = null) }
+    }
+
     override fun onCleared() {
+        // Best-effort cleanup — cache files are ephemeral by nature
         val paths = currentTempPaths()
         viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
         super.onCleared()
@@ -140,8 +150,6 @@ class ImageCompressViewModel(
         _state.update {
             it.copy(
                 isCompressing = false,
-                compressedImagePath = null,
-                result = null,
                 progress = 0f,
                 error = error.message ?: "Unknown error",
             )
