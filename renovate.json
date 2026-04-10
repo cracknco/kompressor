@@ -3,8 +3,10 @@
   "extends": ["config:best-practices"],
   "packageRules": [
     {
-      "matchPackagePatterns": ["*"],
-      "automerge": false
+      "automerge": false,
+      "matchPackageNames": [
+        "*"
+      ]
     },
     {
       "matchDepTypes": ["devDependencies"],
