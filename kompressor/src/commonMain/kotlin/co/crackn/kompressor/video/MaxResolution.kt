@@ -4,18 +4,20 @@ package co.crackn.kompressor.video
  * Maximum output resolution for video compression.
  *
  * Use [Original] to keep the source resolution, or [Custom] with a pixel value
- * for the longest edge. Common presets are available via companion constants.
+ * for the shortest edge (height in landscape). Common presets are available via companion constants.
  */
 sealed class MaxResolution {
 
     /**
-     * Custom maximum resolution defined by the longest edge in pixels.
+     * Custom maximum resolution defined by the shortest edge in pixels.
      *
-     * @property maxLongEdge Maximum length of the longest edge in pixels.
+     * For a landscape 16:9 video this corresponds to the height (e.g. 1080 for 1080p).
+     *
+     * @property maxShortEdge Maximum length of the shortest edge in pixels.
      */
-    data class Custom(val maxLongEdge: Int) : MaxResolution() {
+    data class Custom(val maxShortEdge: Int) : MaxResolution() {
         init {
-            require(maxLongEdge > 0) { "maxLongEdge must be > 0, was $maxLongEdge" }
+            require(maxShortEdge > 0) { "maxShortEdge must be > 0, was $maxShortEdge" }
         }
     }
 

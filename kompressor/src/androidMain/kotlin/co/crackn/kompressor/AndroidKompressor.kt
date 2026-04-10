@@ -8,9 +8,9 @@ import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.VideoCompressor
 
 internal class AndroidKompressor : Kompressor {
-    override val image: ImageCompressor by lazy(LazyThreadSafetyMode.NONE) { AndroidImageCompressor() }
-    override val video: VideoCompressor by lazy(LazyThreadSafetyMode.NONE) { AndroidVideoCompressor() }
-    override val audio: AudioCompressor by lazy(LazyThreadSafetyMode.NONE) { AndroidAudioCompressor() }
+    override val image: ImageCompressor by lazy { AndroidImageCompressor() }
+    override val video: VideoCompressor by lazy { AndroidVideoCompressor() }
+    override val audio: AudioCompressor by lazy { AndroidAudioCompressor() }
 }
 
 /** Creates an Android [Kompressor] backed by MediaCodec and BitmapFactory. */

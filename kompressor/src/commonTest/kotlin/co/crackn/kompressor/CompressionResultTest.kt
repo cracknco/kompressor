@@ -2,6 +2,7 @@ package co.crackn.kompressor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -49,6 +50,27 @@ class CompressionResultTest {
         assertNotEquals(base, base.copy(inputSize = 200L))
         assertNotEquals(base, base.copy(outputSize = 99L))
         assertNotEquals(base, base.copy(durationMs = 999L))
+    }
+
+    @Test
+    fun rejectsZeroInputSize() {
+        assertFailsWith<IllegalArgumentException> {
+            CompressionResult(inputSize = 0L, outputSize = 50L, durationMs = 5L)
+        }
+    }
+
+    @Test
+    fun rejectsNegativeInputSize() {
+        assertFailsWith<IllegalArgumentException> {
+            CompressionResult(inputSize = -1L, outputSize = 50L, durationMs = 5L)
+        }
+    }
+
+    @Test
+    fun rejectsNegativeOutputSize() {
+        assertFailsWith<IllegalArgumentException> {
+            CompressionResult(inputSize = 100L, outputSize = -1L, durationMs = 5L)
+        }
     }
 
     @Test
