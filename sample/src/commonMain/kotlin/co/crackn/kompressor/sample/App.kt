@@ -58,7 +58,7 @@ fun App(appComponent: AppComponent) {
                     tabs.forEach { tab ->
                         val label = stringResource(tab.labelRes)
                         NavigationBarItem(
-                            icon = { Icon(tab.icon, contentDescription = label) },
+                            icon = { Icon(tab.icon, contentDescription = null) },
                             label = { Text(label) },
                             selected = currentDestination?.hasRoute(tab.route::class) == true,
                             onClick = {

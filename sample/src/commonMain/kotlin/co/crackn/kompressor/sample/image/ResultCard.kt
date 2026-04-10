@@ -122,11 +122,11 @@ private fun ImageColumn(
 
 @Composable
 private fun StatsRow(result: CompressionResult) {
-    val deltaPercent = ((1f - result.compressionRatio) * 100).toInt()
-    val sizeChangeText = if (deltaPercent >= 0) {
-        stringResource(Res.string.size_reduction_percent, "${deltaPercent}%")
+    val deltaPercentFloat = (1f - result.compressionRatio) * 100
+    val sizeChangeText = if (deltaPercentFloat >= 0) {
+        stringResource(Res.string.size_reduction_percent, "${deltaPercentFloat.toInt()}%")
     } else {
-        stringResource(Res.string.size_increase_percent, "${-deltaPercent}%")
+        stringResource(Res.string.size_increase_percent, "${(-deltaPercentFloat).toInt()}%")
     }
 
     Row(
