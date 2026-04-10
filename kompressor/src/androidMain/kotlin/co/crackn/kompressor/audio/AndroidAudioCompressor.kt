@@ -304,7 +304,14 @@ private class AudioRemuxer(
     }
 }
 
-/** Feeds PCM chunks from a Channel into a MediaCodec encoder, drains output to muxer. */
+/**
+ * Feeds PCM chunks from a Channel into a MediaCodec encoder, drains output to muxer.
+ *
+ * CRITICAL: input feeding and output draining MUST be interleaved. The encoder
+ * has a small internal buffer pool (typically 4–8 slots). If all input buffers
+ * are filled without draining output, the encoder deadlocks — it cannot free
+ * input buffers until output is consumed, but nobody is consuming output.
+ */
 private suspend fun encodeFromChannel(
     encoder: MediaCodec,
     channel: Channel<PcmChunk>,
@@ -315,22 +322,37 @@ private suspend fun encodeFromChannel(
     var eosDrained = false
     for (chunk in channel) {
         currentCoroutineContext().ensureActive()
-        if (chunk.size > 0) feedEncoderChunk(encoder, chunk)
-        if (chunk.isEndOfStream) signalEncoderEos(encoder)
-        if (sink.drainAllReady(encoder, totalDurationUs, onProgress)) {
-            eosDrained = true
-            break
+        if (chunk.size > 0) {
+            eosDrained = feedChunkInterleaved(encoder, chunk, sink, totalDurationUs, onProgress)
         }
+        if (chunk.isEndOfStream && !eosDrained) {
+            val eosIdx = awaitInputAndDrain(encoder, sink, totalDurationUs, onProgress)
+            encoder.queueInputBuffer(eosIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+        }
+        if (!eosDrained) {
+            eosDrained = sink.drainAllReady(encoder, totalDurationUs, onProgress)
+        }
+        if (eosDrained) break
     }
     if (!eosDrained) {
         while (!sink.drainAllReady(encoder, totalDurationUs, onProgress)) { yield() }
     }
 }
 
-private suspend fun feedEncoderChunk(encoder: MediaCodec, chunk: PcmChunk) {
+/**
+ * Feeds a PCM chunk to the encoder, draining output between each sub-buffer
+ * to prevent deadlock when the encoder's input queue is full.
+ */
+private suspend fun feedChunkInterleaved(
+    encoder: MediaCodec,
+    chunk: PcmChunk,
+    sink: EncoderSink,
+    totalDurationUs: Long,
+    onProgress: suspend (Float) -> Unit,
+): Boolean {
     var offset = 0
     while (offset < chunk.size) {
-        val idx = awaitInputBuffer(encoder)
+        val idx = awaitInputAndDrain(encoder, sink, totalDurationUs, onProgress)
         val buf = encoder.getInputBuffer(idx) ?: error("Encoder input null")
         buf.clear()
         val bytesToWrite = minOf(chunk.size - offset, buf.capacity())
@@ -339,18 +361,25 @@ private suspend fun feedEncoderChunk(encoder: MediaCodec, chunk: PcmChunk) {
         encoder.queueInputBuffer(idx, 0, bytesToWrite, pts, 0)
         offset += bytesToWrite
     }
+    return false
 }
 
-private suspend fun signalEncoderEos(encoder: MediaCodec) {
-    val idx = awaitInputBuffer(encoder)
-    encoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-}
-
-private suspend fun awaitInputBuffer(codec: MediaCodec): Int {
+/**
+ * Waits for an encoder input buffer while also draining encoder output.
+ * This prevents deadlock: the encoder may need output consumed before it
+ * can free input buffer slots.
+ */
+private suspend fun awaitInputAndDrain(
+    encoder: MediaCodec,
+    sink: EncoderSink,
+    totalDurationUs: Long,
+    onProgress: suspend (Float) -> Unit,
+): Int {
     while (true) {
         currentCoroutineContext().ensureActive()
-        val index = codec.dequeueInputBuffer(PipelineConstants.CODEC_TIMEOUT_US)
+        val index = encoder.dequeueInputBuffer(PipelineConstants.CODEC_TIMEOUT_US)
         if (index >= 0) return index
+        sink.drainAllReady(encoder, totalDurationUs, onProgress)
         yield()
     }
 }
