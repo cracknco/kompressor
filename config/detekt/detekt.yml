@@ -1,0 +1,22 @@
+complexity:
+  LongMethod:
+    threshold: 30
+  CyclomaticComplexMethod:
+    threshold: 15
+  TooManyFunctions:
+    excludes:
+      - "**/Kompressor.kt"
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 120
+  WildcardImport:
+    active: true
+
+naming:
+  FunctionNaming:
+    active: true
+  VariableNaming:
+    active: true
