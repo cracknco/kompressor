@@ -20,6 +20,7 @@ data class CompressionResult(
     init {
         require(inputSize > 0) { "inputSize must be positive, was $inputSize" }
         require(outputSize >= 0) { "outputSize must not be negative, was $outputSize" }
+        require(durationMs >= 0) { "durationMs must not be negative, was $durationMs" }
     }
 
     /** Ratio of output/input size (< 1.0 means compression reduced size). */

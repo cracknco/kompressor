@@ -98,6 +98,13 @@ class CompressionResultTest {
     }
 
     @Test
+    fun rejectsNegativeDurationMs() {
+        assertFailsWith<IllegalArgumentException> {
+            CompressionResult(inputSize = 100L, outputSize = 50L, durationMs = -1L)
+        }
+    }
+
+    @Test
     fun isNotSmallerThanOriginalWhenEqual() {
         val result = CompressionResult(1_000L, 1_000L, 10L)
         assertFalse(result.isSmallerThanOriginal)

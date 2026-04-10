@@ -11,10 +11,8 @@ import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
 import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
-import io.github.vinceglb.filekit.exists
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
-import io.github.vinceglb.filekit.toKotlinxIoPath
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -73,22 +71,26 @@ class ImageCompressViewModel(
 
     fun compress() {
         val inputPath = _state.value.selectedImagePath ?: return
-        val outputFile = createTempFile("output")
 
         _state.update { it.copy(isCompressing = true, progress = 0f, error = null) }
 
         viewModelScope.launch(Dispatchers.IO) {
-            kompressor.image.compress(
-                inputPath = inputPath,
-                outputPath = outputFile.path,
-                config = buildConfig(),
-                onProgress = { progress ->
-                    _state.update { it.copy(progress = progress) }
-                },
-            ).fold(
-                onSuccess = { handleSuccess(outputFile.path, it) },
-                onFailure = { handleFailure(it) },
-            )
+            try {
+                val outputFile = createTempFile("output")
+                kompressor.image.compress(
+                    inputPath = inputPath,
+                    outputPath = outputFile.path,
+                    config = buildConfig(),
+                    onProgress = { progress ->
+                        _state.update { it.copy(progress = progress) }
+                    },
+                ).fold(
+                    onSuccess = { handleSuccess(outputFile.path, it) },
+                    onFailure = { handleFailure(it) },
+                )
+            } finally {
+                _state.update { if (it.isCompressing) it.copy(isCompressing = false) else it }
+            }
         }
     }
 
@@ -98,21 +100,9 @@ class ImageCompressViewModel(
     }
 
     override fun onCleared() {
+        // viewModelScope is still active before super.onCleared() cancels it
+        viewModelScope.launch(Dispatchers.IO) { deleteTempFiles() }
         super.onCleared()
-        listOfNotNull(
-            _state.value.selectedImagePath,
-            _state.value.compressedImagePath,
-        ).forEach { path ->
-            runCatching {
-                val file = PlatformFile(path)
-                if (file.exists()) {
-                    kotlinx.io.files.SystemFileSystem.delete(
-                        file.toKotlinxIoPath(),
-                        mustExist = false,
-                    )
-                }
-            }
-        }
     }
 
     private fun handleSuccess(outputPath: String, result: CompressionResult) {
@@ -152,8 +142,7 @@ class ImageCompressViewModel(
             _state.value.selectedImagePath,
             _state.value.compressedImagePath,
         ).forEach { path ->
-            val file = PlatformFile(path)
-            if (file.exists()) file.delete(mustExist = false)
+            runCatching { PlatformFile(path).delete(mustExist = false) }
         }
     }
 

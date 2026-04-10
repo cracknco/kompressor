@@ -96,7 +96,12 @@ internal class AndroidImageCompressor : ImageCompressor {
             inSampleSize = calculateInSampleSize(rawDims.width, rawDims.height, target.width, target.height)
         }
         val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
-        return applyExifRotation(decoded, exifRotation)
+        return try {
+            applyExifRotation(decoded, exifRotation)
+        } catch (e: Throwable) {
+            decoded.recycle()
+            throw e
+        }
     }
 
     private fun applyExifRotation(bitmap: Bitmap, rotation: ExifRotation): Bitmap {

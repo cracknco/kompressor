@@ -70,9 +70,8 @@ internal class IosImageCompressor : ImageCompressor {
         )
     }
 
-    private fun loadImage(path: String): UIImage {
-        return UIImage(contentsOfFile = path)
-    }
+    private fun loadImage(path: String): UIImage =
+        UIImage(contentsOfFile = path)
 
     private fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
@@ -86,38 +85,21 @@ internal class IosImageCompressor : ImageCompressor {
         origWidth: Int,
         origHeight: Int,
         target: ImageDimensions,
-    ): UIImage {
-        if (origWidth == target.width && origHeight == target.height) {
-            return normalizeOrientation(image)
-        }
-
-        val targetSize = CGSizeMake(target.width.toDouble(), target.height.toDouble())
-        UIGraphicsBeginImageContextWithOptions(targetSize, true, SCALE_PIXELS)
-        try {
-            image.drawInRect(
-                CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()),
-            )
-            return UIGraphicsGetImageFromCurrentImageContext()
-                ?: error("Failed to resize image")
-        } finally {
-            UIGraphicsEndImageContext()
-        }
+    ): UIImage = if (origWidth == target.width && origHeight == target.height) {
+        // No resize needed — flatten orientation by redrawing at original size and scale
+        val size = image.size.useContents { Pair(width, height) }
+        redrawInContext(image, size.first, size.second, image.scale)
+    } else {
+        redrawInContext(image, target.width.toDouble(), target.height.toDouble(), SCALE_PIXELS)
     }
 
-    /**
-     * When no resize is needed, we still need to "flatten" the UIImage orientation
-     * so the JPEG output has the correct pixel layout. Drawing into a context at
-     * the original size forces UIImage to apply its orientation transform.
-     */
-    private fun normalizeOrientation(image: UIImage): UIImage {
-        val size = image.size.useContents { Pair(width, height) }
-        val scale = image.scale
-        val cgSize = CGSizeMake(size.first, size.second)
-        UIGraphicsBeginImageContextWithOptions(cgSize, true, scale)
+    /** Draws [image] into a new bitmap context, flattening its orientation transform. */
+    private fun redrawInContext(image: UIImage, width: Double, height: Double, scale: Double): UIImage {
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(width, height), true, scale)
         try {
-            image.drawInRect(CGRectMake(0.0, 0.0, size.first, size.second))
+            image.drawInRect(CGRectMake(0.0, 0.0, width, height))
             return UIGraphicsGetImageFromCurrentImageContext()
-                ?: error("Failed to normalize image orientation")
+                ?: error("Failed to draw image into context")
         } finally {
             UIGraphicsEndImageContext()
         }
