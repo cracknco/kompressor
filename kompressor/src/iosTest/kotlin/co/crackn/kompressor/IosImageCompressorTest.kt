@@ -80,7 +80,7 @@ class IosImageCompressorTest {
     }
 
     @Test
-    fun compressImage_noResize_flattenOrientation() = runTest {
+    fun compressImage_noResize() = runTest {
         val inputPath = createTestImage(500, 500)
         val outputPath = testDir + "no_resize.jpg"
 

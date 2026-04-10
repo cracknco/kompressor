@@ -49,6 +49,8 @@ class ImageCompressViewModel(
                         progress = 0f,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
@@ -98,6 +100,8 @@ class ImageCompressViewModel(
 
     private suspend fun runCompression(inputPath: String) {
         val outputFile = createTempFile("output")
+        // Track the output path immediately so it is cleaned up even if compression is cancelled
+        _state.update { it.copy(compressedImagePath = outputFile.path) }
         try {
             kompressor.image.compress(
                 inputPath = inputPath,
