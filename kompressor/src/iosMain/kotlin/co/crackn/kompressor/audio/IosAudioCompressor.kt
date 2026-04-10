@@ -5,9 +5,19 @@ import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import platform.AVFoundation.AVAssetExportPresetAppleM4A
+import platform.AVFoundation.AVAssetExportSession
+import platform.AVFoundation.AVAssetExportSessionStatusCancelled
+import platform.AVFoundation.AVAssetExportSessionStatusCompleted
+import platform.AVFoundation.AVAssetExportSessionStatusFailed
 import platform.AVFoundation.AVAssetReader
 import platform.AVFoundation.AVAssetReaderStatusFailed
 import platform.AVFoundation.AVAssetReaderTrackOutput
@@ -53,13 +63,21 @@ internal class IosAudioCompressor : AudioCompressor {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
         val inputSize = nsFileSize(inputPath)
-        val pipeline = IosPipeline(inputPath, outputPath, config)
-        pipeline.execute(onProgress)
+
+        if (canUseExportSession(config)) {
+            IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
+        } else {
+            IosPipeline(inputPath, outputPath, config).execute(onProgress)
+        }
+
         onProgress(1f)
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
     }
+
+    private fun canUseExportSession(config: AudioCompressionConfig): Boolean =
+        config == AudioCompressionConfig()
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
@@ -216,5 +234,74 @@ private class IosPipeline(
         const val PROGRESS_READ_START = 0.10f
         const val PROGRESS_TRANSCODE_RANGE = 0.85f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
+    }
+}
+
+/** Uses [AVAssetExportSession] for hardware-accelerated compression with default AAC settings. */
+@OptIn(ExperimentalForeignApi::class)
+private class IosExportSessionPipeline(
+    inputPath: String,
+    private val outputPath: String,
+) {
+    private val inputUrl = NSURL.fileURLWithPath(inputPath)
+    private val outputUrl = NSURL.fileURLWithPath(outputPath)
+
+    suspend fun execute(onProgress: suspend (Float) -> Unit) {
+        val asset = AVURLAsset(uRL = inputUrl, options = null)
+        val session = AVAssetExportSession.exportSessionWithAsset(
+            asset = asset,
+            presetName = AVAssetExportPresetAppleM4A,
+        ) ?: error("AVAssetExportSession not available for input")
+        session.outputURL = outputUrl
+        session.outputFileType = AVFileTypeAppleM4A
+
+        coroutineScope {
+            val progressJob = launchProgressPoller(session, onProgress)
+            try {
+                awaitExport(session)
+            } finally {
+                progressJob.cancel()
+            }
+        }
+    }
+
+    private fun CoroutineScope.launchProgressPoller(
+        session: AVAssetExportSession,
+        onProgress: suspend (Float) -> Unit,
+    ) = launch {
+        while (isActive) {
+            onProgress(session.progress)
+            delay(PROGRESS_POLL_INTERVAL_MS)
+        }
+    }
+
+    private suspend fun awaitExport(session: AVAssetExportSession) {
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { session.cancelExport() }
+            session.exportAsynchronouslyWithCompletionHandler {
+                when (session.status) {
+                    AVAssetExportSessionStatusCompleted ->
+                        continuation.resume(Unit)
+                    AVAssetExportSessionStatusFailed -> {
+                        val msg = session.error?.localizedDescription ?: "unknown"
+                        continuation.resumeWithException(
+                            IllegalStateException("Export failed: $msg"),
+                        )
+                    }
+                    AVAssetExportSessionStatusCancelled ->
+                        continuation.resumeWithException(
+                            IllegalStateException("Export cancelled"),
+                        )
+                    else ->
+                        continuation.resumeWithException(
+                            IllegalStateException("Unexpected status: ${session.status}"),
+                        )
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val PROGRESS_POLL_INTERVAL_MS = 100L
     }
 }
