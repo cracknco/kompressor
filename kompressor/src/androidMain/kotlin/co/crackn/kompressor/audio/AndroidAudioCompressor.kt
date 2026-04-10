@@ -104,6 +104,21 @@ private suspend fun remux(
 
 // ── Full transcode: decode → encode → mux ───────────────────────────
 
+private fun createProcessor(
+    inputFormat: MediaFormat,
+    config: AudioCompressionConfig,
+    outputChannels: Int,
+): PcmProcessor? {
+    val inputRate = inputFormat.safeInt(MediaFormat.KEY_SAMPLE_RATE).let {
+        if (it > 0) it else config.sampleRate
+    }
+    val inputChannels = inputFormat.safeInt(MediaFormat.KEY_CHANNEL_COUNT).let {
+        if (it > 0) it else outputChannels
+    }
+    if (inputRate == config.sampleRate && inputChannels == outputChannels) return null
+    return PcmProcessor(inputRate, config.sampleRate, inputChannels, outputChannels)
+}
+
 @Suppress("LongParameterList")
 private suspend fun transcode(
     extractor: MediaExtractor,
@@ -114,9 +129,10 @@ private suspend fun transcode(
     totalDurationUs: Long,
     onProgress: suspend (Float) -> Unit,
 ) {
-    val channelCount = if (config.channels == AudioChannels.MONO) 1 else 2
+    val outputChannels = if (config.channels == AudioChannels.MONO) 1 else 2
+    val processor = createProcessor(inputFormat, config, outputChannels)
     val outputFormat = MediaFormat.createAudioFormat(
-        MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, channelCount,
+        MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, outputChannels,
     ).apply {
         setInteger(MediaFormat.KEY_BIT_RATE, config.bitrate)
         setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
@@ -129,7 +145,9 @@ private suspend fun transcode(
         encoder.configure(outputFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         decoder.start()
         encoder.start()
-        TranscodeLoop(extractor, decoder, encoder, muxer).run(totalDurationUs, onProgress)
+        TranscodeLoop(
+            extractor, decoder, encoder, muxer, processor, config.sampleRate, outputChannels,
+        ).run(totalDurationUs, onProgress)
     } finally {
         decoder.safeRelease()
         encoder.safeRelease()
@@ -138,26 +156,36 @@ private suspend fun transcode(
 }
 
 /**
- * Single-threaded sequential loop: feed → decode → encode → mux.
+ * Single-threaded sequential loop: feed → decode → (resample) → encode → mux.
  *
- * All three stages run in the same iteration — this naturally prevents
- * the MediaCodec buffer-pool deadlock that occurs when input and output
- * are not interleaved (the encoder cannot free input slots until its
- * output is consumed).
+ * All stages run in the same iteration — this naturally prevents the MediaCodec
+ * buffer-pool deadlock that occurs when input and output are not interleaved
+ * (the encoder cannot free input slots until its output is consumed).
+ *
+ * A [PcmProcessor] handles sample-rate and channel conversion when the input format
+ * differs from the target config.  A [PcmRingBuffer] accumulates decoded PCM so that
+ * encoder input buffers are always filled completely, preventing silent data loss when
+ * decoder output exceeds encoder buffer capacity.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LongParameterList")
 private class TranscodeLoop(
     private val extractor: MediaExtractor,
     private val decoder: MediaCodec,
     private val encoder: MediaCodec,
     private val muxer: MediaMuxer,
+    private val processor: PcmProcessor?,
+    private val outputSampleRate: Int,
+    private val outputChannels: Int,
 ) {
     private val decoderInfo = MediaCodec.BufferInfo()
     private val encoderInfo = MediaCodec.BufferInfo()
+    private val pcmBuffer = PcmRingBuffer()
     private var muxerTrackIndex = -1
     private var muxerStarted = false
     private var extractorDone = false
     private var decoderDone = false
+    private var outputSamplesWritten = 0L
+    private var cachedEncoderCapacity = DEFAULT_ENCODER_BUF_SIZE
     private var lastProgress = PROGRESS_SETUP
 
     suspend fun run(totalDurationUs: Long, onProgress: suspend (Float) -> Unit) {
@@ -193,24 +221,56 @@ private class TranscodeLoop(
         if (decoderInfo.size > 0) {
             val decoded = decoder.getOutputBuffer(status) ?: error("Decoder output null")
             decoded.position(decoderInfo.offset)
-            val encIdx = awaitEncoderInput()
-            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
-            encBuf.clear()
-            val bytes = minOf(decoded.remaining(), encBuf.capacity())
-            val savedLimit = decoded.limit()
-            decoded.limit(decoded.position() + bytes)
-            encBuf.put(decoded)
-            decoded.limit(savedLimit)
-            encoder.queueInputBuffer(encIdx, 0, bytes, decoderInfo.presentationTimeUs, 0)
+            decoded.limit(decoderInfo.offset + decoderInfo.size)
+
+            val pcmData = processor?.process(decoded) ?: decoded
+            pcmBuffer.write(pcmData)
+            feedEncoderFromBuffer()
         }
 
         decoder.releaseOutputBuffer(status, false)
 
         if (isEos) {
+            flushRemainingPcm()
             val eosIdx = awaitEncoderInput()
             encoder.queueInputBuffer(eosIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             decoderDone = true
         }
+    }
+
+    private suspend fun feedEncoderFromBuffer() {
+        while (pcmBuffer.hasChunk(cachedEncoderCapacity)) {
+            if (!feedOneEncoderChunk()) return
+        }
+    }
+
+    private fun feedOneEncoderChunk(): Boolean {
+        val encIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+        if (encIdx < 0) return false
+        val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input buffer null")
+        cachedEncoderCapacity = encBuf.capacity()
+        val bytes = pcmBuffer.readChunk(encBuf)
+        encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
+        advanceSampleCount(bytes)
+        return true
+    }
+
+    private suspend fun flushRemainingPcm() {
+        while (pcmBuffer.hasRemaining()) {
+            val encIdx = awaitEncoderInput()
+            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
+            val bytes = pcmBuffer.flush(encBuf)
+            encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
+            advanceSampleCount(bytes)
+        }
+    }
+
+    private fun computePtsUs(): Long =
+        outputSamplesWritten * MICROS_PER_SECOND / outputSampleRate
+
+    private fun advanceSampleCount(bytes: Int) {
+        val bytesPerFrame = outputChannels * BYTES_PER_SAMPLE
+        outputSamplesWritten += bytes / bytesPerFrame
     }
 
     @Suppress("ReturnCount")
@@ -301,3 +361,6 @@ private const val PROGRESS_TRANSCODE_RANGE = 0.90f
 private const val PROGRESS_REPORT_THRESHOLD = 0.01f
 private const val BITRATE_TOLERANCE = 0.8f
 private const val AAC_MIME = "audio/mp4a-latm"
+private const val BYTES_PER_SAMPLE = 2
+private const val MICROS_PER_SECOND = 1_000_000L
+private const val DEFAULT_ENCODER_BUF_SIZE = 8_192

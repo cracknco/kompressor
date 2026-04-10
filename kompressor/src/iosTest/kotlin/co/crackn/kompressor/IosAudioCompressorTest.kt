@@ -2,6 +2,7 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -111,6 +112,94 @@ class IosAudioCompressorTest {
         }
     }
 
+    @Test
+    fun compressAudio_48kTo44k_producesValidOutput() = runTest {
+        val inputPath = createTestWavFile(2, SAMPLE_RATE_48K, STEREO)
+        val outputPath = testDir + "48k_to_44k.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_44K),
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().outputSize > 0)
+    }
+
+    @Test
+    fun compressAudio_44kTo22k_voiceMessage() = runTest {
+        val inputPath = createTestWavFile(2, SAMPLE_RATE_44K, STEREO)
+        val outputPath = testDir + "voice_message.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioPresets.VOICE_MESSAGE,
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().outputSize > 0)
+    }
+
+    @Test
+    fun compressAudio_stereoToMono_sameSampleRate() = runTest {
+        val inputPath = createTestWavFile(2, SAMPLE_RATE_44K, STEREO)
+        val outputPath = testDir + "stereo_to_mono.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioCompressionConfig(channels = AudioChannels.MONO),
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().outputSize > 0)
+    }
+
+    @Test
+    fun compressAudio_monoToStereo_sameSampleRate() = runTest {
+        val inputPath = createTestWavFile(2, SAMPLE_RATE_44K, MONO)
+        val outputPath = testDir + "mono_to_stereo.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioCompressionConfig(channels = AudioChannels.STEREO),
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().outputSize > 0)
+    }
+
+    @Test
+    fun compressAudio_sampleRateConversion_preservesDuration() = runTest {
+        val durationSec = 2
+        val inputPath = createTestWavFile(durationSec, SAMPLE_RATE_48K, STEREO)
+        val outputPath = testDir + "duration_check.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_22K),
+        )
+        assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
+
+        val outputDurationSec = readOutputDurationSec(outputPath)
+        assertTrue(
+            kotlin.math.abs(outputDurationSec - durationSec.toDouble()) < DURATION_TOLERANCE_SEC,
+            "Output duration ${outputDurationSec}s should be within " +
+                "${DURATION_TOLERANCE_SEC}s of ${durationSec}s",
+        )
+    }
+
+    private fun readOutputDurationSec(path: String): Double {
+        val asset = platform.AVFoundation.AVURLAsset(
+            uRL = NSURL.fileURLWithPath(path), options = null,
+        )
+        return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
+    }
+
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): String {
         val totalSamples = sampleRate * durationSeconds
@@ -183,7 +272,10 @@ class IosAudioCompressorTest {
 
     private companion object {
         const val SAMPLE_RATE_44K = 44_100
+        const val SAMPLE_RATE_48K = 48_000
+        const val SAMPLE_RATE_22K = 22_050
         const val STEREO = 2
+        const val MONO = 1
         const val BYTES_PER_SAMPLE = 2
         const val BITS_PER_SAMPLE = 16
         const val PCM_FORMAT = 1
@@ -191,5 +283,6 @@ class IosAudioCompressorTest {
         const val WAV_HEADER_SIZE = 44
         const val RIFF_CHUNK_HEADER = 8
         const val TONE_FREQUENCY = 440.0
+        const val DURATION_TOLERANCE_SEC = 0.3
     }
 }
