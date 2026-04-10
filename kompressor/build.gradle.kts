@@ -73,10 +73,13 @@ kover {
             excludes {
                 // Platform implementations that require device/simulator tests (not host JVM)
                 classes(
-                    "co.crackn.kompressor.image.AndroidImageCompressor",
-                    "co.crackn.kompressor.video.AndroidVideoCompressor",
-                    "co.crackn.kompressor.audio.AndroidAudioCompressor",
+                    "co.crackn.kompressor.*.Android*",
+                    "co.crackn.kompressor.*.Ios*",
+                    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                    "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.IosKompressor",
+                    "co.crackn.kompressor.IosFileUtils*",
                     "co.crackn.kompressor.KompressorInitializer",
                     "co.crackn.kompressor.KompressorContext",
                 )

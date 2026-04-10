@@ -37,6 +37,23 @@
     <string name="before">Before</string>
     <string name="after">After</string>
 
+    <!-- Audio screen -->
+    <string name="select_audio">Select Audio</string>
+    <string name="select_audio_description">Choose an audio file to compress</string>
+    <string name="preset_voice_message">Voice Message</string>
+    <string name="preset_podcast">Podcast</string>
+
+    <!-- Audio custom config -->
+    <string name="bitrate">Bitrate</string>
+    <string name="bitrate_kbps_suffix">kbps</string>
+    <string name="sample_rate">Sample Rate</string>
+    <string name="channels">Channels</string>
+    <string name="mono">Mono</string>
+    <string name="stereo">Stereo</string>
+    <string name="sample_rate_22k">22.05 kHz</string>
+    <string name="sample_rate_44k">44.1 kHz</string>
+    <string name="sample_rate_48k">48 kHz</string>
+
     <!-- Coming soon -->
     <string name="coming_soon">Coming Soon</string>
     <string name="coming_soon_description">%1$s compression is under development</string>

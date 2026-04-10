@@ -19,21 +19,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.crackn.kompressor.CompressionResult
-import co.crackn.kompressor.sample.common.formatFileSize
+import co.crackn.kompressor.sample.common.StatsRow
 import coil3.compose.AsyncImage
 import kompressor.sample.generated.resources.Res
 import kompressor.sample.generated.resources.after
 import kompressor.sample.generated.resources.before
-import kompressor.sample.generated.resources.compression_ratio
-import kompressor.sample.generated.resources.duration
-import kompressor.sample.generated.resources.duration_ms
-import kompressor.sample.generated.resources.input_size
-import kompressor.sample.generated.resources.output_size
-import kompressor.sample.generated.resources.size_increase_percent
-import kompressor.sample.generated.resources.size_reduction_percent
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -116,58 +108,6 @@ private fun ImageColumn(
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(8.dp)),
             contentScale = ContentScale.Crop,
-        )
-    }
-}
-
-@Composable
-private fun StatsRow(result: CompressionResult) {
-    val deltaPercentFloat = (1f - result.compressionRatio) * 100
-    val sizeChangeText = if (deltaPercentFloat >= 0) {
-        stringResource(Res.string.size_reduction_percent, "${deltaPercentFloat.toInt()}%")
-    } else {
-        stringResource(Res.string.size_increase_percent, "${(-deltaPercentFloat).toInt()}%")
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        StatItem(
-            label = stringResource(Res.string.input_size),
-            value = formatFileSize(result.inputSize),
-        )
-        StatItem(
-            label = stringResource(Res.string.output_size),
-            value = formatFileSize(result.outputSize),
-        )
-        StatItem(
-            label = stringResource(Res.string.compression_ratio),
-            value = sizeChangeText,
-        )
-        StatItem(
-            label = stringResource(Res.string.duration),
-            value = stringResource(
-                Res.string.duration_ms,
-                result.durationMs.toString(),
-            ),
-        )
-    }
-}
-
-@Composable
-private fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -1,11 +1,12 @@
-package co.crackn.kompressor.sample.image
+package co.crackn.kompressor.sample.audio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.Kompressor
-import co.crackn.kompressor.image.ImageCompressionConfig
-import co.crackn.kompressor.image.ImagePresets
+import co.crackn.kompressor.audio.AudioChannels
+import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.audio.AudioPresets
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
@@ -13,84 +14,88 @@ import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 
 @Inject
-class ImageCompressViewModel(
+class AudioCompressViewModel(
     private val kompressor: Kompressor,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ImageCompressState())
-    val state: StateFlow<ImageCompressState> = _state.asStateFlow()
+    private val _state = MutableStateFlow(AudioCompressState())
+    val state: StateFlow<AudioCompressState> = _state.asStateFlow()
 
-    fun onImagePicked(file: PlatformFile) {
+    fun onAudioPicked(file: PlatformFile) {
+        if (_state.value.isCompressing) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 deleteTempFiles()
                 val inputFile = createTempFile("input")
-                file.copyTo(inputFile)
+                try {
+                    file.copyTo(inputFile)
+                } catch (e: Exception) {
+                    runCatching { inputFile.delete(mustExist = false) }
+                    throw e
+                }
                 _state.update {
                     it.copy(
-                        selectedImagePath = inputFile.path,
+                        selectedAudioPath = inputFile.path,
                         selectedFileName = file.name,
-                        compressedImagePath = null,
+                        compressedAudioPath = null,
                         result = null,
                         error = null,
                         progress = 0f,
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
-                        selectedImagePath = null,
+                        selectedAudioPath = null,
                         selectedFileName = null,
-                        compressedImagePath = null,
+                        compressedAudioPath = null,
                         result = null,
                         progress = 0f,
-                        error = e.message ?: "Failed to import image",
+                        error = e.message ?: "Failed to import audio",
                     )
                 }
             }
         }
     }
 
-    fun onPresetSelected(preset: PresetOption) {
+    fun onPresetSelected(preset: AudioPresetOption) {
         _state.update { it.copy(selectedPreset = preset) }
     }
 
-    fun onCustomQualityChanged(quality: Int) {
-        _state.update { it.copy(customQuality = quality.coerceIn(1, 100)) }
+    fun onCustomBitrateChanged(value: String) {
+        _state.update { it.copy(customBitrate = value) }
     }
 
-    fun onCustomMaxWidthChanged(value: String) {
-        _state.update { it.copy(customMaxWidth = value) }
+    fun onCustomSampleRateChanged(sampleRate: Int) {
+        _state.update { it.copy(customSampleRate = sampleRate) }
     }
 
-    fun onCustomMaxHeightChanged(value: String) {
-        _state.update { it.copy(customMaxHeight = value) }
+    fun onCustomChannelsChanged(channels: AudioChannels) {
+        _state.update { it.copy(customChannels = channels) }
     }
 
     fun compress() {
-        val inputPath = _state.value.selectedImagePath ?: return
+        val inputPath = _state.value.selectedAudioPath ?: return
 
         _state.update {
             it.copy(
                 isCompressing = true,
                 progress = 0f,
                 error = null,
-                compressedImagePath = null,
                 result = null,
             )
         }
@@ -99,11 +104,10 @@ class ImageCompressViewModel(
     }
 
     private suspend fun runCompression(inputPath: String) {
-        val outputFile = createTempFile("output")
-        // Track the output path immediately so it is cleaned up even if compression is cancelled
-        _state.update { it.copy(compressedImagePath = outputFile.path) }
         try {
-            kompressor.image.compress(
+            val outputFile = createTempFile("output")
+            _state.update { it.copy(compressedAudioPath = outputFile.path) }
+            kompressor.audio.compress(
                 inputPath = inputPath,
                 outputPath = outputFile.path,
                 config = buildConfig(),
@@ -111,13 +115,11 @@ class ImageCompressViewModel(
                     _state.update { it.copy(progress = progress) }
                 },
             ).fold(
-                onSuccess = { handleSuccess(outputFile.path, it) },
-                onFailure = { handleFailure(it, outputFile.path) },
+                onSuccess = { handleSuccess(it) },
+                onFailure = { handleFailure(it) },
             )
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
-            handleFailure(e, outputFile.path)
+            handleFailure(e)
         } finally {
             _state.update {
                 if (it.isCompressing) it.copy(isCompressing = false) else it
@@ -127,38 +129,32 @@ class ImageCompressViewModel(
 
     fun reset() {
         val paths = currentTempPaths()
-        _state.update { ImageCompressState() }
+        _state.update { AudioCompressState() }
         viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
     }
 
-    /** Clears the current error so the same message can retrigger the snackbar. */
     fun clearError() {
         _state.update { it.copy(error = null) }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     override fun onCleared() {
         val paths = currentTempPaths()
-        viewModelScope.launch(Dispatchers.IO + NonCancellable) { deletePaths(paths) }
+        GlobalScope.launch(Dispatchers.IO) { deletePaths(paths) }
         super.onCleared()
     }
 
-    private fun handleSuccess(outputPath: String, result: CompressionResult) {
+    private fun handleSuccess(result: CompressionResult) {
         _state.update {
             it.copy(
                 isCompressing = false,
-                compressedImagePath = outputPath,
                 result = result,
                 progress = 1f,
             )
         }
     }
 
-    private fun handleFailure(error: Throwable, outputPath: String? = null) {
-        outputPath?.let { path ->
-            viewModelScope.launch(Dispatchers.IO) {
-                runCatching { PlatformFile(path).delete(mustExist = false) }
-            }
-        }
+    private fun handleFailure(error: Throwable) {
         _state.update {
             it.copy(
                 isCompressing = false,
@@ -168,21 +164,26 @@ class ImageCompressViewModel(
         }
     }
 
-    private fun buildConfig(): ImageCompressionConfig =
+    private fun buildConfig(): AudioCompressionConfig =
         when (_state.value.selectedPreset) {
-            PresetOption.THUMBNAIL -> ImagePresets.THUMBNAIL
-            PresetOption.WEB -> ImagePresets.WEB
-            PresetOption.HIGH_QUALITY -> ImagePresets.HIGH_QUALITY
-            PresetOption.CUSTOM -> ImageCompressionConfig(
-                quality = _state.value.customQuality,
-                maxWidth = _state.value.customMaxWidth.toIntOrNull()?.takeIf { it > 0 },
-                maxHeight = _state.value.customMaxHeight.toIntOrNull()?.takeIf { it > 0 },
+            AudioPresetOption.VOICE_MESSAGE -> AudioPresets.VOICE_MESSAGE
+            AudioPresetOption.PODCAST -> AudioPresets.PODCAST
+            AudioPresetOption.HIGH_QUALITY -> AudioPresets.HIGH_QUALITY
+            AudioPresetOption.CUSTOM -> AudioCompressionConfig(
+                bitrate = parseBitrateKbps() * KBPS_MULTIPLIER,
+                sampleRate = _state.value.customSampleRate,
+                channels = _state.value.customChannels,
             )
         }
 
+    private fun parseBitrateKbps(): Int =
+        _state.value.customBitrate.toIntOrNull()
+            ?.coerceIn(1, MAX_BITRATE_KBPS)
+            ?: DEFAULT_BITRATE_KBPS
+
     private fun currentTempPaths(): List<String> = listOfNotNull(
-        _state.value.selectedImagePath,
-        _state.value.compressedImagePath,
+        _state.value.selectedAudioPath,
+        _state.value.compressedAudioPath,
     )
 
     private suspend fun deleteTempFiles() {
@@ -198,6 +199,12 @@ class ImageCompressViewModel(
     private fun createTempFile(prefix: String): PlatformFile =
         PlatformFile(
             FileKit.cacheDir,
-            "kompressor_${prefix}_${Random.nextLong(1_000_000_000)}.jpg",
+            "kompressor_audio_${prefix}_${Random.nextLong(1_000_000_000)}.m4a",
         )
+
+    private companion object {
+        const val DEFAULT_BITRATE_KBPS = 128
+        const val MAX_BITRATE_KBPS = 2_000
+        const val KBPS_MULTIPLIER = 1_000
+    }
 }
