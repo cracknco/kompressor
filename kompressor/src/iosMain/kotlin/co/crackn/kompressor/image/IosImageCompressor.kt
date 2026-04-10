@@ -3,11 +3,10 @@ package co.crackn.kompressor.image
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
-import platform.CoreGraphics.CGImageGetHeight
-import platform.CoreGraphics.CGImageGetWidth
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSFileManager
@@ -36,17 +35,15 @@ internal class IosImageCompressor : ImageCompressor {
 
         val inputSize = fileSize(inputPath)
         val image = loadImage(inputPath)
-        val cgImage = image.CGImage ?: error("Cannot decode image: $inputPath")
         currentCoroutineContext().ensureActive()
         onProgress(0.3f)
 
-        val origWidth = CGImageGetWidth(cgImage).toInt()
-        val origHeight = CGImageGetHeight(cgImage).toInt()
+        val (pixelWidth, pixelHeight) = orientedPixelDimensions(image)
         val target = calculateTargetDimensions(
-            origWidth, origHeight,
+            pixelWidth, pixelHeight,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        val resized = resizeImageIfNeeded(image, origWidth, origHeight, target)
+        val resized = resizeImageIfNeeded(image, pixelWidth, pixelHeight, target)
         currentCoroutineContext().ensureActive()
         onProgress(0.6f)
 
@@ -57,6 +54,20 @@ internal class IosImageCompressor : ImageCompressor {
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
 
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Returns pixel dimensions that respect the EXIF/UIImage orientation.
+     * [UIImage.size] returns points in the display orientation;
+     * multiplying by [UIImage.scale] gives the actual pixel count.
+     */
+    private fun orientedPixelDimensions(image: UIImage): Pair<Int, Int> {
+        val size = image.size.useContents { Pair(width, height) }
+        val scale = image.scale
+        return Pair(
+            (size.first * scale).toInt(),
+            (size.second * scale).toInt(),
+        )
     }
 
     private fun loadImage(path: String): UIImage {
@@ -76,14 +87,37 @@ internal class IosImageCompressor : ImageCompressor {
         origHeight: Int,
         target: ImageDimensions,
     ): UIImage {
-        if (origWidth == target.width && origHeight == target.height) return image
+        if (origWidth == target.width && origHeight == target.height) {
+            return normalizeOrientation(image)
+        }
 
         val targetSize = CGSizeMake(target.width.toDouble(), target.height.toDouble())
         UIGraphicsBeginImageContextWithOptions(targetSize, true, SCALE_PIXELS)
         try {
-            image.drawInRect(CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()))
+            image.drawInRect(
+                CGRectMake(0.0, 0.0, target.width.toDouble(), target.height.toDouble()),
+            )
             return UIGraphicsGetImageFromCurrentImageContext()
                 ?: error("Failed to resize image")
+        } finally {
+            UIGraphicsEndImageContext()
+        }
+    }
+
+    /**
+     * When no resize is needed, we still need to "flatten" the UIImage orientation
+     * so the JPEG output has the correct pixel layout. Drawing into a context at
+     * the original size forces UIImage to apply its orientation transform.
+     */
+    private fun normalizeOrientation(image: UIImage): UIImage {
+        val size = image.size.useContents { Pair(width, height) }
+        val scale = image.scale
+        val cgSize = CGSizeMake(size.first, size.second)
+        UIGraphicsBeginImageContextWithOptions(cgSize, true, scale)
+        try {
+            image.drawInRect(CGRectMake(0.0, 0.0, size.first, size.second))
+            return UIGraphicsGetImageFromCurrentImageContext()
+                ?: error("Failed to normalize image orientation")
         } finally {
             UIGraphicsEndImageContext()
         }

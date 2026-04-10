@@ -2,6 +2,8 @@ package co.crackn.kompressor.image
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
@@ -22,16 +24,18 @@ internal class AndroidImageCompressor : ImageCompressor {
         val startNanos = System.nanoTime()
         onProgress(0f)
 
-        val originalDims = decodeImageDimensions(inputPath)
         val inputSize = File(inputPath).length()
+        val exifRotation = readExifRotation(inputPath)
+        val rawDims = decodeRawDimensions(inputPath)
+        val orientedDims = applyRotationToDimensions(rawDims, exifRotation)
         currentCoroutineContext().ensureActive()
         onProgress(0.1f)
 
         val target = calculateTargetDimensions(
-            originalDims.width, originalDims.height,
+            orientedDims.width, orientedDims.height,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        val bitmap = decodeSampledBitmap(inputPath, originalDims, target)
+        val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
         currentCoroutineContext().ensureActive()
         onProgress(0.3f)
 
@@ -42,6 +46,23 @@ internal class AndroidImageCompressor : ImageCompressor {
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
         CompressionResult(inputSize, outputSize, durationMs)
     }
+
+    private fun readExifRotation(path: String): ExifRotation {
+        val exif = ExifInterface(path)
+        return when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> ExifRotation(degrees = 90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> ExifRotation(degrees = 180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> ExifRotation(degrees = 270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifRotation(scaleX = -1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifRotation(scaleY = -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> ExifRotation(degrees = 90f, scaleX = -1f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> ExifRotation(degrees = 270f, scaleX = -1f)
+            else -> ExifRotation()
+        }
+    }
+
+    private fun applyRotationToDimensions(dims: ImageDimensions, rotation: ExifRotation): ImageDimensions =
+        if (rotation.swapsDimensions) ImageDimensions(dims.height, dims.width) else dims
 
     private fun resizeAndWrite(bitmap: Bitmap, target: ImageDimensions, outputPath: String, quality: Int) {
         try {
@@ -56,7 +77,7 @@ internal class AndroidImageCompressor : ImageCompressor {
         }
     }
 
-    private fun decodeImageDimensions(path: String): ImageDimensions {
+    private fun decodeRawDimensions(path: String): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, options)
         require(options.outWidth > 0 && options.outHeight > 0) {
@@ -65,14 +86,28 @@ internal class AndroidImageCompressor : ImageCompressor {
         return ImageDimensions(options.outWidth, options.outHeight)
     }
 
-    private fun decodeSampledBitmap(path: String, original: ImageDimensions, target: ImageDimensions): Bitmap {
+    private fun decodeSampledBitmap(
+        path: String,
+        rawDims: ImageDimensions,
+        target: ImageDimensions,
+        exifRotation: ExifRotation,
+    ): Bitmap {
         val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(
-                original.width, original.height, target.width, target.height,
-            )
+            inSampleSize = calculateInSampleSize(rawDims.width, rawDims.height, target.width, target.height)
         }
-        return BitmapFactory.decodeFile(path, options)
-            ?: error("Failed to decode image: $path")
+        val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
+        return applyExifRotation(decoded, exifRotation)
+    }
+
+    private fun applyExifRotation(bitmap: Bitmap, rotation: ExifRotation): Bitmap {
+        if (rotation.isIdentity) return bitmap
+        val matrix = Matrix().apply {
+            postRotate(rotation.degrees)
+            postScale(rotation.scaleX, rotation.scaleY)
+        }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated !== bitmap) bitmap.recycle()
+        return rotated
     }
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
@@ -90,4 +125,17 @@ internal class AndroidImageCompressor : ImageCompressor {
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
     }
+}
+
+/**
+ * Describes the EXIF orientation transform to apply to raw pixel data.
+ * Defaults to identity (no transform).
+ */
+private data class ExifRotation(
+    val degrees: Float = 0f,
+    val scaleX: Float = 1f,
+    val scaleY: Float = 1f,
+) {
+    val isIdentity: Boolean get() = degrees == 0f && scaleX == 1f && scaleY == 1f
+    val swapsDimensions: Boolean get() = degrees == 90f || degrees == 270f
 }
