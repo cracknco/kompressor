@@ -57,13 +57,17 @@ jobs:
           path: cpg-swift.bin
           key: cpg-swift-${{ steps.joern-version.outputs.version }}-${{ hashFiles('kompressor/src/iosMain/**') }}
 
-      # ── Generate CPGs (skip on cache hit) ──────────────────
-      - name: Generate CPG — Kotlin (commonMain + androidMain)
-        if: steps.cpg-kotlin-cache.outputs.cache-hit != 'true'
+      # ── Prepare source symlinks (always needed for suppression checks) ─
+      - name: Create CPG input symlinks
         run: |
           mkdir -p .cpg-input-kotlin
           ln -s "$PWD/kompressor/src/commonMain/kotlin" .cpg-input-kotlin/commonMain
           ln -s "$PWD/kompressor/src/androidMain/kotlin" .cpg-input-kotlin/androidMain
+
+      # ── Generate CPGs (skip on cache hit) ──────────────────
+      - name: Generate CPG — Kotlin (commonMain + androidMain)
+        if: steps.cpg-kotlin-cache.outputs.cache-hit != 'true'
+        run: |
           joern-parse \
             --language kotlin \
             --output cpg-kotlin.bin \
