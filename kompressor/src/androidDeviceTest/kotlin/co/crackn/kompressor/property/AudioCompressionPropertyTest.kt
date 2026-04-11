@@ -38,6 +38,11 @@ class AudioCompressionPropertyTest {
 
     @Test
     fun randomValidConfigs_alwaysSucceed() = runTest {
+        val wavBytes = WavGenerator.generateWavBytes(
+            durationSeconds = 1,
+            sampleRate = INPUT_SAMPLE_RATE,
+            channels = INPUT_CHANNELS,
+        )
         checkAll(
             PropTestConfig(seed = SEED, iterations = ITERATIONS),
             Arb.int(32_000..192_000),
@@ -50,11 +55,6 @@ class AudioCompressionPropertyTest {
                 channels = channels,
             )
 
-            val wavBytes = WavGenerator.generateWavBytes(
-                durationSeconds = 1,
-                sampleRate = INPUT_SAMPLE_RATE,
-                channels = INPUT_CHANNELS,
-            )
             val input = File(tempDir, "input_${bitrate}_${sampleRate}_${channels.count}.wav")
             input.writeBytes(wavBytes)
             val output = File(tempDir, "output_${bitrate}_${sampleRate}_${channels.count}.m4a")
@@ -70,7 +70,6 @@ class AudioCompressionPropertyTest {
             val outputBytes = output.readBytes()
             assertTrue(OutputValidators.isValidM4a(outputBytes), "Output should be valid M4A")
 
-            // Clean up between iterations
             input.delete()
             output.delete()
         }

@@ -17,6 +17,7 @@ import platform.posix.memcpy
  * Resources placed in `src/iosTest/resources/` (or propagated from `commonTest/resources/`)
  * are automatically bundled into the test framework by KGP 1.9.20+.
  */
+@Suppress("unused") // Infrastructure for fixture-based golden tests
 fun readTestResource(path: String): ByteArray {
     val lastSlash = path.lastIndexOf('/')
     val directory = if (lastSlash >= 0) path.substring(0, lastSlash) else null
