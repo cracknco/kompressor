@@ -20,6 +20,9 @@
   val excludePatterns: List[String] =
     config.obj.get("exclude").map(_.arr.map(_.str).toList).getOrElse(Nil)
 
+  val allowSuppressAll: Boolean =
+    config.obj.get("suppression").flatMap(_.obj.get("allow-suppress-all")).exists(_.bool)
+
   def ruleEnabled(ruleId: String): Boolean =
     config.obj.get("rules").flatMap(_.obj.get(ruleId)).flatMap(_.obj.get("enabled")).forall(_.bool)
 
@@ -27,7 +30,11 @@
   val findings = scala.collection.mutable.ArrayBuffer[ujson.Obj]()
 
   def finding(ruleId: String, severity: String, message: String, file: String, line: Int, method: String): Unit = {
-    if (excludePatterns.exists(p => file.matches(p.replace("**", ".*").replace("*", "[^/]*")))) return
+    // Replace ** first with a placeholder to avoid clobbering the * inside .*
+    if (excludePatterns.exists { p =>
+      val regex = p.replace("**", "\u0000").replace("*", "[^/]*").replace("\u0000", ".*")
+      file.matches(regex)
+    }) return
     val suppressed = isSuppressed(file, line, ruleId)
     findings += ujson.Obj(
       "type" -> ruleId,
@@ -49,22 +56,21 @@
       val linesToCheck = List(targetLine, targetLine - 1).filter(i => i >= 0 && i < lines.length)
       linesToCheck.exists { i =>
         lines(i).contains(s"codebadger:suppress($ruleId)") ||
-        lines(i).contains("codebadger:suppress(all)")
+        (allowSuppressAll && lines(i).contains("codebadger:suppress(all)"))
       }
     } catch {
-      case _: Exception => false
+      case e: Exception =>
+        System.err.println(s"Warning: could not read $filePath for suppression check: ${e.getMessage}")
+        false
     }
   }
 
   def fileOf(node: StoredNode): String =
-    node match {
-      case n: HasFile => n.file.name.headOption.getOrElse("unknown")
-      case _ => "unknown"
-    }
+    node.file.name.headOption.getOrElse("unknown")
 
   def lineOf(node: StoredNode): Int =
     node match {
-      case n: HasLineNumber => n.lineNumber.getOrElse(-1)
+      case n: AstNode => n.lineNumber.getOrElse(-1)
       case _ => -1
     }
 
@@ -117,8 +123,8 @@
     val bareReleases = cpg.call
       .name("release|stop")
       .where(_.or(
-        _.argument(0).typeFullName(".*MediaCodec.*"),
-        _.argument(0).typeFullName(".*MediaMuxer.*"),
+        _.argument(0).evalType(".*MediaCodec.*"),
+        _.argument(0).evalType(".*MediaMuxer.*"),
         _.code(".*MediaCodec.*"),
         _.code(".*MediaMuxer.*"),
       ))
@@ -150,10 +156,7 @@
         .ast.isCall
         .name(".*(?i)(CFRelease).*")
         .l
-      // Also accept CFRelease anywhere in a try block (covers try-finally patterns
-      // where Joern may model the structure differently for Kotlin/Native)
-      val cfReleaseAnywhere = method.call.name(".*(?i)(CFRelease).*").l
-      if (cfReleaseAnywhere.isEmpty) {
+      if (cfReleaseInFinally.isEmpty) {
         finding(
           "cfrelease-missing", "error",
           s"Retained CF object from ${call.name}() must be released with CFRelease in a finally block",
@@ -177,15 +180,11 @@
         .name(".*UIGraphicsEndImageContext.*")
         .l
       if (endsInFinally.isEmpty) {
-        // Check if End exists at all (fallback for Kotlin/Native CPG modeling)
-        val anyEnd = method.call.name(".*UIGraphicsEndImageContext.*").l
-        if (anyEnd.isEmpty) {
-          finding(
-            "uigraphics-context-pairing", "error",
-            "UIGraphicsBeginImageContext without matching UIGraphicsEndImageContext in finally block",
-            fileOf(begin), lineOf(begin), method.name,
-          )
-        }
+        finding(
+          "uigraphics-context-pairing", "error",
+          "UIGraphicsBeginImageContext without matching UIGraphicsEndImageContext in finally block",
+          fileOf(begin), lineOf(begin), method.name,
+        )
       }
     }
   }
@@ -221,8 +220,8 @@
   if (ruleEnabled("bare-runcatching")) {
     val bareRunCatching = cpg.call
       .name("runCatching")
-      .filterNot(_.file.name(".*(?i)test.*"))
-      .filterNot(_.file.name(".*SuspendRunCatching.*"))
+      .whereNot(_.file.name(".*(?i)test.*"))
+      .whereNot(_.file.name(".*SuspendRunCatching.*"))
       .l
 
     for (call <- bareRunCatching) {
@@ -242,10 +241,11 @@
 
     for (cont <- continuations) {
       val method = cont.method
-      // Check for the three required patterns in the method containing the continuation
-      val hasResume = method.call.name("resume").nonEmpty
-      val hasResumeWithException = method.call.name("resumeWithException").nonEmpty
-      val hasInvokeOnCancellation = method.call.name("invokeOnCancellation").nonEmpty
+      // Check within the continuation's lambda block, not the entire method
+      val contBlock = cont.argument.isBlock.headOption.getOrElse(cont.astParent)
+      val hasResume = contBlock.ast.isCall.name("resume").nonEmpty
+      val hasResumeWithException = contBlock.ast.isCall.name("resumeWithException").nonEmpty
+      val hasInvokeOnCancellation = contBlock.ast.isCall.name("invokeOnCancellation").nonEmpty
 
       if (!hasResume || !hasResumeWithException || !hasInvokeOnCancellation) {
         val missing = List(
@@ -282,28 +282,43 @@
 
   // ── Q9: Taint flow — user input to file write ───────────────
   if (ruleEnabled("taint-flow")) {
+    import io.joern.dataflowengineoss.language._
+    import io.joern.dataflowengineoss.queryengine.EngineContext
+    import io.joern.dataflowengineoss.semanticsloader.NoSemantics
+    implicit val engineContext: EngineContext = EngineContext(NoSemantics)
+
     val sources = cpg.call
       .name(".*(?i)(getParameter|readLine|userInput|intent\\.get|Uri\\.parse|openInputStream).*")
-      .l
     val sinks = cpg.call
       .name(".*(?i)(write|outputStream|saveTo).*")
-      .l
 
-    for (source <- sources; sink <- sinks) {
-      val flows = sink.reachableByFlows(source).l
-      for (flow <- flows) {
-        finding(
-          "taint-flow", "error",
-          s"Unvalidated data flow from ${source.code.take(60)} to ${sink.code.take(60)}",
-          fileOf(source), lineOf(source), source.method.name,
-        )
+    val flows = sinks.reachableByFlows(sources).l
+    for (flow <- flows) {
+      val resolvedSrc = flow.elements.collectFirst { case n: StoredNode => n }
+      val resolvedSnk = flow.elements.reverse.collectFirst { case n: StoredNode => n }
+      (resolvedSrc, resolvedSnk) match {
+        case (Some(src), Some(snk)) =>
+          val methodName = src match {
+            case n: CfgNode => n.method.name
+            case _ => "unknown"
+          }
+          finding(
+            "taint-flow", "error",
+            s"Unvalidated data flow from ${src.code.take(60)} to ${snk.code.take(60)}",
+            fileOf(src), lineOf(src), methodName,
+          )
+        case _ => // skip flow if nodes cannot be resolved
       }
     }
   }
 
   // ── Q10: Force-unwrap detection (Swift) ─────────────────────
   if (ruleEnabled("force-unwrap")) {
-    val forceUnwraps = cpg.call.name(".*!$").l
+    // Joern's swiftsrc2cpg models force-unwraps as <operator>.forceUnwrap calls.
+    val forceUnwraps = cpg.call
+      .name("<operator>\\.forceUnwrap")
+      .whereNot(_.file.name(".*\\.kt$")) // Swift-only rule
+      .l
     for (fu <- forceUnwraps) {
       finding(
         "force-unwrap", "warning",

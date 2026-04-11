@@ -245,14 +245,19 @@ private class TranscodeLoop(
     }
 
     private fun feedOneEncoderChunk(): Boolean {
+        var handled = false
         val encIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-        if (encIdx < 0) return false
-        val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input buffer null")
-        cachedEncoderCapacity = encBuf.capacity()
-        val bytes = pcmBuffer.readChunk(encBuf)
-        encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
-        advanceSampleCount(bytes)
-        return true
+        if (encIdx >= 0) {
+            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input buffer null")
+            cachedEncoderCapacity = encBuf.capacity()
+            if (pcmBuffer.hasChunk(encBuf.capacity())) {
+                val bytes = pcmBuffer.readChunk(encBuf)
+                encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
+                advanceSampleCount(bytes)
+                handled = true
+            }
+        }
+        return handled
     }
 
     private suspend fun flushRemainingPcm() {

@@ -13,7 +13,7 @@ exclude:
 # Inline suppression settings
 suppression:
   comment-prefix: "codebadger:suppress"
-  allow-suppress-all: true
+  allow-suppress-all: false
 
 # Per-rule configuration
 rules:

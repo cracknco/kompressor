@@ -129,6 +129,11 @@ class IosAudioCompressorTest {
 
         assertTrue(result.isSuccess)
         assertTrue(result.getOrThrow().outputSize > 0)
+
+        // Assert that resampling actually occurred
+        val metadata = readOutputMetadata(outputPath)
+        assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should be resampled to 44.1kHz")
+        assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
 
     @Test
@@ -144,6 +149,11 @@ class IosAudioCompressorTest {
 
         assertTrue(result.isSuccess)
         assertTrue(result.getOrThrow().outputSize > 0)
+
+        // Assert that resampling and channel conversion occurred for voice preset
+        val metadata = readOutputMetadata(outputPath)
+        assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Voice message should be resampled to 22.05kHz")
+        assertEquals(MONO, metadata.channels, "Voice message should be converted to mono")
     }
 
     @Test
@@ -159,6 +169,11 @@ class IosAudioCompressorTest {
 
         assertTrue(result.isSuccess)
         assertTrue(result.getOrThrow().outputSize > 0)
+
+        // Assert that channel conversion actually occurred
+        val metadata = readOutputMetadata(outputPath)
+        assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
+        assertEquals(MONO, metadata.channels, "Output should be converted to mono")
     }
 
     @Test
@@ -174,6 +189,11 @@ class IosAudioCompressorTest {
 
         assertTrue(result.isSuccess)
         assertTrue(result.getOrThrow().outputSize > 0)
+
+        // Assert that channel conversion actually occurred
+        val metadata = readOutputMetadata(outputPath)
+        assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
+        assertEquals(STEREO, metadata.channels, "Output should be converted to stereo")
     }
 
     @Test
@@ -195,6 +215,11 @@ class IosAudioCompressorTest {
             "Output duration ${outputDurationSec}s should be within " +
                 "${DURATION_TOLERANCE_SEC}s of ${durationSec}s",
         )
+
+        // Assert that resampling actually occurred
+        val metadata = readOutputMetadata(outputPath)
+        assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Output should be resampled to 22.05kHz")
+        assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
 
     private fun readOutputDurationSec(path: String): Double {
@@ -203,6 +228,31 @@ class IosAudioCompressorTest {
         )
         return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
     }
+
+    private fun readOutputMetadata(path: String): AudioMetadata {
+        val asset = platform.AVFoundation.AVURLAsset(
+            uRL = NSURL.fileURLWithPath(path), options = null,
+        )
+        val tracks = asset.tracksWithMediaType(platform.AVFoundation.AVMediaTypeAudio)
+        check(tracks.isNotEmpty()) { "No audio track found in output" }
+
+        val track = tracks.first() as platform.AVFoundation.AVAssetTrack
+        val formatDescriptions = track.formatDescriptions as List<*>
+        check(formatDescriptions.isNotEmpty()) { "No format descriptions found" }
+
+        val formatDesc = formatDescriptions.first()
+        val basicDesc = platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription(
+            formatDesc as platform.CoreMedia.CMAudioFormatDescriptionRef
+        )
+        checkNotNull(basicDesc) { "Could not read audio format description" }
+
+        val sampleRate = basicDesc.pointed.mSampleRate.toInt()
+        val channels = basicDesc.pointed.mChannelsPerFrame.toInt()
+
+        return AudioMetadata(sampleRate, channels)
+    }
+
+    private data class AudioMetadata(val sampleRate: Int, val channels: Int)
 
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): String {
@@ -230,11 +280,14 @@ class IosAudioCompressorTest {
         writeString(bytes, 36, "data")
         writeIntLE(bytes, 40, dataSize)
 
-        // PCM sine wave at 440 Hz
+        // PCM sine waves - distinct frequencies for each channel to verify mixing
         var offset = headerSize
         for (i in 0 until totalSamples) {
-            val sample = (Short.MAX_VALUE * sin(2.0 * kotlin.math.PI * TONE_FREQUENCY * i / sampleRate)).toInt().toShort()
             for (ch in 0 until channels) {
+                // Use different frequencies for different channels:
+                // Left channel (0): 440 Hz, Right channel (1): 880 Hz
+                val frequency = TONE_FREQUENCY * (ch + 1)
+                val sample = (Short.MAX_VALUE * sin(2.0 * kotlin.math.PI * frequency * i / sampleRate)).toInt().toShort()
                 bytes[offset++] = (sample.toInt() and 0xFF).toByte()
                 bytes[offset++] = ((sample.toInt() shr 8) and 0xFF).toByte()
             }

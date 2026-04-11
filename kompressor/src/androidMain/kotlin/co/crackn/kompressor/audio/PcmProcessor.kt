@@ -30,6 +30,8 @@ internal class PcmProcessor(
     private val outputChannels: Int,
 ) {
     init {
+        require(inputRate > 0) { "Input sample rate must be > 0, got: $inputRate" }
+        require(outputRate > 0) { "Output sample rate must be > 0, got: $outputRate" }
         require(inputChannels == MONO_CHANNELS || inputChannels == STEREO_CHANNELS) {
             "Unsupported input channel count: $inputChannels"
         }
@@ -65,7 +67,11 @@ internal class PcmProcessor(
      */
     fun process(input: ByteBuffer): ByteBuffer {
         input.order(ByteOrder.LITTLE_ENDIAN)
-        val frameCount = input.remaining() / (inputChannels * BYTES_PER_SAMPLE)
+        val frameSize = inputChannels * BYTES_PER_SAMPLE
+        require(input.remaining() % frameSize == 0) {
+            "Input buffer size ${input.remaining()} is not a multiple of frame size $frameSize"
+        }
+        val frameCount = input.remaining() / frameSize
         val samples = readFlat(input, frameCount)
 
         var data = samples
@@ -115,14 +121,32 @@ internal class PcmProcessor(
     }
 
     /**
-     * Resamples interleaved PCM via linear interpolation.
+     * Prepends [lastChunkFrame] to [data] so that linear interpolation can cross the
+     * boundary between consecutive chunks without a discontinuity.
      *
-     * Maintains streaming continuity across chunk boundaries by prepending the last
-     * frame of the previous chunk to the current input.  When the interpolation index
-     * would require the first frame of the *next* chunk (i.e. at the final boundary),
-     * the loop stops and defers that output to the following [process] call.  This
-     * eliminates the periodic discontinuity that the hold-last-value approach produced
-     * at every chunk boundary.
+     * Returns a triple of (extended data, extended frame count, phase offset to apply).
+     * The phase offset shifts the accumulator so that [phase] = 0 still corresponds to
+     * the first frame of [data], even after the prepended frame is added at index 0.
+     * When no previous frame exists (first call), the original [data] is returned as-is.
+     */
+    private fun extendWithPrevFrame(
+        data: ShortArray,
+        frameCount: Int,
+        channels: Int,
+    ): Triple<ShortArray, Int, Int> {
+        val prev = lastChunkFrame ?: return Triple(data, frameCount, 0)
+        val ext = ShortArray(channels + data.size)
+        prev.copyInto(ext, 0)
+        data.copyInto(ext, channels)
+        return Triple(ext, frameCount + 1, 1)
+    }
+
+    /**
+     * Resamples interleaved PCM via linear interpolation with cross-chunk continuity.
+     *
+     * Delegates boundary setup to [extendWithPrevFrame] and stops the loop before the
+     * final extended frame so that the boundary-straddling output is produced by the
+     * next [process] call, eliminating the periodic discontinuity of hold-last-value.
      */
     @Suppress("NestedBlockDepth")
     private fun resample(
@@ -131,37 +155,14 @@ internal class PcmProcessor(
         channels: Int,
     ): ShortArray {
         if (frameCount == 0) return ShortArray(0)
-
-        // Prepend last frame from previous chunk for seamless cross-boundary interpolation.
-        val prev = lastChunkFrame
-        val extData: ShortArray
-        val extFrameCount: Int
-        val phaseOffset: Int
-        if (prev != null) {
-            extData = ShortArray(channels + data.size)
-            prev.copyInto(extData, 0)
-            data.copyInto(extData, channels)
-            extFrameCount = frameCount + 1
-            phaseOffset = 1
-        } else {
-            extData = data
-            extFrameCount = frameCount
-            phaseOffset = 0
-        }
-
-        // Save the last frame of the current chunk for the next call.
+        val (extData, extFrameCount, phaseOffset) = extendWithPrevFrame(data, frameCount, channels)
         lastChunkFrame = data.copyOfRange((frameCount - 1) * channels, frameCount * channels)
-
-        val estOutput = ((frameCount * ratio) + 2).toInt()
-        val out = ShortArray(estOutput * channels)
+        val out = ShortArray(((frameCount * ratio) + 2).toInt() * channels)
         var written = 0
-
         phase += phaseOffset
         while (phase < extFrameCount) {
             val idx = phase.toInt()
             val frac = phase - idx
-            // Stop before the last frame: interpolation between the last frame of this
-            // chunk and the first frame of the next chunk is handled in the next call.
             if (idx + 1 >= extFrameCount) break
             val base0 = idx * channels
             val base1 = (idx + 1) * channels
@@ -175,7 +176,6 @@ internal class PcmProcessor(
             phase += 1.0 / ratio
         }
         phase -= extFrameCount
-
         return out.copyOf(written)
     }
 
