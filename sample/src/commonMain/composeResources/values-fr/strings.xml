@@ -54,6 +54,25 @@
     <string name="sample_rate_44k">44,1 kHz</string>
     <string name="sample_rate_48k">48 kHz</string>
 
+    <!-- Video screen -->
+    <string name="select_video">Sélectionner une vidéo</string>
+    <string name="select_video_description">Choisissez un fichier vidéo à compresser</string>
+    <string name="preset_messaging">Messagerie</string>
+    <string name="preset_low_bandwidth">Faible débit</string>
+    <string name="preset_social_media">Réseaux sociaux</string>
+
+    <!-- Video custom config -->
+    <string name="video_bitrate">Débit vidéo</string>
+    <string name="max_resolution">Résolution max</string>
+    <string name="resolution_480p">480p</string>
+    <string name="resolution_720p">720p</string>
+    <string name="resolution_1080p">1080p</string>
+    <string name="resolution_original">Originale</string>
+    <string name="max_frame_rate">Fréquence max</string>
+    <string name="key_frame_interval">Intervalle d\'images clés</string>
+    <string name="frame_rate_suffix">ips</string>
+    <string name="key_frame_interval_suffix">s</string>
+
     <!-- Coming soon -->
     <string name="coming_soon">Bientôt disponible</string>
     <string name="coming_soon_description">La compression %1$s est en cours de développement</string>

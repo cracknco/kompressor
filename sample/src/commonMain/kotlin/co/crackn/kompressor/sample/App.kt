@@ -22,9 +22,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import co.crackn.kompressor.sample.audio.AudioScreen
-import co.crackn.kompressor.sample.common.ComingSoonScreen
 import co.crackn.kompressor.sample.di.AppComponent
 import co.crackn.kompressor.sample.image.ImageScreen
+import co.crackn.kompressor.sample.video.VideoScreen
 import co.crackn.kompressor.sample.navigation.Route
 import co.crackn.kompressor.sample.theme.KompressorTheme
 import kompressor.sample.generated.resources.Res
@@ -86,7 +86,8 @@ fun App(appComponent: AppComponent) {
                     ImageScreen(viewModel = vm)
                 }
                 composable<Route.Video> {
-                    ComingSoonScreen(mediaType = stringResource(Res.string.tab_video))
+                    val vm = viewModel { appComponent.videoCompressViewModelFactory() }
+                    VideoScreen(viewModel = vm)
                 }
                 composable<Route.Audio> {
                     val vm = viewModel { appComponent.audioCompressViewModelFactory() }
