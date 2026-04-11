@@ -12,7 +12,6 @@ data class ImageCompressState(
     val customQuality: Int = 80,
     val customMaxWidth: String = "",
     val customMaxHeight: String = "",
-    val progress: Float = 0f,
     val isCompressing: Boolean = false,
     val result: CompressionResult? = null,
     val error: String? = null,

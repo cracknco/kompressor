@@ -161,13 +161,19 @@ kompressor.image.compress(inputPath, outputPath, ImagePresets.HIGH_QUALITY)
 
 ### Progress tracking
 
+Audio and video compression report real-time progress via an `onProgress` callback:
+
 ```kotlin
-val result = kompressor.image.compress(
+val result = kompressor.audio.compress(
     inputPath  = inputPath,
     outputPath = outputPath,
     onProgress = { fraction -> println("Progress: ${(fraction * 100).toInt()}%") },
 )
 ```
+
+> **Note:** Image compression does not offer progress tracking because the underlying platform APIs
+> (`Bitmap.compress` on Android, `UIImageJPEGRepresentation` on iOS) are synchronous single-step
+> operations with no intermediate progress data.
 
 ### Cancellation
 
@@ -298,7 +304,6 @@ interface ImageCompressor {
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig = ImageCompressionConfig(),
-        onProgress: suspend (Float) -> Unit = {},
     ): Result<CompressionResult>
 }
 ```

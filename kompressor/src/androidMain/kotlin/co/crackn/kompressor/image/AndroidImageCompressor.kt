@@ -18,18 +18,15 @@ internal class AndroidImageCompressor : ImageCompressor {
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
-        onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
         require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         val startNanos = System.nanoTime()
-        onProgress(0f)
 
         val inputSize = File(inputPath).length()
         val exifRotation = readExifRotation(inputPath)
         val rawDims = decodeRawDimensions(inputPath)
         val orientedDims = applyRotationToDimensions(rawDims, exifRotation)
         currentCoroutineContext().ensureActive()
-        onProgress(0.1f)
 
         val target = calculateTargetDimensions(
             orientedDims.width, orientedDims.height,
@@ -37,10 +34,8 @@ internal class AndroidImageCompressor : ImageCompressor {
         )
         val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
         currentCoroutineContext().ensureActive()
-        onProgress(0.3f)
 
         resizeAndWrite(bitmap, target, outputPath, config.quality)
-        onProgress(1f)
 
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI

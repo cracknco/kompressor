@@ -121,26 +121,6 @@ class IosImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
-    @Test
-    fun compressImage_progressReported() = runTest {
-        val inputPath = createTestImage(1000, 1000)
-        val outputPath = testDir + "progress.jpg"
-        val progressValues = mutableListOf<Float>()
-
-        compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
-            onProgress = { progressValues.add(it) },
-        )
-
-        assertTrue(progressValues.isNotEmpty())
-        assertEquals(0f, progressValues.first())
-        assertEquals(1f, progressValues.last())
-        for (i in 1 until progressValues.size) {
-            assertTrue(progressValues[i] >= progressValues[i - 1])
-        }
-    }
-
     private fun createTestImage(width: Int, height: Int): String {
         UIGraphicsBeginImageContextWithOptions(
             CGSizeMake(width.toDouble(), height.toDouble()), true, 1.0,
