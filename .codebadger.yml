@@ -1,0 +1,39 @@
+# CodeBadger (Joern CPG) configuration for Kompressor
+# https://github.com/cracknco/kompressor
+version: 1
+
+# Paths excluded from analysis findings
+exclude:
+  - "**/test/**"
+  - "**/androidHostTest/**"
+  - "**/androidInstrumentedTest/**"
+  - "**/iosTest/**"
+  - "**/sample/**"
+
+# Inline suppression settings
+suppression:
+  comment-prefix: "codebadger:suppress"
+  allow-suppress-all: true
+
+# Per-rule configuration
+rules:
+  resource-leak:
+    enabled: true
+  mediacodec-safe-release:
+    enabled: true
+  cfrelease-missing:
+    enabled: true
+  uigraphics-context-pairing:
+    enabled: true
+  cancellation-checkpoint-missing:
+    enabled: true
+  bare-runcatching:
+    enabled: true
+  continuation-incomplete:
+    enabled: true
+  allocation-in-loop:
+    enabled: true
+  taint-flow:
+    enabled: false # No matching source patterns in codebase currently
+  force-unwrap:
+    enabled: true
