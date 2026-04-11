@@ -249,6 +249,7 @@ private class TranscodeLoop(
         if (encIdx < 0) return false
         val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input buffer null")
         cachedEncoderCapacity = encBuf.capacity()
+        if (!pcmBuffer.hasChunk(encBuf.capacity())) return false
         val bytes = pcmBuffer.readChunk(encBuf)
         encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
         advanceSampleCount(bytes)

@@ -30,6 +30,8 @@ internal class PcmProcessor(
     private val outputChannels: Int,
 ) {
     init {
+        require(inputRate > 0) { "Input sample rate must be > 0, got: $inputRate" }
+        require(outputRate > 0) { "Output sample rate must be > 0, got: $outputRate" }
         require(inputChannels == MONO_CHANNELS || inputChannels == STEREO_CHANNELS) {
             "Unsupported input channel count: $inputChannels"
         }
@@ -65,7 +67,11 @@ internal class PcmProcessor(
      */
     fun process(input: ByteBuffer): ByteBuffer {
         input.order(ByteOrder.LITTLE_ENDIAN)
-        val frameCount = input.remaining() / (inputChannels * BYTES_PER_SAMPLE)
+        val frameSize = inputChannels * BYTES_PER_SAMPLE
+        require(input.remaining() % frameSize == 0) {
+            "Input buffer size ${input.remaining()} is not a multiple of frame size $frameSize"
+        }
+        val frameCount = input.remaining() / frameSize
         val samples = readFlat(input, frameCount)
 
         var data = samples

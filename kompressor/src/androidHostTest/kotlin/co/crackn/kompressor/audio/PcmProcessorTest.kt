@@ -132,7 +132,7 @@ class PcmProcessorTest {
         assertTrue(out2.isNotEmpty(), "chunk 2 output was empty")
         val boundary = out2.first().toInt()
         assertTrue(
-            boundary in 99..1_000,
+            boundary in 100..1_000,
             "boundary sample $boundary should interpolate between 99 and 1000",
         )
     }
