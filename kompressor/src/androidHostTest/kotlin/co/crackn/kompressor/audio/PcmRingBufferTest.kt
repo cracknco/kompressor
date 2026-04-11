@@ -170,4 +170,26 @@ class PcmRingBufferTest {
         buf.write(ByteBuffer.wrap(chunk))
         assertEquals(PcmRingBuffer.INITIAL_CAPACITY + 100, buf.size)
     }
+
+    @Test
+    fun write_succeedsAfterCompactionReclaimsDeadSpace() {
+        val maxCap = PcmRingBuffer.INITIAL_CAPACITY * 2
+        val buf = PcmRingBuffer(maxCapacity = maxCap)
+
+        // Fill ~75 % of maxCapacity.
+        val first = (maxCap * 0.75).toInt()
+        buf.write(ByteBuffer.wrap(ByteArray(first)))
+        assertEquals(first, buf.size)
+
+        // Read most of it — creates dead space before readPos.
+        val readDest = ByteBuffer.allocate(first - 100)
+        buf.readChunk(readDest)
+        assertEquals(100, buf.size)
+
+        // Without compaction this write would push writePos past maxCapacity.
+        // With compaction the 100 unread bytes shift to index 0, leaving room.
+        val second = maxCap - 200
+        buf.write(ByteBuffer.wrap(ByteArray(second)))
+        assertEquals(100 + second, buf.size)
+    }
 }

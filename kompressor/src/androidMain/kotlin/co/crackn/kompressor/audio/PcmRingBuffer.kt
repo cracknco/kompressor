@@ -38,7 +38,7 @@ internal class PcmRingBuffer(
     fun write(src: ByteBuffer) {
         val count = src.remaining()
         if (count == 0) return
-        ensureCapacity(writePos + count)
+        ensureCapacity(count)
         src.get(data, writePos, count)
         writePos += count
     }
@@ -101,17 +101,29 @@ internal class PcmRingBuffer(
         writePos = remaining
     }
 
-    private fun ensureCapacity(needed: Int) {
-        if (needed <= data.size) return
+    private fun ensureCapacity(bytesToAppend: Int) {
+        if (writePos + bytesToAppend <= data.size) return
+
+        // Compact first — reclaim dead space before readPos.
+        if (readPos > 0) {
+            val remaining = size
+            if (remaining > 0) {
+                System.arraycopy(data, readPos, data, 0, remaining)
+            }
+            readPos = 0
+            writePos = remaining
+        }
+
+        val needed = writePos + bytesToAppend
         check(needed <= maxCapacity) {
             "PcmRingBuffer exceeded max capacity of $maxCapacity bytes " +
                 "(requested $needed) — backpressure logic may be broken"
         }
+        if (needed <= data.size) return
+
         var newCap = data.size
         while (newCap < needed) newCap *= 2
-        newCap = newCap.coerceAtMost(maxCapacity)
-        data = data.copyOf(newCap)
-        // readPos and writePos remain valid — data was only extended.
+        data = data.copyOf(newCap.coerceAtMost(maxCapacity))
     }
 
     internal companion object {
