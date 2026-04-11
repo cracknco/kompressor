@@ -61,11 +61,13 @@ jobs:
       - name: Generate CPG — Kotlin (commonMain + androidMain)
         if: steps.cpg-kotlin-cache.outputs.cache-hit != 'true'
         run: |
+          mkdir -p .cpg-input-kotlin
+          ln -s "$PWD/kompressor/src/commonMain/kotlin" .cpg-input-kotlin/commonMain
+          ln -s "$PWD/kompressor/src/androidMain/kotlin" .cpg-input-kotlin/androidMain
           joern-parse \
             --language kotlin \
             --output cpg-kotlin.bin \
-            kompressor/src/commonMain \
-            kompressor/src/androidMain
+            .cpg-input-kotlin
 
       - name: Generate CPG — Swift (iosMain)
         if: steps.cpg-swift-cache.outputs.cache-hit != 'true'
