@@ -42,7 +42,7 @@ jobs:
             | bash -s -- --install-dir=.
 
       - name: Add Joern to PATH
-        run: echo "$PWD/joern-cli/bin" >> "$GITHUB_PATH"
+        run: echo "$PWD/joern-cli" >> "$GITHUB_PATH"
 
       # ── Cache CPG binaries (keyed on source hashes) ────────
       - uses: actions/cache@0c907a75c2c80ebcb7f088228285e798b750cf8f # v4
