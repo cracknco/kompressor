@@ -57,14 +57,11 @@
   }
 
   def fileOf(node: StoredNode): String =
-    node match {
-      case n: HasFile => n.file.name.headOption.getOrElse("unknown")
-      case _ => "unknown"
-    }
+    node.file.name.headOption.getOrElse("unknown")
 
   def lineOf(node: StoredNode): Int =
     node match {
-      case n: HasLineNumber => n.lineNumber.getOrElse(-1)
+      case n: AstNode => n.lineNumber.getOrElse(-1)
       case _ => -1
     }
 
@@ -117,8 +114,8 @@
     val bareReleases = cpg.call
       .name("release|stop")
       .where(_.or(
-        _.argument(0).typeFullName(".*MediaCodec.*"),
-        _.argument(0).typeFullName(".*MediaMuxer.*"),
+        _.argument(0).evalType(".*MediaCodec.*"),
+        _.argument(0).evalType(".*MediaMuxer.*"),
         _.code(".*MediaCodec.*"),
         _.code(".*MediaMuxer.*"),
       ))
@@ -221,8 +218,8 @@
   if (ruleEnabled("bare-runcatching")) {
     val bareRunCatching = cpg.call
       .name("runCatching")
-      .filterNot(_.file.name(".*(?i)test.*"))
-      .filterNot(_.file.name(".*SuspendRunCatching.*"))
+      .whereNot(_.file.name(".*(?i)test.*"))
+      .whereNot(_.file.name(".*SuspendRunCatching.*"))
       .l
 
     for (call <- bareRunCatching) {
@@ -282,22 +279,25 @@
 
   // ── Q9: Taint flow — user input to file write ───────────────
   if (ruleEnabled("taint-flow")) {
+    import io.joern.dataflowengineoss.language._
+    import io.joern.dataflowengineoss.queryengine.EngineContext
+    import io.joern.dataflowengineoss.semanticsloader.NoSemantics
+    implicit val engineContext: EngineContext = EngineContext(NoSemantics)
+
     val sources = cpg.call
       .name(".*(?i)(getParameter|readLine|userInput|intent\\.get|Uri\\.parse|openInputStream).*")
-      .l
     val sinks = cpg.call
       .name(".*(?i)(write|outputStream|saveTo).*")
-      .l
 
-    for (source <- sources; sink <- sinks) {
-      val flows = sink.reachableByFlows(source).l
-      for (flow <- flows) {
-        finding(
-          "taint-flow", "error",
-          s"Unvalidated data flow from ${source.code.take(60)} to ${sink.code.take(60)}",
-          fileOf(source), lineOf(source), source.method.name,
-        )
-      }
+    val flows = sinks.reachableByFlows(sources).l
+    for (flow <- flows) {
+      val sourceNode = flow.elements.head
+      val sinkNode = flow.elements.last
+      finding(
+        "taint-flow", "error",
+        s"Unvalidated data flow from ${sourceNode.code.take(60)} to ${sinkNode.code.take(60)}",
+        fileOf(sourceNode), lineOf(sourceNode), sourceNode.method.name,
+      )
     }
   }
 
