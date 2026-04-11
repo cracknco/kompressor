@@ -20,6 +20,9 @@
   val excludePatterns: List[String] =
     config.obj.get("exclude").map(_.arr.map(_.str).toList).getOrElse(Nil)
 
+  val allowSuppressAll: Boolean =
+    config.obj.get("suppression").flatMap(_.obj.get("allow-suppress-all")).exists(_.bool)
+
   def ruleEnabled(ruleId: String): Boolean =
     config.obj.get("rules").flatMap(_.obj.get(ruleId)).flatMap(_.obj.get("enabled")).forall(_.bool)
 
@@ -53,7 +56,7 @@
       val linesToCheck = List(targetLine, targetLine - 1).filter(i => i >= 0 && i < lines.length)
       linesToCheck.exists { i =>
         lines(i).contains(s"codebadger:suppress($ruleId)") ||
-        lines(i).contains("codebadger:suppress(all)")
+        (allowSuppressAll && lines(i).contains("codebadger:suppress(all)"))
       }
     } catch {
       case e: Exception =>
@@ -291,11 +294,10 @@
 
     val flows = sinks.reachableByFlows(sources).l
     for (flow <- flows) {
-      val sourceNode = flow.elements.head
-      val sinkNode = flow.elements.last
-      // flow.elements returns CfgNode; resolve to StoredNode for fileOf/lineOf
-      (sourceNode, sinkNode) match {
-        case (src: StoredNode, snk: StoredNode) =>
+      val resolvedSrc = flow.elements.collectFirst { case n: StoredNode => n }
+      val resolvedSnk = flow.elements.reverse.collectFirst { case n: StoredNode => n }
+      (resolvedSrc, resolvedSnk) match {
+        case (Some(src), Some(snk)) =>
           val methodName = src match {
             case n: CfgNode => n.method.name
             case _ => "unknown"
@@ -312,10 +314,9 @@
 
   // ── Q10: Force-unwrap detection (Swift) ─────────────────────
   if (ruleEnabled("force-unwrap")) {
-    // Joern's swiftsrc2cpg models force-unwraps as <operator>.unwrap calls,
-    // but may also use trailing-! call names. Match both patterns.
+    // Joern's swiftsrc2cpg models force-unwraps as <operator>.forceUnwrap calls.
     val forceUnwraps = cpg.call
-      .name(".*(?:<operator>\\.(?:force)?[Uu]nwrap|!$).*")
+      .name("<operator>\\.forceUnwrap")
       .whereNot(_.file.name(".*\\.kt$")) // Swift-only rule
       .l
     for (fu <- forceUnwraps) {

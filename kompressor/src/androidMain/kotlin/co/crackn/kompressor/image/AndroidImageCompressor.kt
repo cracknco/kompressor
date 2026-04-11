@@ -35,13 +35,16 @@ internal class AndroidImageCompressor : ImageCompressor {
             orientedDims.width, orientedDims.height,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        // codebadger:suppress(resource-leak) bitmap recycled in resizeAndWrite() finally block
         val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
-        currentCoroutineContext().ensureActive()
-        onProgress(0.3f)
+        try {
+            currentCoroutineContext().ensureActive()
+            onProgress(0.3f)
 
-        resizeAndWrite(bitmap, target, outputPath, config.quality)
-        onProgress(1f)
+            resizeAndWrite(bitmap, target, outputPath, config.quality)
+            onProgress(1f)
+        } finally {
+            bitmap.recycle()
+        }
 
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
@@ -66,15 +69,11 @@ internal class AndroidImageCompressor : ImageCompressor {
         if (rotation.swapsDimensions) ImageDimensions(dims.height, dims.width) else dims
 
     private fun resizeAndWrite(bitmap: Bitmap, target: ImageDimensions, outputPath: String, quality: Int) {
+        val scaled = resizeBitmapIfNeeded(bitmap, target)
         try {
-            val scaled = resizeBitmapIfNeeded(bitmap, target)
-            try {
-                writeBitmapAsJpeg(scaled, outputPath, quality)
-            } finally {
-                if (scaled !== bitmap) scaled.recycle()
-            }
+            writeBitmapAsJpeg(scaled, outputPath, quality)
         } finally {
-            bitmap.recycle()
+            if (scaled !== bitmap) scaled.recycle()
         }
     }
 
