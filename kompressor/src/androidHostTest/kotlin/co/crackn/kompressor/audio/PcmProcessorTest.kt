@@ -104,7 +104,7 @@ class PcmProcessorTest {
 
         val procSplit = PcmProcessor(48_000, 44_100, inputChannels = 1, outputChannels = 1)
         val half1 = readShorts(procSplit.process(rampMono(0, half)))
-        val half2 = readShorts(procSplit.process(rampMono(half, inputFrames)))
+        val half2 = readShorts(procSplit.process(rampMono(half, half)))
         val splitTotal = half1.size + half2.size
 
         assertTrue(
