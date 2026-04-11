@@ -293,10 +293,14 @@
     for (flow <- flows) {
       val sourceNode = flow.elements.head
       val sinkNode = flow.elements.last
+      val methodName = sourceNode match {
+        case n: CfgNode => n.method.name
+        case _ => "unknown"
+      }
       finding(
         "taint-flow", "error",
         s"Unvalidated data flow from ${sourceNode.code.take(60)} to ${sinkNode.code.take(60)}",
-        fileOf(sourceNode), lineOf(sourceNode), sourceNode.method.name,
+        fileOf(sourceNode), lineOf(sourceNode), methodName,
       )
     }
   }
