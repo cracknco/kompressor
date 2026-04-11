@@ -4,6 +4,12 @@ import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.testutil.TestConstants.MONO
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
+import co.crackn.kompressor.testutil.TestConstants.STEREO
+import co.crackn.kompressor.testutil.WavGenerator
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -17,7 +23,6 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.Foundation.writeToURL
-import kotlin.math.sin
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -256,43 +261,7 @@ class IosAudioCompressorTest {
 
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): String {
-        val totalSamples = sampleRate * durationSeconds
-        val dataSize = totalSamples * channels * BYTES_PER_SAMPLE
-        val headerSize = WAV_HEADER_SIZE
-        val bytes = ByteArray(headerSize + dataSize)
-
-        // RIFF header
-        writeString(bytes, 0, "RIFF")
-        writeIntLE(bytes, 4, headerSize - RIFF_CHUNK_HEADER + dataSize)
-        writeString(bytes, 8, "WAVE")
-
-        // fmt sub-chunk
-        writeString(bytes, 12, "fmt ")
-        writeIntLE(bytes, 16, PCM_FMT_CHUNK_SIZE)
-        writeShortLE(bytes, 20, PCM_FORMAT)
-        writeShortLE(bytes, 22, channels)
-        writeIntLE(bytes, 24, sampleRate)
-        writeIntLE(bytes, 28, sampleRate * channels * BYTES_PER_SAMPLE)
-        writeShortLE(bytes, 32, channels * BYTES_PER_SAMPLE)
-        writeShortLE(bytes, 34, BITS_PER_SAMPLE)
-
-        // data sub-chunk
-        writeString(bytes, 36, "data")
-        writeIntLE(bytes, 40, dataSize)
-
-        // PCM sine waves - distinct frequencies for each channel to verify mixing
-        var offset = headerSize
-        for (i in 0 until totalSamples) {
-            for (ch in 0 until channels) {
-                // Use different frequencies for different channels:
-                // Left channel (0): 440 Hz, Right channel (1): 880 Hz
-                val frequency = TONE_FREQUENCY * (ch + 1)
-                val sample = (Short.MAX_VALUE * sin(2.0 * kotlin.math.PI * frequency * i / sampleRate)).toInt().toShort()
-                bytes[offset++] = (sample.toInt() and 0xFF).toByte()
-                bytes[offset++] = ((sample.toInt() shr 8) and 0xFF).toByte()
-            }
-        }
-
+        val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)
         val path = testDir + "test_${sampleRate}hz_${channels}ch_${durationSeconds}s.wav"
         val data = bytes.usePinned { pinned ->
             NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
@@ -303,24 +272,6 @@ class IosAudioCompressorTest {
         return path
     }
 
-    private fun writeString(bytes: ByteArray, offset: Int, value: String) {
-        for (i in value.indices) {
-            bytes[offset + i] = value[i].code.toByte()
-        }
-    }
-
-    private fun writeIntLE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
-        bytes[offset + 2] = ((value shr 16) and 0xFF).toByte()
-        bytes[offset + 3] = ((value shr 24) and 0xFF).toByte()
-    }
-
-    private fun writeShortLE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
-    }
-
     private fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager
             .attributesOfItemAtPath(path, null) ?: error("File not found: $path")
@@ -329,18 +280,6 @@ class IosAudioCompressorTest {
     }
 
     private companion object {
-        const val SAMPLE_RATE_44K = 44_100
-        const val SAMPLE_RATE_48K = 48_000
-        const val SAMPLE_RATE_22K = 22_050
-        const val STEREO = 2
-        const val MONO = 1
-        const val BYTES_PER_SAMPLE = 2
-        const val BITS_PER_SAMPLE = 16
-        const val PCM_FORMAT = 1
-        const val PCM_FMT_CHUNK_SIZE = 16
-        const val WAV_HEADER_SIZE = 44
-        const val RIFF_CHUNK_HEADER = 8
-        const val TONE_FREQUENCY = 440.0
         const val DURATION_TOLERANCE_SEC = 0.3
     }
 }

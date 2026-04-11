@@ -85,6 +85,8 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
       - name: Run tests (Android host)
         run: ./gradlew testAndroidHostTest
+      - name: API binary compatibility check
+        run: ./gradlew apiCheck
       - name: Run Kover report
         run: ./gradlew koverXmlReport
       - name: Kover — quality gate

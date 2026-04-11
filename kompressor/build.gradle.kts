@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kover)
+    alias(libs.plugins.binaryCompatibilityValidator)
 }
 
 group = "co.crackn.kompressor"

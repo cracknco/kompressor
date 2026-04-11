@@ -7,11 +7,15 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
-import java.io.DataOutputStream
+import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.TestConstants.MONO
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
+import co.crackn.kompressor.testutil.TestConstants.STEREO
+import co.crackn.kompressor.testutil.WavGenerator
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.abs
-import kotlin.math.sin
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -51,6 +55,7 @@ class AndroidAudioCompressorTest {
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
         assertTrue(compression.durationMs >= 0)
+        assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output should be valid M4A")
     }
 
     @Test
@@ -286,69 +291,13 @@ class AndroidAudioCompressorTest {
 
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): File {
-        val totalSamples = sampleRate * durationSeconds
-        val dataSize = totalSamples * channels * BYTES_PER_SAMPLE
+        val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)
         val file = File(tempDir, "test_${sampleRate}hz_${channels}ch_${durationSeconds}s.wav")
-
-        DataOutputStream(FileOutputStream(file).buffered()).use { out ->
-            // RIFF header
-            out.writeBytes("RIFF")
-            out.writeIntLE(WAV_HEADER_SIZE - RIFF_CHUNK_HEADER + dataSize)
-            out.writeBytes("WAVE")
-
-            // fmt sub-chunk
-            out.writeBytes("fmt ")
-            out.writeIntLE(PCM_FMT_CHUNK_SIZE)
-            out.writeShortLE(PCM_FORMAT)
-            out.writeShortLE(channels)
-            out.writeIntLE(sampleRate)
-            out.writeIntLE(sampleRate * channels * BYTES_PER_SAMPLE)
-            out.writeShortLE(channels * BYTES_PER_SAMPLE)
-            out.writeShortLE(BITS_PER_SAMPLE)
-
-            // data sub-chunk
-            out.writeBytes("data")
-            out.writeIntLE(dataSize)
-
-            // PCM sine waves - distinct frequencies for each channel to verify mixing
-            for (i in 0 until totalSamples) {
-                for (ch in 0 until channels) {
-                    // Use different frequencies for different channels:
-                    // Left channel (0): 440 Hz, Right channel (1): 880 Hz
-                    val frequency = TONE_FREQUENCY * (ch + 1)
-                    val sample = (Short.MAX_VALUE * sin(2.0 * Math.PI * frequency * i / sampleRate)).toInt().toShort()
-                    out.writeShortLE(sample.toInt())
-                }
-            }
-        }
+        file.writeBytes(bytes)
         return file
     }
 
-    private fun DataOutputStream.writeIntLE(value: Int) {
-        write(value and 0xFF)
-        write((value shr 8) and 0xFF)
-        write((value shr 16) and 0xFF)
-        write((value shr 24) and 0xFF)
-    }
-
-    private fun DataOutputStream.writeShortLE(value: Int) {
-        write(value and 0xFF)
-        write((value shr 8) and 0xFF)
-    }
-
     private companion object {
-        const val SAMPLE_RATE_44K = 44_100
-        const val SAMPLE_RATE_48K = 48_000
-        const val SAMPLE_RATE_22K = 22_050
-        const val STEREO = 2
-        const val MONO = 1
-        const val BYTES_PER_SAMPLE = 2
-        const val BITS_PER_SAMPLE = 16
-        const val PCM_FORMAT = 1
-        const val PCM_FMT_CHUNK_SIZE = 16
-        const val WAV_HEADER_SIZE = 44
-        const val RIFF_CHUNK_HEADER = 8
-        const val TONE_FREQUENCY = 440.0
         const val MS_PER_SECOND = 1_000L
         const val US_PER_MS = 1_000L
         const val DURATION_TOLERANCE_MS = 300L
