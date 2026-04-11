@@ -139,10 +139,12 @@ private class IosVideoTranscodePipeline(
         val reader = AVAssetReader(asset = asset, error = null)
         // Request decoded pixel buffers (not compressed passthrough) so the
         // writer's H.264 encoder can re-encode at the target bitrate/resolution.
-        // Use the raw string key because kCVPixelBufferPixelFormatTypeKey (CFStringRef)
-        // does not bridge to NSDictionary keys in K/N.
+        // The raw string "PixelFormatType" is the underlying value of
+        // kCVPixelBufferPixelFormatTypeKey (see CVPixelBuffer.h). We use the
+        // literal because the CFStringRef constant does not bridge to NSDictionary
+        // keys in Kotlin/Native.
         val videoOutputSettings: Map<Any?, *> = mapOf(
-            "PixelFormatType" to platform.CoreVideo.kCVPixelFormatType_32BGRA,
+            PIXEL_FORMAT_KEY to platform.CoreVideo.kCVPixelFormatType_32BGRA,
         )
         val videoOutput = AVAssetReaderTrackOutput(
             track = videoTrack,
@@ -306,6 +308,8 @@ private class IosVideoTranscodePipeline(
     }
 
     private companion object {
+        // kCVPixelBufferPixelFormatTypeKey underlying CFString value (CVPixelBuffer.h)
+        const val PIXEL_FORMAT_KEY = "PixelFormatType"
         const val PROGRESS_SETUP = 0.05f
         const val PROGRESS_TRANSCODE_RANGE = 0.90f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f

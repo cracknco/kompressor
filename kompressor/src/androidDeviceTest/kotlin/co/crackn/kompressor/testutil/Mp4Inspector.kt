@@ -2,6 +2,8 @@ package co.crackn.kompressor.testutil
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import co.crackn.kompressor.safeInt
+import co.crackn.kompressor.safeLong
 import java.io.File
 
 /** Metadata extracted from an MP4 video file. */
@@ -34,11 +36,5 @@ fun readVideoMetadata(file: File): VideoMetadata {
         extractor.release()
     }
 }
-
-private fun MediaFormat.safeLong(key: String): Long =
-    try { getLong(key) } catch (_: Exception) { 0L }
-
-private fun MediaFormat.safeInt(key: String): Int =
-    try { getInteger(key) } catch (_: Exception) { 0 }
 
 private const val US_PER_MS = 1_000L

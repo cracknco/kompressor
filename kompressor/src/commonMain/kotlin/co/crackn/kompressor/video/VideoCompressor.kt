@@ -2,7 +2,14 @@ package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
 
-/** Compresses video files. */
+/**
+ * Compresses video files.
+ *
+ * **Rotation note:** the current implementation does not read or preserve the
+ * source video's rotation metadata (`preferredTransform` on iOS,
+ * `KEY_ROTATION` on Android). Portrait-recorded videos may appear rotated
+ * in the output. This is a known v1 limitation.
+ */
 interface VideoCompressor {
 
     /**
