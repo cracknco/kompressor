@@ -72,10 +72,7 @@ fun ImageScreen(
                     onMaxHeightChanged = viewModel::onCustomMaxHeightChanged,
                 )
 
-                ProgressSection(
-                    visible = state.isCompressing,
-                    progress = state.progress,
-                )
+                ProgressSection(visible = state.isCompressing)
 
                 CompressButton(
                     isCompressing = state.isCompressing,

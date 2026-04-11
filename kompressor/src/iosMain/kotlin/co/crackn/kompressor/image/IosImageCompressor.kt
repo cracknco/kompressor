@@ -26,16 +26,13 @@ internal class IosImageCompressor : ImageCompressor {
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
-        onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
         require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
-        onProgress(0f)
 
         val inputSize = nsFileSize(inputPath)
         val image = loadImage(inputPath)
         currentCoroutineContext().ensureActive()
-        onProgress(0.3f)
 
         val (pixelWidth, pixelHeight) = orientedPixelDimensions(image)
         val target = calculateTargetDimensions(
@@ -44,10 +41,8 @@ internal class IosImageCompressor : ImageCompressor {
         )
         val resized = resizeImageIfNeeded(image, pixelWidth, pixelHeight, target)
         currentCoroutineContext().ensureActive()
-        onProgress(0.6f)
 
         writeJpeg(resized, outputPath, config.quality)
-        onProgress(1f)
 
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()

@@ -92,26 +92,6 @@ class AndroidImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
-    @Test
-    fun compressImage_progressReported() = runTest {
-        val input = createTestImage(1000, 1000)
-        val output = File(tempDir, "progress.jpg")
-        val progressValues = mutableListOf<Float>()
-
-        compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
-            onProgress = { progressValues.add(it) },
-        )
-
-        assertTrue(progressValues.isNotEmpty())
-        assertEquals(0f, progressValues.first())
-        assertEquals(1f, progressValues.last())
-        for (i in 1 until progressValues.size) {
-            assertTrue(progressValues[i] >= progressValues[i - 1])
-        }
-    }
-
     private fun createTestImage(width: Int, height: Int): File {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

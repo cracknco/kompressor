@@ -45,7 +45,6 @@ class ImageCompressViewModel(
                         compressedImagePath = null,
                         result = null,
                         error = null,
-                        progress = 0f,
                     )
                 }
             } catch (e: CancellationException) {
@@ -57,7 +56,6 @@ class ImageCompressViewModel(
                         selectedFileName = null,
                         compressedImagePath = null,
                         result = null,
-                        progress = 0f,
                         error = e.message ?: "Failed to import image",
                     )
                 }
@@ -87,7 +85,6 @@ class ImageCompressViewModel(
         _state.update {
             it.copy(
                 isCompressing = true,
-                progress = 0f,
                 error = null,
                 compressedImagePath = null,
                 result = null,
@@ -106,9 +103,6 @@ class ImageCompressViewModel(
                 inputPath = inputPath,
                 outputPath = outputFile.path,
                 config = buildConfig(),
-                onProgress = { progress ->
-                    _state.update { it.copy(progress = progress) }
-                },
             ).fold(
                 onSuccess = { handleSuccess(outputFile.path, it) },
                 onFailure = { handleFailure(it, outputFile.path) },
@@ -147,7 +141,6 @@ class ImageCompressViewModel(
                 isCompressing = false,
                 compressedImagePath = outputPath,
                 result = result,
-                progress = 1f,
             )
         }
     }
@@ -161,7 +154,6 @@ class ImageCompressViewModel(
         _state.update {
             it.copy(
                 isCompressing = false,
-                progress = 0f,
                 error = error.message ?: "Unknown error",
             )
         }
