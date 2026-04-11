@@ -208,9 +208,8 @@ private class IosPipeline(
     ) {
         var waited = 0L
         while (!writerInput.readyForMoreMediaData) {
-            if (writer.status == AVAssetWriterStatusFailed) {
-                val msg = writer.error?.localizedDescription ?: "unknown"
-                throw IllegalStateException("AVAssetWriter failed while waiting: $msg")
+            check(writer.status != AVAssetWriterStatusFailed) {
+                "AVAssetWriter failed while waiting: ${writer.error?.localizedDescription ?: "unknown"}"
             }
             check(waited < WRITER_READY_TIMEOUT_MS) {
                 "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
