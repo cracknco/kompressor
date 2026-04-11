@@ -12,6 +12,7 @@ import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
 import io.github.vinceglb.filekit.copyTo
 import io.github.vinceglb.filekit.delete
+import io.github.vinceglb.filekit.extension
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
 import kotlin.random.Random
@@ -40,7 +41,7 @@ class AudioCompressViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 deleteTempFiles()
-                val inputFile = createTempFile("input")
+                val inputFile = createTempFile("input", file.extension)
                 try {
                     file.copyTo(inputFile)
                 } catch (e: Exception) {
@@ -196,10 +197,10 @@ class AudioCompressViewModel(
         }
     }
 
-    private fun createTempFile(prefix: String): PlatformFile =
+    private fun createTempFile(prefix: String, extension: String = "m4a"): PlatformFile =
         PlatformFile(
             FileKit.cacheDir,
-            "kompressor_audio_${prefix}_${Random.nextLong(1_000_000_000)}.m4a",
+            "kompressor_audio_${prefix}_${Random.nextLong(1_000_000_000)}.$extension",
         )
 
     private companion object {

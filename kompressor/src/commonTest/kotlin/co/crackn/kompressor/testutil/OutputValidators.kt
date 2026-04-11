@@ -31,6 +31,4 @@ object OutputValidators {
 
     private const val FTYP_SCAN_LIMIT = 32
 
-    /** MP4 container — same ftyp check as M4A (they share the ISO base media format). */
-    fun isValidMp4(bytes: ByteArray): Boolean = isValidM4a(bytes)
 }

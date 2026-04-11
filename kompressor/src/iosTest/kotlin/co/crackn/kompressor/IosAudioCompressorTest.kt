@@ -12,12 +12,12 @@ import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_SEC
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readAudioDurationSec
+import co.crackn.kompressor.testutil.readAudioMetadata
 import co.crackn.kompressor.testutil.writeBytes
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
-import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -25,7 +25,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalForeignApi::class)
 class IosAudioCompressorTest {
 
     private lateinit var testDir: String
@@ -132,7 +131,7 @@ class IosAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that resampling actually occurred
-        val metadata = readOutputMetadata(outputPath)
+        val metadata = readAudioMetadata(outputPath)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should be resampled to 44.1kHz")
         assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
@@ -152,7 +151,7 @@ class IosAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that resampling and channel conversion occurred for voice preset
-        val metadata = readOutputMetadata(outputPath)
+        val metadata = readAudioMetadata(outputPath)
         assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Voice message should be resampled to 22.05kHz")
         assertEquals(MONO, metadata.channels, "Voice message should be converted to mono")
     }
@@ -172,7 +171,7 @@ class IosAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that channel conversion actually occurred
-        val metadata = readOutputMetadata(outputPath)
+        val metadata = readAudioMetadata(outputPath)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
         assertEquals(MONO, metadata.channels, "Output should be converted to mono")
     }
@@ -192,7 +191,7 @@ class IosAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that channel conversion actually occurred
-        val metadata = readOutputMetadata(outputPath)
+        val metadata = readAudioMetadata(outputPath)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
         assertEquals(STEREO, metadata.channels, "Output should be converted to stereo")
     }
@@ -210,7 +209,7 @@ class IosAudioCompressorTest {
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
 
-        val outputDurationSec = readOutputDurationSec(outputPath)
+        val outputDurationSec = readAudioDurationSec(outputPath)
         assertTrue(
             kotlin.math.abs(outputDurationSec - durationSec.toDouble()) < DURATION_TOLERANCE_SEC,
             "Output duration ${outputDurationSec}s should be within " +
@@ -218,42 +217,10 @@ class IosAudioCompressorTest {
         )
 
         // Assert that resampling actually occurred
-        val metadata = readOutputMetadata(outputPath)
+        val metadata = readAudioMetadata(outputPath)
         assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Output should be resampled to 22.05kHz")
         assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
-
-    private fun readOutputDurationSec(path: String): Double {
-        val asset = platform.AVFoundation.AVURLAsset(
-            uRL = NSURL.fileURLWithPath(path), options = null,
-        )
-        return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
-    }
-
-    private fun readOutputMetadata(path: String): AudioMetadata {
-        val asset = platform.AVFoundation.AVURLAsset(
-            uRL = NSURL.fileURLWithPath(path), options = null,
-        )
-        val tracks = asset.tracksWithMediaType(platform.AVFoundation.AVMediaTypeAudio)
-        check(tracks.isNotEmpty()) { "No audio track found in output" }
-
-        val track = tracks.first() as platform.AVFoundation.AVAssetTrack
-        val formatDescriptions = track.formatDescriptions as List<*>
-        check(formatDescriptions.isNotEmpty()) { "No format descriptions found" }
-
-        val formatDesc = formatDescriptions.first()
-        val basicDesc = platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription(
-            formatDesc as platform.CoreMedia.CMAudioFormatDescriptionRef
-        )
-        checkNotNull(basicDesc) { "Could not read audio format description" }
-
-        val sampleRate = basicDesc.pointed.mSampleRate.toInt()
-        val channels = basicDesc.pointed.mChannelsPerFrame.toInt()
-
-        return AudioMetadata(sampleRate, channels)
-    }
-
-    private data class AudioMetadata(val sampleRate: Int, val channels: Int)
 
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): String {

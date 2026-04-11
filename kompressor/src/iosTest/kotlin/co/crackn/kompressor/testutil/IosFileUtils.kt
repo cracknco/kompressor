@@ -5,7 +5,13 @@ package co.crackn.kompressor.testutil
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.usePinned
+import platform.AVFoundation.AVAssetTrack
+import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFoundation.AVURLAsset
+import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
+import platform.CoreMedia.CMAudioFormatDescriptionRef
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
@@ -13,19 +19,46 @@ import platform.Foundation.NSURL
 import platform.Foundation.create
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.writeToURL
+import platform.posix.memcpy
 
-fun readBytes(path: String): ByteArray {
-    val data = NSData.dataWithContentsOfFile(path)
-        ?: error("Cannot read file: $path")
-    if (data.length == 0UL) return ByteArray(0)
-    return ByteArray(data.length.toInt()).also { bytes ->
+private fun NSData.toByteArray(): ByteArray {
+    if (length == 0UL) return ByteArray(0)
+    return ByteArray(length.toInt()).also { bytes ->
         bytes.usePinned { pinned ->
-            platform.posix.memcpy(pinned.addressOf(0), data.bytes, data.length)
+            memcpy(pinned.addressOf(0), this.bytes, length)
         }
     }
 }
 
+fun readBytes(path: String): ByteArray {
+    val data = NSData.dataWithContentsOfFile(path)
+        ?: error("Cannot read file: $path")
+    return data.toByteArray()
+}
+
 data class AudioMetadata(val sampleRate: Int, val channels: Int)
+
+fun readAudioMetadata(path: String): AudioMetadata {
+    val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
+    @Suppress("UNCHECKED_CAST")
+    val tracks = asset.tracksWithMediaType(AVMediaTypeAudio)
+    check(tracks.isNotEmpty()) { "No audio track found in output" }
+
+    val track = tracks.first() as AVAssetTrack
+    @Suppress("UNCHECKED_CAST")
+    val formatDescriptions = track.formatDescriptions as List<*>
+    check(formatDescriptions.isNotEmpty()) { "No format descriptions found" }
+
+    val basicDesc = CMAudioFormatDescriptionGetStreamBasicDescription(
+        formatDescriptions.first() as CMAudioFormatDescriptionRef,
+    )
+    checkNotNull(basicDesc) { "Could not read audio format description" }
+
+    return AudioMetadata(
+        sampleRate = basicDesc.pointed.mSampleRate.toInt(),
+        channels = basicDesc.pointed.mChannelsPerFrame.toInt(),
+    )
+}
 
 fun readAudioDurationSec(path: String): Double {
     val asset = platform.AVFoundation.AVURLAsset(

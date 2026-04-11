@@ -140,7 +140,7 @@ private class IosPipeline(
             writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
             onProgress(PROGRESS_READ_START)
 
-            copySamples(readerOutput, writerInput, totalDurationSec, onProgress)
+            copySamples(readerOutput, writer, writerInput, totalDurationSec, onProgress)
             writerInput.markAsFinished()
             checkReaderStatus(reader)
             awaitWriterFinish(writer)
@@ -179,6 +179,7 @@ private class IosPipeline(
 
     private suspend fun copySamples(
         readerOutput: AVAssetReaderTrackOutput,
+        writer: AVAssetWriter,
         writerInput: AVAssetWriterInput,
         totalDurationSec: Double,
         onProgress: suspend (Float) -> Unit,
@@ -191,10 +192,31 @@ private class IosPipeline(
                 lastReported = reportSampleProgress(
                     buffer, totalDurationSec, lastReported, onProgress,
                 )
-                writerInput.appendSampleBuffer(buffer)
+                awaitWriterReady(writer, writerInput)
+                check(writerInput.appendSampleBuffer(buffer)) {
+                    "AVAssetWriterInput failed to append sample buffer"
+                }
             } finally {
                 CFRelease(buffer)
             }
+        }
+    }
+
+    private suspend fun awaitWriterReady(
+        writer: AVAssetWriter,
+        writerInput: AVAssetWriterInput,
+    ) {
+        var waited = 0L
+        while (!writerInput.readyForMoreMediaData) {
+            check(writer.status != AVAssetWriterStatusFailed) {
+                "AVAssetWriter failed while waiting: ${writer.error?.localizedDescription ?: "unknown"}"
+            }
+            check(waited < WRITER_READY_TIMEOUT_MS) {
+                "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
+            }
+            currentCoroutineContext().ensureActive()
+            delay(WRITER_POLL_INTERVAL_MS)
+            waited += WRITER_POLL_INTERVAL_MS
         }
     }
 
@@ -248,6 +270,8 @@ private class IosPipeline(
         const val PROGRESS_READ_START = 0.10f
         const val PROGRESS_TRANSCODE_RANGE = 0.85f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
+        const val WRITER_POLL_INTERVAL_MS = 10L
+        const val WRITER_READY_TIMEOUT_MS = 10_000L
     }
 }
 
