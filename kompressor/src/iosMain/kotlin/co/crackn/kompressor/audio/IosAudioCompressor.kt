@@ -140,7 +140,7 @@ private class IosPipeline(
             writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
             onProgress(PROGRESS_READ_START)
 
-            copySamples(readerOutput, writerInput, totalDurationSec, onProgress)
+            copySamples(readerOutput, writer, writerInput, totalDurationSec, onProgress)
             writerInput.markAsFinished()
             checkReaderStatus(reader)
             awaitWriterFinish(writer)
@@ -179,6 +179,7 @@ private class IosPipeline(
 
     private suspend fun copySamples(
         readerOutput: AVAssetReaderTrackOutput,
+        writer: AVAssetWriter,
         writerInput: AVAssetWriterInput,
         totalDurationSec: Double,
         onProgress: suspend (Float) -> Unit,
@@ -191,16 +192,25 @@ private class IosPipeline(
                 lastReported = reportSampleProgress(
                     buffer, totalDurationSec, lastReported, onProgress,
                 )
-                awaitWriterReady(writerInput)
-                writerInput.appendSampleBuffer(buffer)
+                awaitWriterReady(writer, writerInput)
+                check(writerInput.appendSampleBuffer(buffer)) {
+                    "AVAssetWriterInput failed to append sample buffer"
+                }
             } finally {
                 CFRelease(buffer)
             }
         }
     }
 
-    private suspend fun awaitWriterReady(writerInput: AVAssetWriterInput) {
+    private suspend fun awaitWriterReady(
+        writer: AVAssetWriter,
+        writerInput: AVAssetWriterInput,
+    ) {
         while (!writerInput.readyForMoreMediaData) {
+            if (writer.status == AVAssetWriterStatusFailed) {
+                val msg = writer.error?.localizedDescription ?: "unknown"
+                throw IllegalStateException("AVAssetWriter failed while waiting: $msg")
+            }
             currentCoroutineContext().ensureActive()
             delay(WRITER_POLL_INTERVAL_MS)
         }
