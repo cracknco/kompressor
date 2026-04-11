@@ -5,11 +5,49 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish) apply false
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
-    alias(libs.plugins.kover) apply false
+    alias(libs.plugins.kover)
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.kotlinxSerialization) apply false
+}
+
+// Aggregate coverage from both library and sample app so that device/integration
+// test runs in :sample (which exercise :kompressor code paths) also count toward
+// the coverage gate.
+dependencies {
+    kover(project(":kompressor"))
+    kover(project(":sample"))
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                // Exclude the same platform-specific classes as :kompressor does,
+                // plus all sample-app UI/DI code which has no unit tests.
+                classes(
+                    "co.crackn.kompressor.*.Android*",
+                    "co.crackn.kompressor.*.Ios*",
+                    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                    "co.crackn.kompressor.audio.TranscodeLoop",
+                    "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.IosKompressor",
+                    "co.crackn.kompressor.IosFileUtils*",
+                    "co.crackn.kompressor.KompressorInitializer",
+                    "co.crackn.kompressor.KompressorContext",
+                    "co.crackn.kompressor.sample.*",
+                )
+            }
+        }
+        verify {
+            rule {
+                bound {
+                    minValue = 70
+                }
+            }
+        }
+    }
 }
 
 detekt {
