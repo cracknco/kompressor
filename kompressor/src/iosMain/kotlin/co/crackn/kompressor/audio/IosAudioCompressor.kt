@@ -206,13 +206,18 @@ private class IosPipeline(
         writer: AVAssetWriter,
         writerInput: AVAssetWriterInput,
     ) {
+        var waited = 0L
         while (!writerInput.readyForMoreMediaData) {
             if (writer.status == AVAssetWriterStatusFailed) {
                 val msg = writer.error?.localizedDescription ?: "unknown"
                 throw IllegalStateException("AVAssetWriter failed while waiting: $msg")
             }
+            check(waited < WRITER_READY_TIMEOUT_MS) {
+                "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
+            }
             currentCoroutineContext().ensureActive()
             delay(WRITER_POLL_INTERVAL_MS)
+            waited += WRITER_POLL_INTERVAL_MS
         }
     }
 
@@ -267,6 +272,7 @@ private class IosPipeline(
         const val PROGRESS_TRANSCODE_RANGE = 0.85f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
         const val WRITER_POLL_INTERVAL_MS = 10L
+        const val WRITER_READY_TIMEOUT_MS = 10_000L
     }
 }
 

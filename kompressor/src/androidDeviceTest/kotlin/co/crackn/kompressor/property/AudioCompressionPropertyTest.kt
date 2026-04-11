@@ -5,6 +5,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
+import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
 import io.kotest.common.ExperimentalKotest
 import io.kotest.property.Arb
@@ -40,8 +42,8 @@ class AudioCompressionPropertyTest {
     fun randomValidConfigs_alwaysSucceed() = runTest {
         val wavBytes = WavGenerator.generateWavBytes(
             durationSeconds = 1,
-            sampleRate = INPUT_SAMPLE_RATE,
-            channels = INPUT_CHANNELS,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
         )
         checkAll(
             PropTestConfig(seed = SEED, iterations = ITERATIONS),
@@ -79,8 +81,8 @@ class AudioCompressionPropertyTest {
     fun progressIsMonotonicallyNonDecreasing() = runTest {
         val wavBytes = WavGenerator.generateWavBytes(
             durationSeconds = 2,
-            sampleRate = INPUT_SAMPLE_RATE,
-            channels = INPUT_CHANNELS,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
         )
         val input = File(tempDir, "progress_test.wav").apply { writeBytes(wavBytes) }
         val output = File(tempDir, "progress_out.m4a")
@@ -106,8 +108,6 @@ class AudioCompressionPropertyTest {
     private companion object {
         const val SEED = 12345L
         const val ITERATIONS = 15
-        const val INPUT_SAMPLE_RATE = 44_100
-        const val INPUT_CHANNELS = 2
         const val FINAL_PROGRESS_MIN = 0.99f
     }
 }
