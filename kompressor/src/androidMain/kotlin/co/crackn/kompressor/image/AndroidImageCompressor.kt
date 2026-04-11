@@ -36,11 +36,15 @@ internal class AndroidImageCompressor : ImageCompressor {
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
         val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
-        currentCoroutineContext().ensureActive()
-        onProgress(0.3f)
+        try {
+            currentCoroutineContext().ensureActive()
+            onProgress(0.3f)
 
-        resizeAndWrite(bitmap, target, outputPath, config.quality)
-        onProgress(1f)
+            resizeAndWrite(bitmap, target, outputPath, config.quality)
+            onProgress(1f)
+        } finally {
+            bitmap.recycle()
+        }
 
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
@@ -65,20 +69,17 @@ internal class AndroidImageCompressor : ImageCompressor {
         if (rotation.swapsDimensions) ImageDimensions(dims.height, dims.width) else dims
 
     private fun resizeAndWrite(bitmap: Bitmap, target: ImageDimensions, outputPath: String, quality: Int) {
+        val scaled = resizeBitmapIfNeeded(bitmap, target)
         try {
-            val scaled = resizeBitmapIfNeeded(bitmap, target)
-            try {
-                writeBitmapAsJpeg(scaled, outputPath, quality)
-            } finally {
-                if (scaled !== bitmap) scaled.recycle()
-            }
+            writeBitmapAsJpeg(scaled, outputPath, quality)
         } finally {
-            bitmap.recycle()
+            if (scaled !== bitmap) scaled.recycle()
         }
     }
 
     private fun decodeRawDimensions(path: String): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
         BitmapFactory.decodeFile(path, options)
         require(options.outWidth > 0 && options.outHeight > 0) {
             "Cannot decode image dimensions: $path"
@@ -122,6 +123,7 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
         if (bitmap.width == target.width && bitmap.height == target.height) return bitmap
+        // codebadger:suppress(resource-leak) caller (resizeAndWrite) recycles in finally block
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
