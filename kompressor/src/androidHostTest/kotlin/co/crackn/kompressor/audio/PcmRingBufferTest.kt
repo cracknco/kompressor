@@ -139,4 +139,57 @@ class PcmRingBufferTest {
         val flushed = buf.flush(dest)
         assertEquals(50, flushed) // capped by dest.capacity()
     }
+
+    // ── Size property ─────────────────────────────────────────────────
+
+    @Test
+    fun size_reflectsUnreadBytes() {
+        val buf = PcmRingBuffer()
+        assertEquals(0, buf.size)
+        buf.write(ByteBuffer.wrap(ByteArray(100)))
+        assertEquals(100, buf.size)
+        buf.readChunk(ByteBuffer.allocate(40))
+        assertEquals(60, buf.size)
+    }
+
+    // ── Max capacity safety net ───────────────────────────────────────
+
+    @Test
+    fun write_beyondMaxCapacity_throws() {
+        val buf = PcmRingBuffer(maxCapacity = PcmRingBuffer.INITIAL_CAPACITY)
+        val chunk = ByteArray(PcmRingBuffer.INITIAL_CAPACITY + 1)
+        assertFailsWith<IllegalStateException> {
+            buf.write(ByteBuffer.wrap(chunk))
+        }
+    }
+
+    @Test
+    fun write_withinMaxCapacity_succeeds() {
+        val buf = PcmRingBuffer(maxCapacity = PcmRingBuffer.INITIAL_CAPACITY * 2)
+        val chunk = ByteArray(PcmRingBuffer.INITIAL_CAPACITY + 100)
+        buf.write(ByteBuffer.wrap(chunk))
+        assertEquals(PcmRingBuffer.INITIAL_CAPACITY + 100, buf.size)
+    }
+
+    @Test
+    fun write_succeedsAfterCompactionReclaimsDeadSpace() {
+        val maxCap = PcmRingBuffer.INITIAL_CAPACITY * 2
+        val buf = PcmRingBuffer(maxCapacity = maxCap)
+
+        // Fill ~75 % of maxCapacity.
+        val first = (maxCap * 0.75).toInt()
+        buf.write(ByteBuffer.wrap(ByteArray(first)))
+        assertEquals(first, buf.size)
+
+        // Read most of it — creates dead space before readPos.
+        val readDest = ByteBuffer.allocate(first - 100)
+        buf.readChunk(readDest)
+        assertEquals(100, buf.size)
+
+        // Without compaction this write would push writePos past maxCapacity.
+        // With compaction the 100 unread bytes shift to index 0, leaving room.
+        val second = maxCap - 200
+        buf.write(ByteBuffer.wrap(ByteArray(second)))
+        assertEquals(100 + second, buf.size)
+    }
 }
