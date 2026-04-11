@@ -14,9 +14,15 @@ import java.nio.ByteBuffer
  *   Reads are rounded down to the nearest multiple of [frameSize] so that
  *   encoder input buffers are never split in the middle of a PCM frame.
  */
-internal class PcmRingBuffer(private val frameSize: Int = 1) {
+internal class PcmRingBuffer(
+    private val frameSize: Int = 1,
+    private val maxCapacity: Int = DEFAULT_MAX_CAPACITY,
+) {
     init {
         require(frameSize >= 1) { "frameSize must be >= 1" }
+        require(maxCapacity >= INITIAL_CAPACITY) {
+            "maxCapacity must be >= $INITIAL_CAPACITY"
+        }
     }
 
     private var data = ByteArray(INITIAL_CAPACITY)
@@ -24,7 +30,9 @@ internal class PcmRingBuffer(private val frameSize: Int = 1) {
     private var writePos = 0
 
     /** Number of unread bytes. */
-    private val available: Int get() = writePos - readPos
+    val size: Int get() = writePos - readPos
+
+    private val available: Int get() = size
 
     /** Appends all remaining bytes from [src] into the buffer. */
     fun write(src: ByteBuffer) {
@@ -95,13 +103,19 @@ internal class PcmRingBuffer(private val frameSize: Int = 1) {
 
     private fun ensureCapacity(needed: Int) {
         if (needed <= data.size) return
+        check(needed <= maxCapacity) {
+            "PcmRingBuffer exceeded max capacity of $maxCapacity bytes " +
+                "(requested $needed) — backpressure logic may be broken"
+        }
         var newCap = data.size
         while (newCap < needed) newCap *= 2
+        newCap = newCap.coerceAtMost(maxCapacity)
         data = data.copyOf(newCap)
         // readPos and writePos remain valid — data was only extended.
     }
 
-    private companion object {
+    internal companion object {
         const val INITIAL_CAPACITY = 16_384
+        const val DEFAULT_MAX_CAPACITY = 8 * 1024 * 1024 // 8 MB safety net
     }
 }
