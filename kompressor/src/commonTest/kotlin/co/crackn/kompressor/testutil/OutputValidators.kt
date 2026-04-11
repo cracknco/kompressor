@@ -29,6 +29,30 @@ object OutputValidators {
         return false
     }
 
-    private const val FTYP_SCAN_LIMIT = 32
+    /**
+     * MP4 container: scan for `ftyp` box plus a `moov` or `mdat` box to confirm
+     * the file is a plausible MP4 video container (not just an audio-only M4A).
+     */
+    fun isValidMp4(bytes: ByteArray): Boolean {
+        if (bytes.size < MIN_MP4_SIZE) return false
+        val hasFtyp = scanForBox(bytes, 'f', 't', 'y', 'p')
+        val hasMoovOrMdat = scanForBox(bytes, 'm', 'o', 'o', 'v') ||
+            scanForBox(bytes, 'm', 'd', 'a', 't')
+        return hasFtyp && hasMoovOrMdat
+    }
 
+    private fun scanForBox(bytes: ByteArray, c0: Char, c1: Char, c2: Char, c3: Char): Boolean {
+        val limit = minOf(bytes.size - FOUR_CC_SIZE, BOX_SCAN_LIMIT)
+        for (i in 0..limit) {
+            if (bytes[i] == c0.code.toByte() && bytes[i + 1] == c1.code.toByte() &&
+                bytes[i + 2] == c2.code.toByte() && bytes[i + 3] == c3.code.toByte()
+            ) return true
+        }
+        return false
+    }
+
+    private const val FTYP_SCAN_LIMIT = 32
+    private const val MIN_MP4_SIZE = 16
+    private const val FOUR_CC_SIZE = 4
+    private const val BOX_SCAN_LIMIT = 4096
 }

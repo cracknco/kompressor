@@ -201,5 +201,6 @@ public final class co/crackn/kompressor/video/VideoPresets {
 	public final fun getHIGH_QUALITY ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 	public final fun getLOW_BANDWIDTH ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 	public final fun getMESSAGING ()Lco/crackn/kompressor/video/VideoCompressionConfig;
+	public final fun getSOCIAL_MEDIA ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 }
 
