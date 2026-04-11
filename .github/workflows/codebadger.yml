@@ -38,7 +38,7 @@ jobs:
       - name: Install Joern
         if: steps.joern-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL https://github.com/joernio/joern/releases/latest/download/joern-install.sh \
+          curl -fsSL "https://github.com/joernio/joern/releases/download/v${{ steps.joern-version.outputs.version }}/joern-install.sh" \
             | bash -s -- --install-dir=.
 
       - name: Add Joern to PATH
@@ -49,13 +49,13 @@ jobs:
         id: cpg-kotlin-cache
         with:
           path: cpg-kotlin.bin
-          key: cpg-kotlin-${{ hashFiles('kompressor/src/commonMain/**', 'kompressor/src/androidMain/**') }}
+          key: cpg-kotlin-${{ steps.joern-version.outputs.version }}-${{ hashFiles('kompressor/src/commonMain/**', 'kompressor/src/androidMain/**') }}
 
       - uses: actions/cache@0c907a75c2c80ebcb7f088228285e798b750cf8f # v4
         id: cpg-swift-cache
         with:
           path: cpg-swift.bin
-          key: cpg-swift-${{ hashFiles('kompressor/src/iosMain/**') }}
+          key: cpg-swift-${{ steps.joern-version.outputs.version }}-${{ hashFiles('kompressor/src/iosMain/**') }}
 
       # ── Generate CPGs (skip on cache hit) ──────────────────
       - name: Generate CPG — Kotlin (commonMain + androidMain)
@@ -87,8 +87,10 @@ jobs:
             echo '{}' > .codebadger.json
           fi
 
-      # ── Run analysis (findings → non-zero exit → fail) ────
+      # ── Run analysis (both steps run independently; fail deferred) ─
       - name: Run Joern analysis — Kotlin
+        id: kotlin-analysis
+        continue-on-error: true
         run: |
           mkdir -p build/reports/codebadger
           joern --script .github/joern/queries.sc \
@@ -97,11 +99,18 @@ jobs:
             --param configFile=.codebadger.json
 
       - name: Run Joern analysis — Swift
+        id: swift-analysis
+        if: always()
+        continue-on-error: true
         run: |
           joern --script .github/joern/queries.sc \
             --param cpgFile=cpg-swift.bin \
             --param outputFile=build/reports/codebadger/swift-findings.json \
             --param configFile=.codebadger.json
+
+      - name: Fail workflow on active findings
+        if: always() && (steps.kotlin-analysis.outcome == 'failure' || steps.swift-analysis.outcome == 'failure')
+        run: exit 1
 
       # ── Upload reports ─────────────────────────────────────
       - name: Upload CodeBadger reports
