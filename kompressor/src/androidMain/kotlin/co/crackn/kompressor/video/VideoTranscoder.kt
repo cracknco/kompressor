@@ -6,6 +6,13 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.view.Surface
+import co.crackn.kompressor.CODEC_TIMEOUT_US
+import co.crackn.kompressor.PROGRESS_SETUP
+import co.crackn.kompressor.REMUX_BUFFER_SIZE
+import co.crackn.kompressor.reportMediaCodecProgress
+import co.crackn.kompressor.safeRelease
+import co.crackn.kompressor.safeLong
+import co.crackn.kompressor.safeStopAndRelease
 import java.nio.ByteBuffer
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -59,28 +66,46 @@ internal class VideoTranscoder(
     ) {
         val encoderFormat = buildEncoderFormat(targetW, targetH)
         val encoder = MediaCodec.createEncoderByType(H264_MIME)
-        encoder.configure(encoderFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val inputSurface = encoder.createInputSurface()
-        encoder.start()
-
         try {
-            val decoder = createDecoder(extractor.getTrackFormat(videoIdx), inputSurface)
+            encoder.configure(encoderFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val inputSurface = encoder.createInputSurface()
             try {
-                val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-                try {
-                    runPipeline(
-                        extractor, decoder, encoder, muxer,
-                        videoIdx, audioFormat, totalDurationUs, onProgress,
-                    )
-                } finally {
-                    muxer.safeStopAndRelease()
-                }
+                encoder.start()
+                transcodeWithCodecs(
+                    extractor, encoder, inputSurface, videoIdx,
+                    audioFormat, totalDurationUs, onProgress,
+                )
             } finally {
-                decoder.safeRelease()
+                inputSurface.release()
             }
         } finally {
             encoder.safeRelease()
-            inputSurface.release()
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private suspend fun transcodeWithCodecs(
+        extractor: MediaExtractor,
+        encoder: MediaCodec,
+        inputSurface: Surface,
+        videoIdx: Int,
+        audioFormat: MediaFormat?,
+        totalDurationUs: Long,
+        onProgress: suspend (Float) -> Unit,
+    ) {
+        val decoder = createDecoder(extractor.getTrackFormat(videoIdx), inputSurface)
+        try {
+            val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            try {
+                runPipeline(
+                    extractor, decoder, encoder, muxer,
+                    videoIdx, audioFormat, totalDurationUs, onProgress,
+                )
+            } finally {
+                muxer.safeStopAndRelease()
+            }
+        } finally {
+            decoder.safeRelease()
         }
     }
 
@@ -186,12 +211,15 @@ private class VideoTranscodeLoop(
     private var lastProgress = PROGRESS_SETUP
 
     suspend fun run(totalDurationUs: Long, onProgress: suspend (Float) -> Unit) {
+        var idleDrains = 0
         while (true) {
             currentCoroutineContext().ensureActive()
             if (!extractorDone) feedDecoder()
             if (!decoderDone) drainDecoder()
             val done = drainEncoder(totalDurationUs, onProgress)
             if (done) break
+            idleDrains = if (extractorDone && decoderDone) idleDrains + 1 else 0
+            check(idleDrains < MAX_IDLE_DRAINS) { "Encoder stalled: EOS never received" }
             yield()
         }
     }
@@ -214,8 +242,8 @@ private class VideoTranscodeLoop(
         val status = decoder.dequeueOutputBuffer(decoderInfo, CODEC_TIMEOUT_US)
         if (status < 0) return
         val isEos = decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-        // render=true pushes the frame to the encoder's input Surface (zero-copy)
-        decoder.releaseOutputBuffer(status, /* render = */ decoderInfo.size > 0)
+        // In Surface output mode, size is unreliable — always render non-EOS frames
+        decoder.releaseOutputBuffer(status, /* render = */ !isEos)
         if (isEos) {
             encoder.signalEndOfInputStream()
             decoderDone = true
@@ -240,7 +268,7 @@ private class VideoTranscodeLoop(
             muxer.writeSampleData(muxerVideoTrack, buf, encoderInfo)
         }
         encoder.releaseOutputBuffer(status, false)
-        lastProgress = reportProgress(
+        lastProgress = reportMediaCodecProgress(
             encoderInfo.presentationTimeUs, totalDurationUs, lastProgress, onProgress,
         )
         return encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
@@ -254,21 +282,7 @@ private class VideoTranscodeLoop(
     }
 }
 
-// ── Shared helpers ──────────────────────────────────────────────────
-
-private suspend fun reportProgress(
-    currentTimeUs: Long,
-    totalDurationUs: Long,
-    lastReported: Float,
-    onProgress: suspend (Float) -> Unit,
-): Float {
-    if (totalDurationUs <= 0 || currentTimeUs <= 0) return lastReported
-    val fraction = (currentTimeUs.toFloat() / totalDurationUs).coerceAtMost(1f)
-    val progress = PROGRESS_SETUP + PROGRESS_TRANSCODE_RANGE * fraction
-    val shouldReport = progress - lastReported >= PROGRESS_REPORT_THRESHOLD
-    if (shouldReport) onProgress(progress)
-    return if (shouldReport) progress else lastReported
-}
+// ── Helpers ─────────────────────────────────────────────────────────
 
 private fun findTrack(extractor: MediaExtractor, mimePrefix: String): Int {
     for (i in 0 until extractor.trackCount) {
@@ -278,24 +292,7 @@ private fun findTrack(extractor: MediaExtractor, mimePrefix: String): Int {
     return -1
 }
 
-private fun MediaFormat.safeLong(key: String): Long =
-    try { getLong(key) } catch (_: Exception) { 0L }
-
-private fun MediaCodec.safeRelease() {
-    try { stop() } catch (_: IllegalStateException) { /* not started */ }
-    release()
-}
-
-private fun MediaMuxer.safeStopAndRelease() {
-    try { stop() } catch (_: IllegalStateException) { /* not started */ }
-    release()
-}
-
 private const val H264_MIME = "video/avc"
 private const val VIDEO_PREFIX = "video/"
 private const val AUDIO_PREFIX = "audio/"
-private const val CODEC_TIMEOUT_US = 0L
-private const val REMUX_BUFFER_SIZE = 256 * 1024
-private const val PROGRESS_SETUP = 0.05f
-private const val PROGRESS_TRANSCODE_RANGE = 0.90f
-private const val PROGRESS_REPORT_THRESHOLD = 0.01f
+private const val MAX_IDLE_DRAINS = 1_000

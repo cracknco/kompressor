@@ -98,8 +98,8 @@ class GoldenVideoTest {
     }
 
     private companion object {
-        const val INPUT_WIDTH = 1280
-        const val INPUT_HEIGHT = 720
+        const val INPUT_WIDTH = 640
+        const val INPUT_HEIGHT = 480
         const val INPUT_FRAMES = 30
         const val INPUT_FPS = 30
     }

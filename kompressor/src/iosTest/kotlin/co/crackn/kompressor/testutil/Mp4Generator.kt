@@ -66,7 +66,6 @@ object Mp4Generator {
             outputSettings = videoSettings,
         )
         input.expectsMediaDataInRealTime = false
-
         val adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput = input,
             sourcePixelBufferAttributes = null,
@@ -78,12 +77,15 @@ object Mp4Generator {
 
         for (frame in 0 until frameCount) {
             while (!input.readyForMoreMediaData) {
-                // spin until ready
+                platform.Foundation.NSThread.sleepForTimeInterval(READY_POLL_SEC)
             }
             val pixelBuffer = createGreyPixelBuffer(width, height)
+                ?: error("CVPixelBufferCreate failed for ${width}x$height")
             try {
                 val pts = CMTimeMake(value = frame.toLong(), timescale = fps)
-                adaptor.appendPixelBuffer(pixelBuffer!!, withPresentationTime = pts)
+                check(adaptor.appendPixelBuffer(pixelBuffer, withPresentationTime = pts)) {
+                    "appendPixelBuffer failed at frame $frame: ${writer.error}"
+                }
             } finally {
                 CVPixelBufferRelease(pixelBuffer)
             }
@@ -125,4 +127,5 @@ object Mp4Generator {
     private const val DEFAULT_FRAME_COUNT = 30
     private const val DEFAULT_FPS = 30
     private const val GREY_VALUE = 128
+    private const val READY_POLL_SEC = 0.01
 }
