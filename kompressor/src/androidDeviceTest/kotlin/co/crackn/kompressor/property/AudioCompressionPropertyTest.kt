@@ -86,11 +86,12 @@ class AudioCompressionPropertyTest {
         val output = File(tempDir, "progress_out.m4a")
         val progressValues = mutableListOf<Float>()
 
-        compressor.compress(
+        val result = compressor.compress(
             inputPath = input.absolutePath,
             outputPath = output.absolutePath,
             onProgress = { progressValues.add(it) },
         )
+        assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
 
         assertTrue(progressValues.isNotEmpty(), "Progress should be reported")
         for (i in 1 until progressValues.size) {

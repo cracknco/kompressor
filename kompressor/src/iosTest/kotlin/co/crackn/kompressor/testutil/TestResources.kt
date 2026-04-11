@@ -36,6 +36,7 @@ fun readTestResource(path: String): ByteArray {
     val data = NSData.dataWithContentsOfFile(resourcePath)
         ?: error("Could not read test resource data: $resourcePath")
 
+    if (data.length == 0UL) return ByteArray(0)
     return ByteArray(data.length.toInt()).also { bytes ->
         bytes.usePinned { pinned ->
             memcpy(pinned.addressOf(0), data.bytes, data.length)

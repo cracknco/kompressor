@@ -8,8 +8,8 @@ data class AudioMetadata(val sampleRate: Int, val channels: Int)
 
 fun readAudioMetadata(file: File): AudioMetadata {
     val extractor = MediaExtractor()
-    extractor.setDataSource(file.absolutePath)
     try {
+        extractor.setDataSource(file.absolutePath)
         for (i in 0 until extractor.trackCount) {
             val format = extractor.getTrackFormat(i)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
@@ -28,8 +28,8 @@ fun readAudioMetadata(file: File): AudioMetadata {
 
 fun readAudioDurationMs(file: File): Long {
     val extractor = MediaExtractor()
-    extractor.setDataSource(file.absolutePath)
     try {
+        extractor.setDataSource(file.absolutePath)
         for (i in 0 until extractor.trackCount) {
             val format = extractor.getTrackFormat(i)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: continue

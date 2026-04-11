@@ -76,12 +76,15 @@ class GoldenAudioTest {
         val voiceOutput = testDir + "golden_voice.m4a"
         val defaultOutput = testDir + "golden_default_compare.m4a"
 
-        compressor.compress(inputPath, voiceOutput, AudioPresets.VOICE_MESSAGE)
-        compressor.compress(inputPath, defaultOutput)
+        val voiceResult = compressor.compress(inputPath, voiceOutput, AudioPresets.VOICE_MESSAGE)
+        val defaultResult = compressor.compress(inputPath, defaultOutput)
+        assertTrue(voiceResult.isSuccess, "Voice compression failed: ${voiceResult.exceptionOrNull()}")
+        assertTrue(defaultResult.isSuccess, "Default compression failed: ${defaultResult.exceptionOrNull()}")
 
         val voiceSize = fileSize(voiceOutput)
         val defaultSize = fileSize(defaultOutput)
         assertTrue(voiceSize > 0, "Voice output should be non-empty")
+        assertTrue(defaultSize > 0, "Default output should be non-empty")
         assertTrue(
             voiceSize < defaultSize,
             "Voice preset ($voiceSize) should be smaller than default ($defaultSize)",

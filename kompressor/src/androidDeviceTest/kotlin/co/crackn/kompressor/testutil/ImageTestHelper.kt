@@ -16,7 +16,12 @@ fun createTestImage(tempDir: File, width: Int, height: Int): File {
     canvas.drawRect(0f, 0f, width / 2f, height / 2f, paint)
 
     val file = File(tempDir, "input_${width}x$height.png")
-    FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-    bitmap.recycle()
+    try {
+        FileOutputStream(file).use { out ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "PNG encoding failed" }
+        }
+    } finally {
+        bitmap.recycle()
+    }
     return file
 }

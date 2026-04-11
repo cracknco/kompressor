@@ -17,8 +17,12 @@ object WavGenerator {
         channels: Int,
         toneFrequency: Double = TONE_FREQUENCY,
     ): ByteArray {
+        require(sampleRate > 0) { "sampleRate must be > 0, was $sampleRate" }
+        require(durationSeconds > 0) { "durationSeconds must be > 0, was $durationSeconds" }
+        require(channels > 0) { "channels must be > 0, was $channels" }
+
         val totalSamples = sampleRate.toLong() * durationSeconds
-        val dataSize = (totalSamples * channels * BYTES_PER_SAMPLE)
+        val dataSize = totalSamples * channels * BYTES_PER_SAMPLE
         require(dataSize <= Int.MAX_VALUE) { "WAV data too large: $dataSize bytes" }
         val dataSizeInt = dataSize.toInt()
         val bytes = ByteArray(WAV_HEADER_SIZE + dataSizeInt)

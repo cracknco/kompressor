@@ -19,16 +19,19 @@ fun createTestImage(testDir: String, width: Int, height: Int): String {
     UIGraphicsBeginImageContextWithOptions(
         CGSizeMake(width.toDouble(), height.toDouble()), true, 1.0,
     )
-    UIColor.blueColor.setFill()
-    UIRectFill(CGRectMake(0.0, 0.0, width.toDouble(), height.toDouble()))
-    UIColor.redColor.setFill()
-    UIRectFill(CGRectMake(0.0, 0.0, width / 2.0, height / 2.0))
-    val image = UIGraphicsGetImageFromCurrentImageContext()!!
-    UIGraphicsEndImageContext()
+    try {
+        UIColor.blueColor.setFill()
+        UIRectFill(CGRectMake(0.0, 0.0, width.toDouble(), height.toDouble()))
+        UIColor.redColor.setFill()
+        UIRectFill(CGRectMake(0.0, 0.0, width / 2.0, height / 2.0))
+        val image = UIGraphicsGetImageFromCurrentImageContext()!!
+        val data = checkNotNull(UIImagePNGRepresentation(image)) { "PNG encoding failed" }
 
-    val path = testDir + "input_${width}x$height.png"
-    val data = UIImagePNGRepresentation(image)!!
-    val url = NSURL.fileURLWithPath(path)
-    data.writeToURL(url, atomically = true)
-    return path
+        val path = testDir + "input_${width}x$height.png"
+        val url = NSURL.fileURLWithPath(path)
+        check(data.writeToURL(url, atomically = true)) { "Failed to write PNG: $path" }
+        return path
+    } finally {
+        UIGraphicsEndImageContext()
+    }
 }
