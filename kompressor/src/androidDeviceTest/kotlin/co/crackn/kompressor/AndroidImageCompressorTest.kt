@@ -1,19 +1,16 @@
 package co.crackn.kompressor
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.createTestImage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -35,7 +32,7 @@ class AndroidImageCompressorTest {
 
     @Test
     fun compressImage_producesValidOutput() = runTest {
-        val input = createTestImage(1000, 1000)
+        val input = createTestImage(tempDir, 1000, 1000)
         val output = File(tempDir, "output.jpg")
 
         val result = compressor.compress(
@@ -50,11 +47,12 @@ class AndroidImageCompressorTest {
         assertTrue(compression.inputSize > 0)
         assertTrue(compression.compressionRatio < 1f)
         assertTrue(compression.durationMs >= 0)
+        assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output should be valid JPEG")
     }
 
     @Test
     fun compressImage_withResize_reducesDimensions() = runTest {
-        val input = createTestImage(2000, 1000)
+        val input = createTestImage(tempDir, 2000, 1000)
         val output = File(tempDir, "resized.jpg")
 
         val result = compressor.compress(
@@ -72,7 +70,7 @@ class AndroidImageCompressorTest {
 
     @Test
     fun compressImage_qualityAffectsSize() = runTest {
-        val input = createTestImage(1000, 1000)
+        val input = createTestImage(tempDir, 1000, 1000)
         val outputLow = File(tempDir, "low.jpg")
         val outputMid = File(tempDir, "mid.jpg")
         val outputHigh = File(tempDir, "high.jpg")
@@ -92,16 +90,4 @@ class AndroidImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
-    private fun createTestImage(width: Int, height: Int): File {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.BLUE)
-        val paint = Paint().apply { color = Color.RED }
-        canvas.drawRect(0f, 0f, width / 2f, height / 2f, paint)
-
-        val file = File(tempDir, "input_${width}x$height.png")
-        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
-        return file
-    }
 }

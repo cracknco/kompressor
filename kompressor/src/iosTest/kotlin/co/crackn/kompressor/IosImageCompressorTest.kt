@@ -2,25 +2,18 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.image.IosImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.createTestImage
+import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readBytes
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.runTest
 import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
-import platform.CoreGraphics.CGRectMake
-import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSTemporaryDirectory
-import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
-import platform.Foundation.writeToURL
-import platform.UIKit.UIColor
-import platform.UIKit.UIGraphicsBeginImageContextWithOptions
-import platform.UIKit.UIGraphicsEndImageContext
-import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImage
-import platform.UIKit.UIImagePNGRepresentation
-import platform.UIKit.UIRectFill
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -48,7 +41,7 @@ class IosImageCompressorTest {
 
     @Test
     fun compressImage_producesValidOutput() = runTest {
-        val inputPath = createTestImage(1000, 1000)
+        val inputPath = createTestImage(testDir, 1000, 1000)
         val outputPath = testDir + "output.jpg"
 
         val result = compressor.compress(inputPath, outputPath)
@@ -59,11 +52,13 @@ class IosImageCompressorTest {
         assertTrue(compression.inputSize > 0)
         assertTrue(compression.compressionRatio < 1f)
         assertTrue(compression.durationMs >= 0)
+        val outputBytes = readBytes(outputPath)
+        assertTrue(OutputValidators.isValidJpeg(outputBytes), "Output should be valid JPEG")
     }
 
     @Test
     fun compressImage_withResize_reducesDimensions() = runTest {
-        val inputPath = createTestImage(2000, 1000)
+        val inputPath = createTestImage(testDir, 2000, 1000)
         val outputPath = testDir + "resized.jpg"
 
         val result = compressor.compress(
@@ -81,7 +76,7 @@ class IosImageCompressorTest {
 
     @Test
     fun compressImage_noResize() = runTest {
-        val inputPath = createTestImage(500, 500)
+        val inputPath = createTestImage(testDir, 500, 500)
         val outputPath = testDir + "no_resize.jpg"
 
         val result = compressor.compress(
@@ -99,7 +94,7 @@ class IosImageCompressorTest {
 
     @Test
     fun compressImage_qualityAffectsSize() = runTest {
-        val inputPath = createTestImage(1000, 1000)
+        val inputPath = createTestImage(testDir, 1000, 1000)
         val outputLow = testDir + "low.jpg"
         val outputMid = testDir + "mid.jpg"
         val outputHigh = testDir + "high.jpg"
@@ -121,28 +116,4 @@ class IosImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
-    private fun createTestImage(width: Int, height: Int): String {
-        UIGraphicsBeginImageContextWithOptions(
-            CGSizeMake(width.toDouble(), height.toDouble()), true, 1.0,
-        )
-        UIColor.blueColor.setFill()
-        UIRectFill(CGRectMake(0.0, 0.0, width.toDouble(), height.toDouble()))
-        UIColor.redColor.setFill()
-        UIRectFill(CGRectMake(0.0, 0.0, width / 2.0, height / 2.0))
-        val image = UIGraphicsGetImageFromCurrentImageContext()!!
-        UIGraphicsEndImageContext()
-
-        val path = testDir + "input_${width}x$height.png"
-        val data = UIImagePNGRepresentation(image)!!
-        val url = NSURL.fileURLWithPath(path)
-        data.writeToURL(url, atomically = true)
-        return path
-    }
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager
-            .attributesOfItemAtPath(path, null) ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong()
-            ?: error("Cannot read file size: $path")
-    }
 }

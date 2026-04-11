@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kover)
+    alias(libs.plugins.binaryCompatibilityValidator)
 }
 
 group = "co.crackn.kompressor"
@@ -88,7 +89,7 @@ kover {
         verify {
             rule {
                 bound {
-                    minValue = 70
+                    minValue = 85
                 }
             }
         }
