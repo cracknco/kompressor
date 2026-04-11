@@ -10,26 +10,21 @@ import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
-import kotlinx.cinterop.BetaInteropApi
+import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.writeBytes
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.test.runTest
-import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
-import platform.Foundation.create
-import platform.Foundation.writeToURL
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+@OptIn(ExperimentalForeignApi::class)
 class IosAudioCompressorTest {
 
     private lateinit var testDir: String
@@ -263,20 +258,8 @@ class IosAudioCompressorTest {
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): String {
         val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)
         val path = testDir + "test_${sampleRate}hz_${channels}ch_${durationSeconds}s.wav"
-        val data = bytes.usePinned { pinned ->
-            NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
-        }
-        val url = NSURL.fileURLWithPath(path)
-        val written = data.writeToURL(url, atomically = true)
-        check(written) { "Failed to write test WAV file: $path" }
+        writeBytes(path, bytes)
         return path
-    }
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager
-            .attributesOfItemAtPath(path, null) ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong()
-            ?: error("Cannot read file size: $path")
     }
 
     private companion object {

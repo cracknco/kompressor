@@ -73,14 +73,13 @@ class ImageDimensionsPropertyTest {
         checkAll(config, Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000)) {
                 origW, origH, maxW, maxH ->
             val result = calculateTargetDimensions(origW, origH, maxW, maxH, keepAspectRatio = true)
-            assertTrue(
-                result.width <= maxW || result.width <= origW,
-                "Width ${result.width} exceeds max $maxW and original $origW",
-            )
-            assertTrue(
-                result.height <= maxH || result.height <= origH,
-                "Height ${result.height} exceeds max $maxH and original $origH",
-            )
+            // When original exceeds constraint, output must respect constraint
+            if (origW > maxW) {
+                assertTrue(result.width <= maxW, "Width ${result.width} exceeds max $maxW (orig=$origW)")
+            }
+            if (origH > maxH) {
+                assertTrue(result.height <= maxH, "Height ${result.height} exceeds max $maxH (orig=$origH)")
+            }
         }
     }
 
@@ -89,13 +88,15 @@ class ImageDimensionsPropertyTest {
         checkAll(config, Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000)) {
                 origW, origH, maxW, maxH ->
             val result = calculateTargetDimensions(origW, origH, maxW, maxH, keepAspectRatio = false)
+            val expectedW = minOf(origW, maxW)
+            val expectedH = minOf(origH, maxH)
             assertTrue(
-                result.width <= origW && result.width <= maxW || result.width == origW,
-                "Without aspect ratio, width should be min(orig, max)",
+                result.width == expectedW,
+                "Width should be min($origW, $maxW) = $expectedW, got ${result.width}",
             )
             assertTrue(
-                result.height <= origH && result.height <= maxH || result.height == origH,
-                "Without aspect ratio, height should be min(orig, max)",
+                result.height == expectedH,
+                "Height should be min($origH, $maxH) = $expectedH, got ${result.height}",
             )
         }
     }

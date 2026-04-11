@@ -1,19 +1,20 @@
 package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.readAudioDurationMs
+import co.crackn.kompressor.testutil.readAudioMetadata
 import java.io.File
 import kotlin.math.abs
 import kotlin.test.assertEquals
@@ -156,7 +157,7 @@ class AndroidAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that resampling actually occurred
-        val metadata = readOutputMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should be resampled to 44.1kHz")
         assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
@@ -177,7 +178,7 @@ class AndroidAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that resampling and channel conversion occurred for voice preset
-        val metadata = readOutputMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Voice message should be resampled to 22.05kHz")
         assertEquals(MONO, metadata.channels, "Voice message should be converted to mono")
     }
@@ -198,7 +199,7 @@ class AndroidAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that channel conversion actually occurred
-        val metadata = readOutputMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
         assertEquals(MONO, metadata.channels, "Output should be converted to mono")
     }
@@ -219,7 +220,7 @@ class AndroidAudioCompressorTest {
         assertTrue(result.getOrThrow().outputSize > 0)
 
         // Assert that channel conversion actually occurred
-        val metadata = readOutputMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Output should maintain 44.1kHz sample rate")
         assertEquals(STEREO, metadata.channels, "Output should be converted to stereo")
     }
@@ -237,7 +238,7 @@ class AndroidAudioCompressorTest {
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
 
-        val outputDurationMs = readOutputDurationMs(output)
+        val outputDurationMs = readAudioDurationMs(output)
         val expectedMs = durationSec * MS_PER_SECOND
         assertTrue(
             abs(outputDurationMs - expectedMs) < DURATION_TOLERANCE_MS,
@@ -246,48 +247,10 @@ class AndroidAudioCompressorTest {
         )
 
         // Assert that resampling actually occurred
-        val metadata = readOutputMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_22K, metadata.sampleRate, "Output should be resampled to 22.05kHz")
         assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
-
-    private fun readOutputDurationMs(file: File): Long {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
-        try {
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    return format.getLong(MediaFormat.KEY_DURATION) / US_PER_MS
-                }
-            }
-            error("No audio track in output")
-        } finally {
-            extractor.release()
-        }
-    }
-
-    private fun readOutputMetadata(file: File): AudioMetadata {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
-        try {
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                    return AudioMetadata(sampleRate, channelCount)
-                }
-            }
-            error("No audio track in output")
-        } finally {
-            extractor.release()
-        }
-    }
-
-    private data class AudioMetadata(val sampleRate: Int, val channels: Int)
 
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): File {
@@ -299,7 +262,5 @@ class AndroidAudioCompressorTest {
 
     private companion object {
         const val MS_PER_SECOND = 1_000L
-        const val US_PER_MS = 1_000L
-        const val DURATION_TOLERANCE_MS = 300L
     }
 }

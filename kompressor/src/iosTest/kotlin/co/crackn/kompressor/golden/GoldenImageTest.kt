@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+@file:OptIn(ExperimentalForeignApi::class)
 
 package co.crackn.kompressor.golden
 
@@ -7,18 +7,15 @@ import co.crackn.kompressor.image.ImagePresets
 import co.crackn.kompressor.image.IosImageCompressor
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
-import kotlinx.cinterop.BetaInteropApi
+import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readBytes
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.test.runTest
 import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
-import platform.Foundation.dataWithContentsOfFile
 import platform.UIKit.UIImage
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -115,19 +112,4 @@ class GoldenImageTest {
         assertTrue(sizeLow < sizeHigh, "q10 ($sizeLow) should be smaller than q95 ($sizeHigh)")
     }
 
-    private fun readBytes(path: String): ByteArray {
-        val data = platform.Foundation.NSData.dataWithContentsOfFile(path)
-            ?: error("Cannot read file: $path")
-        return ByteArray(data.length.toInt()).also { bytes ->
-            bytes.usePinned { pinned ->
-                platform.posix.memcpy(pinned.addressOf(0), data.bytes, data.length)
-            }
-        }
-    }
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null)
-            ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong() ?: error("Cannot read size: $path")
-    }
 }

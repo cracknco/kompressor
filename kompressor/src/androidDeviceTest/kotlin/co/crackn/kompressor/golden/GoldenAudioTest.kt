@@ -1,16 +1,17 @@
 package co.crackn.kompressor.golden
 
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.readAudioDurationMs
+import co.crackn.kompressor.testutil.readAudioMetadata
 import java.io.File
 import kotlin.math.abs
 import kotlin.test.assertEquals
@@ -51,7 +52,6 @@ class GoldenAudioTest {
         assertTrue(result.isSuccess)
         val compression = result.getOrThrow()
 
-        // Functional criteria
         assertTrue(output.exists(), "Output file must exist")
         assertTrue(compression.outputSize > 0, "Output must be non-empty")
         assertTrue(
@@ -60,15 +60,13 @@ class GoldenAudioTest {
         )
         assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
 
-        // Duration preserved within tolerance
-        val outputDurationMs = readDurationMs(output)
+        val outputDurationMs = readAudioDurationMs(output)
         assertTrue(
             abs(outputDurationMs - EXPECTED_DURATION_2S_MS) < DURATION_TOLERANCE_MS,
             "Duration $outputDurationMs ms should be within ${DURATION_TOLERANCE_MS}ms of ${EXPECTED_DURATION_2S_MS}ms",
         )
 
-        // Metadata matches default config
-        val metadata = readMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Sample rate should match default config")
         assertEquals(STEREO, metadata.channels, "Channel count should match default config")
     }
@@ -83,7 +81,7 @@ class GoldenAudioTest {
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
 
-        val metadata = readMetadata(output)
+        val metadata = readAudioMetadata(output)
         assertEquals(AudioPresets.VOICE_MESSAGE.sampleRate, metadata.sampleRate, "Voice preset: 22.05kHz")
         assertEquals(AudioChannels.MONO.count, metadata.channels, "Voice preset: mono")
 
@@ -124,48 +122,7 @@ class GoldenAudioTest {
         return file
     }
 
-    private fun readDurationMs(file: File): Long {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
-        try {
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    return format.getLong(MediaFormat.KEY_DURATION) / US_PER_MS
-                }
-            }
-            error("No audio track in output")
-        } finally {
-            extractor.release()
-        }
-    }
-
-    private fun readMetadata(file: File): AudioMetadata {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
-        try {
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    return AudioMetadata(
-                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE),
-                        channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),
-                    )
-                }
-            }
-            error("No audio track in output")
-        } finally {
-            extractor.release()
-        }
-    }
-
-    private data class AudioMetadata(val sampleRate: Int, val channels: Int)
-
     private companion object {
         const val EXPECTED_DURATION_2S_MS = 2_000L
-        const val DURATION_TOLERANCE_MS = 300L
-        const val US_PER_MS = 1_000L
     }
 }

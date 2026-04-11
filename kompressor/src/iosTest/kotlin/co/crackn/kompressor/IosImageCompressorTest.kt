@@ -4,16 +4,13 @@ import co.crackn.kompressor.image.IosImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
-import kotlinx.cinterop.BetaInteropApi
+import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readBytes
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
-import platform.Foundation.dataWithContentsOfFile
 import kotlinx.coroutines.test.runTest
 import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import platform.UIKit.UIImage
@@ -23,7 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+@OptIn(ExperimentalForeignApi::class)
 class IosImageCompressorTest {
 
     private lateinit var testDir: String
@@ -119,20 +116,4 @@ class IosImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
-    private fun readBytes(path: String): ByteArray {
-        val data = platform.Foundation.NSData.dataWithContentsOfFile(path)
-            ?: error("Cannot read file: $path")
-        return ByteArray(data.length.toInt()).also { bytes ->
-            bytes.usePinned { pinned ->
-                platform.posix.memcpy(pinned.addressOf(0), data.bytes, data.length)
-            }
-        }
-    }
-
-    private fun fileSize(path: String): Long {
-        val attrs = NSFileManager.defaultManager
-            .attributesOfItemAtPath(path, null) ?: error("File not found: $path")
-        return (attrs[NSFileSize] as? Number)?.toLong()
-            ?: error("Cannot read file size: $path")
-    }
 }
