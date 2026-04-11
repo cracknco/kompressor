@@ -191,8 +191,10 @@ private class TranscodeLoop(
     suspend fun run(totalDurationUs: Long, onProgress: suspend (Float) -> Unit) {
         while (true) {
             currentCoroutineContext().ensureActive()
-            if (!extractorDone) feedDecoder()
-            if (!decoderDone) drainDecoder()
+            val bufferFull = pcmBuffer.size >= PCM_BUFFER_HIGH_WATER
+            if (!extractorDone && !bufferFull) feedDecoder()
+            if (!decoderDone && !bufferFull) drainDecoder()
+            if (bufferFull) feedEncoderFromBuffer()
             val encoderDone = drainEncoder(totalDurationUs, onProgress)
             if (encoderDone) break
             yield()
@@ -369,4 +371,5 @@ private const val BITRATE_TOLERANCE = 0.8f
 private const val AAC_MIME = "audio/mp4a-latm"
 private const val BYTES_PER_SAMPLE = 2
 private const val MICROS_PER_SECOND = 1_000_000L
+private const val PCM_BUFFER_HIGH_WATER = PcmRingBuffer.DEFAULT_MAX_CAPACITY / 4
 private const val DEFAULT_ENCODER_BUF_SIZE = 8_192
