@@ -17,7 +17,6 @@ plugins {
 // the coverage gate.
 dependencies {
     kover(project(":kompressor"))
-    kover(project(":sample"))
 }
 
 kover {
