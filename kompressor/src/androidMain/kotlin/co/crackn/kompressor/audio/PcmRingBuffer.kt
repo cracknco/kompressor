@@ -9,8 +9,15 @@ import java.nio.ByteBuffer
  * Uses a read-pointer to avoid shifting data on every [readChunk] call.
  * The backing array is compacted only when the read pointer has consumed
  * more than half the capacity, amortising the copy cost.
+ *
+ * @param frameSize The PCM frame size in bytes (channels × bytes-per-sample).
+ *   Reads are rounded down to the nearest multiple of [frameSize] so that
+ *   encoder input buffers are never split in the middle of a PCM frame.
  */
-internal class PcmRingBuffer {
+internal class PcmRingBuffer(private val frameSize: Int = 1) {
+    init {
+        require(frameSize >= 1) { "frameSize must be >= 1" }
+    }
 
     private var data = ByteArray(INITIAL_CAPACITY)
     private var readPos = 0
@@ -31,18 +38,21 @@ internal class PcmRingBuffer {
     /** Returns `true` when at least [chunkSize] bytes are available. */
     fun hasChunk(chunkSize: Int): Boolean = available >= chunkSize
 
-    /** Returns `true` when any data remains (even less than a full chunk). */
-    fun hasRemaining(): Boolean = available > 0
+    /** Returns `true` when at least one complete frame remains to be flushed. */
+    fun hasRemaining(): Boolean = available >= frameSize
 
     /**
-     * Copies exactly [dest]`.capacity()` bytes into [dest] and removes them
-     * from the buffer.  The caller must ensure [hasChunk] returned `true`
-     * for this capacity first.
+     * Copies bytes into [dest], rounded down to the nearest [frameSize] multiple,
+     * and removes them from the buffer.  The caller must ensure [hasChunk] returned
+     * `true` for [dest]`.capacity()` first.
      *
-     * @return the number of bytes written.
+     * Rounding down guarantees the encoder input buffer is never split mid-frame,
+     * which would corrupt the PCM layout and break PTS accounting.
+     *
+     * @return the number of bytes written (a multiple of [frameSize]).
      */
     fun readChunk(dest: ByteBuffer): Int {
-        val chunkSize = dest.capacity()
+        val chunkSize = dest.capacity() / frameSize * frameSize
         require(available >= chunkSize) { "Not enough data: $available < $chunkSize" }
         dest.clear()
         dest.put(data, readPos, chunkSize)
@@ -53,13 +63,17 @@ internal class PcmRingBuffer {
     }
 
     /**
-     * Drains all remaining bytes into [dest].
+     * Drains all remaining complete frames into [dest].
      * Used at end-of-stream for the final partial chunk.
      *
-     * @return the number of bytes written.
+     * Any trailing bytes that form an incomplete frame are left in the buffer
+     * rather than being split across encoder input buffers.
+     *
+     * @return the number of bytes written (a multiple of [frameSize]).
      */
     fun flush(dest: ByteBuffer): Int {
-        val count = minOf(available, dest.capacity())
+        val count = minOf(available, dest.capacity()) / frameSize * frameSize
+        if (count == 0) return 0
         dest.clear()
         dest.put(data, readPos, count)
         dest.flip()

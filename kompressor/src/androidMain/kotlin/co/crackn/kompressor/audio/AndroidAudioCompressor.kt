@@ -179,7 +179,7 @@ private class TranscodeLoop(
 ) {
     private val decoderInfo = MediaCodec.BufferInfo()
     private val encoderInfo = MediaCodec.BufferInfo()
-    private val pcmBuffer = PcmRingBuffer()
+    private val pcmBuffer = PcmRingBuffer(outputChannels * BYTES_PER_SAMPLE)
     private var muxerTrackIndex = -1
     private var muxerStarted = false
     private var extractorDone = false

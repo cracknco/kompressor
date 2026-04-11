@@ -77,8 +77,6 @@ kover {
                     "co.crackn.kompressor.*.Ios*",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
                     "co.crackn.kompressor.audio.TranscodeLoop",
-                    "co.crackn.kompressor.audio.PcmProcessor",
-                    "co.crackn.kompressor.audio.PcmRingBuffer",
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.IosKompressor",
                     "co.crackn.kompressor.IosFileUtils*",

@@ -29,6 +29,15 @@ internal class PcmProcessor(
     private val inputChannels: Int,
     private val outputChannels: Int,
 ) {
+    init {
+        require(inputChannels == MONO_CHANNELS || inputChannels == STEREO_CHANNELS) {
+            "Unsupported input channel count: $inputChannels"
+        }
+        require(outputChannels == MONO_CHANNELS || outputChannels == STEREO_CHANNELS) {
+            "Unsupported output channel count: $outputChannels"
+        }
+    }
+
     private val needsResample = inputRate != outputRate
     private val needsChannelConvert = inputChannels != outputChannels
     private val ratio: Double = outputRate.toDouble() / inputRate.toDouble()
@@ -43,6 +52,9 @@ internal class PcmProcessor(
 
     // Reusable output buffer — grown as needed, never shrunk within a stream.
     private var outBuf = ByteBuffer.allocate(INITIAL_OUT_BUF).order(ByteOrder.LITTLE_ENDIAN)
+
+    // Last frame of the previous chunk, prepended to the next for cross-boundary interpolation.
+    private var lastChunkFrame: ShortArray? = null
 
     /**
      * Processes a chunk of PCM and returns a [ByteBuffer] with the converted result.
@@ -105,9 +117,12 @@ internal class PcmProcessor(
     /**
      * Resamples interleaved PCM via linear interpolation.
      *
-     * Uses hold-last-value at chunk boundaries: when the interpolation
-     * index reaches the last input frame, the last sample is repeated
-     * so that no frames are silently dropped — even for single-frame chunks.
+     * Maintains streaming continuity across chunk boundaries by prepending the last
+     * frame of the previous chunk to the current input.  When the interpolation index
+     * would require the first frame of the *next* chunk (i.e. at the final boundary),
+     * the loop stops and defers that output to the following [process] call.  This
+     * eliminates the periodic discontinuity that the hold-last-value approach produced
+     * at every chunk boundary.
      */
     @Suppress("NestedBlockDepth")
     private fun resample(
@@ -117,26 +132,49 @@ internal class PcmProcessor(
     ): ShortArray {
         if (frameCount == 0) return ShortArray(0)
 
+        // Prepend last frame from previous chunk for seamless cross-boundary interpolation.
+        val prev = lastChunkFrame
+        val extData: ShortArray
+        val extFrameCount: Int
+        val phaseOffset: Int
+        if (prev != null) {
+            extData = ShortArray(channels + data.size)
+            prev.copyInto(extData, 0)
+            data.copyInto(extData, channels)
+            extFrameCount = frameCount + 1
+            phaseOffset = 1
+        } else {
+            extData = data
+            extFrameCount = frameCount
+            phaseOffset = 0
+        }
+
+        // Save the last frame of the current chunk for the next call.
+        lastChunkFrame = data.copyOfRange((frameCount - 1) * channels, frameCount * channels)
+
         val estOutput = ((frameCount * ratio) + 2).toInt()
         val out = ShortArray(estOutput * channels)
         var written = 0
 
-        while (phase < frameCount) {
+        phase += phaseOffset
+        while (phase < extFrameCount) {
             val idx = phase.toInt()
             val frac = phase - idx
+            // Stop before the last frame: interpolation between the last frame of this
+            // chunk and the first frame of the next chunk is handled in the next call.
+            if (idx + 1 >= extFrameCount) break
             val base0 = idx * channels
-            // Hold-last-value: clamp idx+1 to the last valid frame.
-            val base1 = if (idx + 1 < frameCount) (idx + 1) * channels else base0
+            val base1 = (idx + 1) * channels
             for (ch in 0 until channels) {
-                val s0 = data[base0 + ch].toDouble()
-                val s1 = data[base1 + ch].toDouble()
+                val s0 = extData[base0 + ch].toDouble()
+                val s1 = extData[base1 + ch].toDouble()
                 out[written++] = (s0 + (s1 - s0) * frac).toInt().coerceIn(
                     Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt(),
                 ).toShort()
             }
             phase += 1.0 / ratio
         }
-        phase -= frameCount
+        phase -= extFrameCount
 
         return out.copyOf(written)
     }
