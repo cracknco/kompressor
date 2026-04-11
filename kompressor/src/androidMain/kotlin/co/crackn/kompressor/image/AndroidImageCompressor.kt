@@ -35,6 +35,7 @@ internal class AndroidImageCompressor : ImageCompressor {
             orientedDims.width, orientedDims.height,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
+        // codebadger:suppress(resource-leak) bitmap recycled in resizeAndWrite() finally block
         val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
         currentCoroutineContext().ensureActive()
         onProgress(0.3f)
@@ -79,6 +80,7 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun decodeRawDimensions(path: String): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
         BitmapFactory.decodeFile(path, options)
         require(options.outWidth > 0 && options.outHeight > 0) {
             "Cannot decode image dimensions: $path"
@@ -122,6 +124,7 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
         if (bitmap.width == target.width && bitmap.height == target.height) return bitmap
+        // codebadger:suppress(resource-leak) caller (resizeAndWrite) recycles in finally block
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
