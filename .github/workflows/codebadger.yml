@@ -38,7 +38,8 @@ jobs:
       - name: Install Joern
         if: steps.joern-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL https://github.com/joernio/joern/releases/latest/download/joern-install.sh | bash
+          curl -fsSL https://github.com/joernio/joern/releases/latest/download/joern-install.sh \
+            | bash -s -- --install-dir=.
 
       - name: Add Joern to PATH
         run: echo "$PWD/joern-cli/bin" >> "$GITHUB_PATH"
