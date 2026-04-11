@@ -73,13 +73,8 @@ class ImageDimensionsPropertyTest {
         checkAll(config, Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000), Arb.int(1..10_000)) {
                 origW, origH, maxW, maxH ->
             val result = calculateTargetDimensions(origW, origH, maxW, maxH, keepAspectRatio = true)
-            // When original exceeds constraint, output must respect constraint
-            if (origW > maxW) {
-                assertTrue(result.width <= maxW, "Width ${result.width} exceeds max $maxW (orig=$origW)")
-            }
-            if (origH > maxH) {
-                assertTrue(result.height <= maxH, "Height ${result.height} exceeds max $maxH (orig=$origH)")
-            }
+            assertTrue(result.width <= maxW, "Width ${result.width} exceeds max $maxW (orig=$origW)")
+            assertTrue(result.height <= maxH, "Height ${result.height} exceeds max $maxH (orig=$origH)")
         }
     }
 

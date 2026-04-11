@@ -106,12 +106,9 @@ class GoldenAudioTest {
         )
 
         assertTrue(result.isSuccess)
-        // 3s at 128kbps ≈ 48KB, allow 50% margin → 24KB-72KB
-        val expectedMinBytes = 24_000L
-        val expectedMaxBytes = 72_000L
         assertTrue(
-            output.length() in expectedMinBytes..expectedMaxBytes,
-            "3s at 128kbps: expected ${expectedMinBytes}-${expectedMaxBytes} bytes, got ${output.length()}",
+            output.length() in EXPECTED_MIN_BYTES..EXPECTED_MAX_BYTES,
+            "3s at 128kbps: expected $EXPECTED_MIN_BYTES-$EXPECTED_MAX_BYTES bytes, got ${output.length()}",
         )
     }
 
@@ -124,5 +121,7 @@ class GoldenAudioTest {
 
     private companion object {
         const val EXPECTED_DURATION_2S_MS = 2_000L
+        const val EXPECTED_MIN_BYTES = 24_000L // 3s at 128kbps ≈ 48KB, -50% margin
+        const val EXPECTED_MAX_BYTES = 72_000L // 3s at 128kbps ≈ 48KB, +50% margin
     }
 }

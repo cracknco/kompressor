@@ -8,6 +8,7 @@ import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
+import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_SEC
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.fileSize
@@ -262,7 +263,4 @@ class IosAudioCompressorTest {
         return path
     }
 
-    private companion object {
-        const val DURATION_TOLERANCE_SEC = 0.3
-    }
 }

@@ -17,11 +17,21 @@ import platform.Foundation.writeToURL
 fun readBytes(path: String): ByteArray {
     val data = NSData.dataWithContentsOfFile(path)
         ?: error("Cannot read file: $path")
+    if (data.length == 0UL) return ByteArray(0)
     return ByteArray(data.length.toInt()).also { bytes ->
         bytes.usePinned { pinned ->
             platform.posix.memcpy(pinned.addressOf(0), data.bytes, data.length)
         }
     }
+}
+
+data class AudioMetadata(val sampleRate: Int, val channels: Int)
+
+fun readAudioDurationSec(path: String): Double {
+    val asset = platform.AVFoundation.AVURLAsset(
+        uRL = NSURL.fileURLWithPath(path), options = null,
+    )
+    return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
 }
 
 fun fileSize(path: String): Long {

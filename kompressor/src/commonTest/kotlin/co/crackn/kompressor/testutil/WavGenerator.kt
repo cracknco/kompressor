@@ -17,13 +17,15 @@ object WavGenerator {
         channels: Int,
         toneFrequency: Double = TONE_FREQUENCY,
     ): ByteArray {
-        val totalSamples = sampleRate * durationSeconds
-        val dataSize = totalSamples * channels * BYTES_PER_SAMPLE
-        val bytes = ByteArray(WAV_HEADER_SIZE + dataSize)
+        val totalSamples = sampleRate.toLong() * durationSeconds
+        val dataSize = (totalSamples * channels * BYTES_PER_SAMPLE)
+        require(dataSize <= Int.MAX_VALUE) { "WAV data too large: $dataSize bytes" }
+        val dataSizeInt = dataSize.toInt()
+        val bytes = ByteArray(WAV_HEADER_SIZE + dataSizeInt)
 
         // RIFF header
         writeString(bytes, 0, "RIFF")
-        writeIntLE(bytes, 4, WAV_HEADER_SIZE - RIFF_CHUNK_HEADER + dataSize)
+        writeIntLE(bytes, 4, WAV_HEADER_SIZE - RIFF_CHUNK_HEADER + dataSizeInt)
         writeString(bytes, 8, "WAVE")
 
         // fmt sub-chunk
@@ -38,11 +40,11 @@ object WavGenerator {
 
         // data sub-chunk
         writeString(bytes, 36, "data")
-        writeIntLE(bytes, 40, dataSize)
+        writeIntLE(bytes, 40, dataSizeInt)
 
         // PCM sine waves — distinct frequencies per channel
         var offset = WAV_HEADER_SIZE
-        for (i in 0 until totalSamples) {
+        for (i in 0L until totalSamples) {
             for (ch in 0 until channels) {
                 val frequency = toneFrequency * (ch + 1)
                 val sample = (Short.MAX_VALUE * sin(2.0 * PI * frequency * i / sampleRate))

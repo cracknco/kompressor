@@ -8,4 +8,5 @@ object TestConstants {
     const val STEREO = 2
     const val MONO = 1
     const val DURATION_TOLERANCE_MS = 300L
+    const val DURATION_TOLERANCE_SEC = 0.3
 }

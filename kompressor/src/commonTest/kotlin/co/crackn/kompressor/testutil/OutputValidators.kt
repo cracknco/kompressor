@@ -17,16 +17,19 @@ object OutputValidators {
         return soi && eoi
     }
 
-    /** M4A/MP4 files have an `ftyp` box near the start (within the first 12 bytes). */
+    /** M4A/MP4: scan first 32 bytes for `ftyp` box (may be preceded by `free`/`wide` boxes). */
     fun isValidM4a(bytes: ByteArray): Boolean {
-        if (bytes.size < 12) return false
-        // The ftyp box: bytes 4..7 should be "ftyp"
-        val ftyp = bytes[4] == 'f'.code.toByte() &&
-            bytes[5] == 't'.code.toByte() &&
-            bytes[6] == 'y'.code.toByte() &&
-            bytes[7] == 'p'.code.toByte()
-        return ftyp
+        if (bytes.size < 8) return false
+        val scanLimit = minOf(bytes.size - 4, FTYP_SCAN_LIMIT)
+        for (i in 0..scanLimit) {
+            if (bytes[i] == 'f'.code.toByte() && bytes[i + 1] == 't'.code.toByte() &&
+                bytes[i + 2] == 'y'.code.toByte() && bytes[i + 3] == 'p'.code.toByte()
+            ) return true
+        }
+        return false
     }
+
+    private const val FTYP_SCAN_LIMIT = 32
 
     /** MP4 container — same ftyp check as M4A (they share the ISO base media format). */
     fun isValidMp4(bytes: ByteArray): Boolean = isValidM4a(bytes)

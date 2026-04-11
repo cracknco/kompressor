@@ -7,9 +7,11 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
+import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_SEC
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readAudioDurationSec
 import co.crackn.kompressor.testutil.writeBytes
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.runTest
@@ -61,7 +63,7 @@ class GoldenAudioTest {
         )
 
         // Duration preserved
-        val outputDurationSec = readDurationSec(outputPath)
+        val outputDurationSec = readAudioDurationSec(outputPath)
         assertTrue(
             kotlin.math.abs(outputDurationSec - EXPECTED_DURATION_2S) < DURATION_TOLERANCE_SEC,
             "Duration ${outputDurationSec}s should be ~${EXPECTED_DURATION_2S}s",
@@ -112,14 +114,8 @@ class GoldenAudioTest {
         return path
     }
 
-    private fun readDurationSec(path: String): Double {
-        val asset = platform.AVFoundation.AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
-        return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
-    }
-
     private companion object {
         const val EXPECTED_DURATION_2S = 2.0
-        const val DURATION_TOLERANCE_SEC = 0.3
         const val EXPECTED_MIN_BYTES = 24_000L
         const val EXPECTED_MAX_BYTES = 72_000L
     }
