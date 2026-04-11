@@ -191,10 +191,18 @@ private class IosPipeline(
                 lastReported = reportSampleProgress(
                     buffer, totalDurationSec, lastReported, onProgress,
                 )
+                awaitWriterReady(writerInput)
                 writerInput.appendSampleBuffer(buffer)
             } finally {
                 CFRelease(buffer)
             }
+        }
+    }
+
+    private suspend fun awaitWriterReady(writerInput: AVAssetWriterInput) {
+        while (!writerInput.readyForMoreMediaData) {
+            currentCoroutineContext().ensureActive()
+            delay(WRITER_POLL_INTERVAL_MS)
         }
     }
 
@@ -248,6 +256,7 @@ private class IosPipeline(
         const val PROGRESS_READ_START = 0.10f
         const val PROGRESS_TRANSCODE_RANGE = 0.85f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
+        const val WRITER_POLL_INTERVAL_MS = 10L
     }
 }
 
