@@ -297,17 +297,30 @@
         case n: CfgNode => n.method.name
         case _ => "unknown"
       }
-      finding(
-        "taint-flow", "error",
-        s"Unvalidated data flow from ${sourceNode.code.take(60)} to ${sinkNode.code.take(60)}",
-        fileOf(sourceNode), lineOf(sourceNode), methodName,
-      )
+      val sourceStored = sourceNode match {
+        case n: StoredNode => n
+        case _ => null
+      }
+      val sinkStored = sinkNode match {
+        case n: StoredNode => n
+        case _ => null
+      }
+      if (sourceStored != null && sinkStored != null) {
+        finding(
+          "taint-flow", "error",
+          s"Unvalidated data flow from ${sourceNode.code.take(60)} to ${sinkNode.code.take(60)}",
+          fileOf(sourceStored), lineOf(sourceStored), methodName,
+        )
+      }
     }
   }
 
   // ── Q10: Force-unwrap detection (Swift) ─────────────────────
   if (ruleEnabled("force-unwrap")) {
-    val forceUnwraps = cpg.call.name(".*!$").l
+    val forceUnwraps = cpg.call
+      .filter(_.file.name.exists(_.endsWith(".swift")))
+      .filter(_.code.endsWith("!"))
+      .l
     for (fu <- forceUnwraps) {
       finding(
         "force-unwrap", "warning",
