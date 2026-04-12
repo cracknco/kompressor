@@ -76,9 +76,13 @@ object Mp4Generator {
                     val inputBuf = encoder.getInputBuffer(inputIdx) ?: error("No input buffer")
                     if (framesSubmitted < frameCount) {
                         inputBuf.clear()
-                        inputBuf.put(yuvData, 0, minOf(yuvData.size, inputBuf.capacity()))
+                        val written = minOf(yuvData.size, inputBuf.capacity())
+                        inputBuf.put(yuvData, 0, written)
                         val pts = framesSubmitted.toLong() * US_PER_SEC / fps
-                        encoder.queueInputBuffer(inputIdx, 0, yuvSize, pts, 0)
+                        // Declare the actual bytes written, not the logical yuvSize.
+                        // If the codec's buffer is smaller, claiming more would send
+                        // garbage past the written region to the encoder.
+                        encoder.queueInputBuffer(inputIdx, 0, written, pts, 0)
                     } else {
                         encoder.queueInputBuffer(
                             inputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM,

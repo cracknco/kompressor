@@ -71,18 +71,22 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `isTenBitProfile true only for the 10-bit profiles of each mime`() {
+    fun `isTenBitProfile true for the 10-bit and higher-bit-capable profiles of each mime`() {
         // HEVC
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10Plus) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain) shouldBe false
-        // AVC
+        // AVC — High 10 + High 4:2:2 + High 4:4:4 all support 10-bit
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_AVC, CodecProfileLevel.AVCProfileHigh10) shouldBe true
+        isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_AVC, CodecProfileLevel.AVCProfileHigh422) shouldBe true
+        isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_AVC, CodecProfileLevel.AVCProfileHigh444) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_AVC, CodecProfileLevel.AVCProfileHigh) shouldBe false
-        // VP9
+        // VP9 — all HDR-capable profiles (including HDR10Plus variants)
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile2) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile3HDR) shouldBe true
+        isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile2HDR10Plus) shouldBe true
+        isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile3HDR10Plus) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile0) shouldBe false
         // AV1
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_AV1, CodecProfileLevel.AV1ProfileMain10) shouldBe true

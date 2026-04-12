@@ -69,6 +69,13 @@ private fun CodecCapabilities.toVideoCodec(
     supportsHdr: Boolean,
 ): CodecSupport {
     val vc = videoCapabilities
+    // NOTE: supportedWidths.upper × supportedHeights.upper is a best-effort upper
+    // bound — a codec that reports (maxW=4096, maxH=4096) may not actually decode
+    // 4096×4096 (only 4096×2160). VideoCapabilities.isSizeSupported(w, h) returns
+    // the precise answer per-combination; we surface the pair for display and rely
+    // on the decoder to reject unsupported combinations at runtime via a typed
+    // VideoCompressionError. Supportability's resolution check is advisory for
+    // this reason.
     return CodecSupport(
         mimeType = mime,
         role = role,

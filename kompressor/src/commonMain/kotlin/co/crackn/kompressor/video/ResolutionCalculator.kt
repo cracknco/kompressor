@@ -37,13 +37,24 @@ internal object ResolutionCalculator {
             return roundToEven(sourceWidth) to roundToEven(sourceHeight)
         }
         val scale = maxShortEdge.toFloat() / shortEdge
-        val targetWidth = roundToEven((sourceWidth * scale).roundToInt())
-        val targetHeight = roundToEven((sourceHeight * scale).roundToInt())
-        return targetWidth to targetHeight
+        // Round DOWN to even so the short edge never exceeds maxShortEdge.
+        // Rounding UP (e.g. 853 → 854) would break the Custom contract when
+        // maxShortEdge is odd. Floor at 2 to avoid a zero-dimension output on
+        // pathological inputs (e.g. maxShortEdge < 2).
+        val maxShortEven = roundDownToEven(maxShortEdge).coerceAtLeast(MIN_EVEN)
+        val scaledShort = roundDownToEven((shortEdge * scale).roundToInt()).coerceIn(MIN_EVEN, maxShortEven)
+        val scaledLong = roundDownToEven((maxOf(sourceWidth, sourceHeight) * scale).roundToInt())
+            .coerceAtLeast(MIN_EVEN)
+        return if (sourceWidth <= sourceHeight) scaledShort to scaledLong else scaledLong to scaledShort
     }
 
 }
 
 /** H.264 requires even width and height — round up to the nearest even integer. */
 internal fun roundToEven(value: Int): Int = if (value % 2 == 0) value else value + 1
+
+/** H.264 requires even width and height — round DOWN to the nearest even integer. */
+internal fun roundDownToEven(value: Int): Int = value - (value % 2)
+
+private const val MIN_EVEN = 2
 

@@ -60,10 +60,18 @@ internal fun readProbeBitDepth(
         mime == "video/hevc" && profile != null && isHevc10BitProfile(profile) -> TEN_BIT
         mime == "video/avc" && profile == AVC_PROFILE_HIGH10 -> TEN_BIT
         mime == "video/hevc" && profile == HEVC_PROFILE_MAIN -> EIGHT_BIT
-        mime == "video/avc" && profile != null -> EIGHT_BIT
+        // Only classify as 8-bit when the profile is one we actually recognise
+        // as 8-bit — an unknown raw int on a High422/High444/OEM-specific value
+        // stays null (→ Unknown) instead of being silently branded 8-bit.
+        mime == "video/avc" && isKnown8BitAvcProfile(profile) -> EIGHT_BIT
         else -> null
     }
 }
+
+private fun isKnown8BitAvcProfile(profile: Int?): Boolean =
+    profile == AVC_PROFILE_BASELINE ||
+        profile == AVC_PROFILE_MAIN ||
+        profile == AVC_PROFILE_HIGH
 
 /**
  * HDR detection: either the transfer function is ST2084/HLG, or the BT.2020 +

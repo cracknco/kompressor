@@ -44,7 +44,7 @@ private fun probeAndroidSource(inputPath: String): SourceMediaInfo {
         return buildSourceInfo(mmr, extractor)
     } finally {
         runCatching { extractor.release() }
-        mmr.release()
+        runCatching { mmr.release() }
     }
 }
 

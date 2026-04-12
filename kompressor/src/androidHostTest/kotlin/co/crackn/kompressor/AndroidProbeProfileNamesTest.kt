@@ -69,9 +69,18 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `readProbeBitDepth returns EIGHT_BIT for any known AVC profile that is not High 10`() {
+    fun `readProbeBitDepth returns EIGHT_BIT only for the 3 known 8-bit AVC profiles`() {
+        readProbeBitDepth("video/avc", AVC_BASELINE, null, null) shouldBe 8
         readProbeBitDepth("video/avc", AVC_MAIN, null, null) shouldBe 8
         readProbeBitDepth("video/avc", AVC_HIGH, null, null) shouldBe 8
+    }
+
+    @Test
+    fun `readProbeBitDepth returns null for unrecognised AVC profile ints`() {
+        // High 4:2:2, High 4:4:4, OEM-specific values — unknown, don't brand as 8-bit
+        readProbeBitDepth("video/avc", 122, null, null) shouldBe null // High 4:2:2
+        readProbeBitDepth("video/avc", 244, null, null) shouldBe null // High 4:4:4
+        readProbeBitDepth("video/avc", 9999, null, null) shouldBe null
     }
 
     @Test

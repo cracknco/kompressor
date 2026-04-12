@@ -61,7 +61,7 @@ class VideoCompressionPropertyTest {
 
             val output = File(
                 tempDir,
-                "out_${videoBitrate}_${maxFrameRate}_${keyFrameInterval}.mp4",
+                "out_${videoBitrate}_${maxFrameRate}_${keyFrameInterval}_${maxResolution}.mp4",
             )
 
             val result = compressor.compress(

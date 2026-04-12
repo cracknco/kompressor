@@ -199,7 +199,11 @@ private class IosVideoTranscodePipeline(
     }
 
     private fun buildVideoSettings(width: Int, height: Int): Map<Any?, *> = mapOf(
-        AVVideoCodecKey to AVVideoCodecH264,
+        // Dispatched via `when` so the compiler forces this to stay in sync when
+        // the VideoCodec enum grows a new variant (e.g. HEVC).
+        AVVideoCodecKey to when (config.codec) {
+            co.crackn.kompressor.video.VideoCodec.H264 -> AVVideoCodecH264
+        },
         AVVideoWidthKey to width,
         AVVideoHeightKey to height,
         AVVideoCompressionPropertiesKey to mapOf(

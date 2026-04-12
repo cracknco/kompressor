@@ -67,16 +67,38 @@ internal fun av1ProfileName(profile: Int): String = when (profile) {
 }
 
 internal fun isTenBitProfile(mime: String, profile: Int): Boolean = when (mime) {
-    MediaFormat.MIMETYPE_VIDEO_HEVC -> profile == CodecProfileLevel.HEVCProfileMain10 ||
-        profile == CodecProfileLevel.HEVCProfileMain10HDR10 ||
-        profile == CodecProfileLevel.HEVCProfileMain10HDR10Plus
-    MediaFormat.MIMETYPE_VIDEO_AVC -> profile == CodecProfileLevel.AVCProfileHigh10
-    MediaFormat.MIMETYPE_VIDEO_VP9 -> profile == CodecProfileLevel.VP9Profile2 ||
-        profile == CodecProfileLevel.VP9Profile3 ||
-        profile == CodecProfileLevel.VP9Profile2HDR ||
-        profile == CodecProfileLevel.VP9Profile3HDR
-    MediaFormat.MIMETYPE_VIDEO_AV1 -> profile == CodecProfileLevel.AV1ProfileMain10 ||
-        profile == CodecProfileLevel.AV1ProfileMain10HDR10 ||
-        profile == CodecProfileLevel.AV1ProfileMain10HDR10Plus
+    MediaFormat.MIMETYPE_VIDEO_HEVC -> profile in HEVC_TEN_BIT_PROFILES
+    // AVC High 10 is 10-bit. High 4:2:2 / High 4:4:4 support 8/10/12-bit — treat as
+    // possibly-10-bit so supports10Bit isn't a false negative on those profiles.
+    MediaFormat.MIMETYPE_VIDEO_AVC -> profile in AVC_TEN_BIT_CAPABLE_PROFILES
+    MediaFormat.MIMETYPE_VIDEO_VP9 -> profile in VP9_TEN_BIT_PROFILES
+    MediaFormat.MIMETYPE_VIDEO_AV1 -> profile in AV1_TEN_BIT_PROFILES
     else -> false
 }
+
+private val HEVC_TEN_BIT_PROFILES = setOf(
+    CodecProfileLevel.HEVCProfileMain10,
+    CodecProfileLevel.HEVCProfileMain10HDR10,
+    CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+)
+
+private val AVC_TEN_BIT_CAPABLE_PROFILES = setOf(
+    CodecProfileLevel.AVCProfileHigh10,
+    CodecProfileLevel.AVCProfileHigh422,
+    CodecProfileLevel.AVCProfileHigh444,
+)
+
+private val VP9_TEN_BIT_PROFILES = setOf(
+    CodecProfileLevel.VP9Profile2,
+    CodecProfileLevel.VP9Profile3,
+    CodecProfileLevel.VP9Profile2HDR,
+    CodecProfileLevel.VP9Profile3HDR,
+    CodecProfileLevel.VP9Profile2HDR10Plus,
+    CodecProfileLevel.VP9Profile3HDR10Plus,
+)
+
+private val AV1_TEN_BIT_PROFILES = setOf(
+    CodecProfileLevel.AV1ProfileMain10,
+    CodecProfileLevel.AV1ProfileMain10HDR10,
+    CodecProfileLevel.AV1ProfileMain10HDR10Plus,
+)

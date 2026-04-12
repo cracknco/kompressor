@@ -92,7 +92,17 @@ object Mp4Generator {
         }
 
         input.markAsFinished()
-        writer.finishWriting()
+        // finishWriting() is synchronous but begins an asynchronous finalization.
+        // Use the completion-handler form and busy-wait on writer.status so callers
+        // get a file that's actually flushed to disk when we return.
+        var done = false
+        writer.finishWritingWithCompletionHandler { done = true }
+        while (!done && writer.status == platform.AVFoundation.AVAssetWriterStatusWriting) {
+            platform.Foundation.NSThread.sleepForTimeInterval(READY_POLL_SEC)
+        }
+        check(writer.status == platform.AVFoundation.AVAssetWriterStatusCompleted) {
+            "AVAssetWriter did not complete: status=${writer.status} error=${writer.error}"
+        }
 
         return outputPath
     }

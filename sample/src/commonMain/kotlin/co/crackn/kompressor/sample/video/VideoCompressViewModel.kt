@@ -16,11 +16,13 @@ import io.github.vinceglb.filekit.delete
 import io.github.vinceglb.filekit.extension
 import io.github.vinceglb.filekit.name
 import io.github.vinceglb.filekit.path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.IO
+import kotlinx.coroutines.IO // Required on Kotlin/Native targets for Dispatchers.IO visibility.
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +38,8 @@ class VideoCompressViewModel(
     private val _state = MutableStateFlow(VideoCompressState())
     val state: StateFlow<VideoCompressState> = _state.asStateFlow()
 
+    private var compressionJob: Job? = null
+
     fun onVideoPicked(file: PlatformFile) {
         if (_state.value.isCompressing) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -44,6 +48,9 @@ class VideoCompressViewModel(
                 val inputFile = createTempFile("input", file.extension)
                 try {
                     file.copyTo(inputFile)
+                } catch (e: CancellationException) {
+                    runCatching { inputFile.delete(mustExist = false) }
+                    throw e
                 } catch (e: Exception) {
                     runCatching { inputFile.delete(mustExist = false) }
                     throw e
@@ -55,9 +62,12 @@ class VideoCompressViewModel(
                         compressedVideoPath = null,
                         result = null,
                         error = null,
+                        errorKind = null,
                         progress = 0f,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
@@ -67,6 +77,7 @@ class VideoCompressViewModel(
                         result = null,
                         progress = 0f,
                         error = e.message ?: "Failed to import video",
+                        errorKind = VideoErrorKind.Other,
                     )
                 }
             }
@@ -74,22 +85,27 @@ class VideoCompressViewModel(
     }
 
     fun onPresetSelected(preset: VideoPresetOption) {
+        if (_state.value.isCompressing) return
         _state.update { it.copy(selectedPreset = preset) }
     }
 
     fun onCustomVideoBitrateChanged(value: String) {
+        if (_state.value.isCompressing) return
         _state.update { it.copy(customVideoBitrate = value) }
     }
 
     fun onCustomMaxResolutionChanged(resolution: MaxResolution) {
+        if (_state.value.isCompressing) return
         _state.update { it.copy(customMaxResolution = resolution) }
     }
 
     fun onCustomMaxFrameRateChanged(fps: Int) {
+        if (_state.value.isCompressing) return
         _state.update { it.copy(customMaxFrameRate = fps) }
     }
 
     fun onCustomKeyFrameIntervalChanged(interval: Int) {
+        if (_state.value.isCompressing) return
         _state.update { it.copy(customKeyFrameInterval = interval) }
     }
 
@@ -102,11 +118,12 @@ class VideoCompressViewModel(
                 isCompressing = true,
                 progress = 0f,
                 error = null,
+                errorKind = null,
                 result = null,
             )
         }
 
-        viewModelScope.launch(Dispatchers.IO) { runCompression(inputPath) }
+        compressionJob = viewModelScope.launch(Dispatchers.IO) { runCompression(inputPath) }
     }
 
     private suspend fun runCompression(inputPath: String) {
@@ -124,6 +141,9 @@ class VideoCompressViewModel(
                 onSuccess = { handleSuccess(it) },
                 onFailure = { handleFailure(it) },
             )
+        } catch (e: CancellationException) {
+            // Structured concurrency: a cancellation is not a failure to display.
+            throw e
         } catch (e: Exception) {
             handleFailure(e)
         } finally {
@@ -134,6 +154,10 @@ class VideoCompressViewModel(
     }
 
     fun reset() {
+        // Cancel any in-flight compression before deleting its output, so the
+        // transcoder can't keep writing a file we've already deleted.
+        compressionJob?.cancel()
+        compressionJob = null
         val paths = currentTempPaths()
         _state.update { VideoCompressState() }
         viewModelScope.launch(Dispatchers.IO) { deletePaths(paths) }
@@ -156,6 +180,8 @@ class VideoCompressViewModel(
                 isCompressing = false,
                 result = result,
                 progress = 1f,
+                error = null,
+                errorKind = null,
             )
         }
     }

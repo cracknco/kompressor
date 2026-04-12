@@ -50,13 +50,13 @@ private fun videoTrackIssues(
 ): Pair<List<String>, List<String>> {
     val hard = mutableListOf<String>()
     val soft = mutableListOf<String>()
-    val decoder = capabilities.video.firstOrNull {
+    val decoders = capabilities.video.filter {
         it.role == CodecSupport.Role.Decoder && it.mimeType.equals(videoMime, ignoreCase = true)
     }
-    if (decoder == null) {
+    if (decoders.isEmpty()) {
         hard += "No decoder for $videoMime on this device"
     } else {
-        val (h, s) = decoderIssues(info, videoMime, decoder)
+        val (h, s) = decoderVerdictAcrossCandidates(info, videoMime, decoders)
         hard += h
         soft += s
     }
@@ -67,6 +67,23 @@ private fun videoTrackIssues(
         hard += "No encoder for output $requiredOutputVideoMime on this device"
     }
     return hard to soft
+}
+
+/**
+ * Devices can expose multiple decoders for the same MIME (e.g. HW + SW). Take the
+ * LEAST severe verdict — if any decoder can handle the source, we're Supported.
+ */
+private fun decoderVerdictAcrossCandidates(
+    info: SourceMediaInfo,
+    videoMime: String,
+    decoders: List<CodecSupport>,
+): Pair<List<String>, List<String>> {
+    val results = decoders.map { decoderIssues(info, videoMime, it) }
+    return when {
+        results.any { it.first.isEmpty() && it.second.isEmpty() } -> emptyList<String>() to emptyList()
+        results.any { it.first.isEmpty() } -> emptyList<String>() to results.first { it.first.isEmpty() }.second
+        else -> results.minBy { it.first.size } // Shortest hard list ≈ least severe.
+    }
 }
 
 private fun decoderIssues(
@@ -130,7 +147,14 @@ private fun resolutionIssues(
     when {
         max != null && w != null && h != null -> {
             val (maxW, maxH) = max
-            if (w * h > maxW * maxH) {
+            // Compare long/short edges independently — `w*h > maxW*maxH` would
+            // let 2560x720 slip past a 1920x1080 cap since 2560·720 < 1920·1080
+            // even though the width alone already exceeds 1920.
+            val srcLong = maxOf(w, h)
+            val srcShort = minOf(w, h)
+            val maxLong = maxOf(maxW, maxH)
+            val maxShort = minOf(maxW, maxH)
+            if (srcLong > maxLong || srcShort > maxShort) {
                 hard += "Source ${w}x$h exceeds decoder's max ${maxW}x$maxH"
             }
         }

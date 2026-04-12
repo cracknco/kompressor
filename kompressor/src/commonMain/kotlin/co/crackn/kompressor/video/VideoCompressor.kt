@@ -13,16 +13,22 @@ import co.crackn.kompressor.CompressionResult
 public interface VideoCompressor {
 
     /**
-     * Video codec MIME types for which this device has a decoder.
-     * Queried once per process from the platform codec list.
+     * Video codec MIME types this device can decode from. The set reflects the
+     * platform's reported decoder capabilities at the moment of the first read
+     * and is stable for the lifetime of this instance; a missing entry does not
+     * guarantee the decoder can't be loaded at runtime, it just means the
+     * implementation didn't detect it.
+     *
+     * Defaults to an empty set for forward compatibility; implementations
+     * override to declare what they actually support.
      */
-    public val supportedInputFormats: Set<String>
+    public val supportedInputFormats: Set<String> get() = emptySet()
 
     /**
-     * Video codec MIME types for which this device has an encoder.
-     * Queried once per process from the platform codec list.
+     * Video codec MIME types this device can encode to. See
+     * [supportedInputFormats] for the semantics.
      */
-    public val supportedOutputFormats: Set<String>
+    public val supportedOutputFormats: Set<String> get() = emptySet()
 
     /**
      * Compress a video file.

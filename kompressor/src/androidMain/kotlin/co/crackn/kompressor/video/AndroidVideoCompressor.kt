@@ -61,7 +61,7 @@ internal class AndroidVideoCompressor : VideoCompressor {
     ): Result<CompressionResult> = suspendRunCatching {
         val startNanos = System.nanoTime()
         onProgress(0f)
-        val inputSize = File(inputPath).length()
+        val inputSize = resolveInputSize(inputPath)
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, onProgress)
@@ -71,6 +71,28 @@ internal class AndroidVideoCompressor : VideoCompressor {
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Input size for `file://`, `content://`, or raw filesystem paths. `File(path).length()`
+     * returns 0 for URIs, which would poison [CompressionResult.compressionRatio].
+     */
+    private fun resolveInputSize(inputPath: String): Long {
+        if (inputPath.startsWith("content://")) {
+            val uri = android.net.Uri.parse(inputPath)
+            return runCatching {
+                KompressorContext.appContext.contentResolver
+                    .openFileDescriptor(uri, "r")
+                    ?.use { it.statSize.coerceAtLeast(0L) }
+                    ?: 0L
+            }.getOrDefault(0L)
+        }
+        val path = if (inputPath.startsWith("file://")) {
+            android.net.Uri.parse(inputPath).path ?: inputPath.removePrefix("file://")
+        } else {
+            inputPath
+        }
+        return runCatching { File(path).length() }.getOrDefault(0L)
     }
 
     private suspend fun runTransformer(
@@ -190,7 +212,9 @@ private suspend fun awaitExport(
             val listener = object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
                     transformer.removeListener(this)
-                    continuation.resume(Unit)
+                    // Guard against the cancel-race: invokeOnCancellation may have already
+                    // cancelled the continuation before the Main-looper drains this callback.
+                    if (continuation.isActive) continuation.resume(Unit)
                 }
 
                 override fun onError(
@@ -199,7 +223,7 @@ private suspend fun awaitExport(
                     exception: ExportException,
                 ) {
                     transformer.removeListener(this)
-                    continuation.resumeWithException(exception)
+                    if (continuation.isActive) continuation.resumeWithException(exception)
                 }
             }
             continuation.invokeOnCancellation {
