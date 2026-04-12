@@ -16,6 +16,7 @@ androidxTestRules = "1.7.0"
 androidxExifinterface = "1.4.2"
 androidxStartup = "1.2.0"
 androidxActivityCompose = "1.13.0"
+androidxMedia3 = "1.10.0"
 composeMultiplatform = "1.10.3"
 filekit = "0.13.0"
 coil = "3.4.0"
@@ -24,6 +25,7 @@ ksp = "2.3.6"
 navigationCompose = "2.9.2"
 lifecycleViewmodelCompose = "2.10.0"
 gadulka = "1.11.0"
+composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
 
 [libraries]
@@ -35,6 +37,9 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }
 androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "androidxExifinterface" }
 androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "androidxStartup" }
+androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidxMedia3" }
+androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidxMedia3" }
+androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "androidxMedia3" }
 kotest-framework-engine = { module = "io.kotest:kotest-framework-engine", version.ref = "kotest" }
 kotest-assertions-core = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 kotest-property = { module = "io.kotest:kotest-property", version.ref = "kotest" }
@@ -49,6 +54,7 @@ kotlin-inject-compiler = { module = "me.tatarka.inject:kotlin-inject-compiler-ks
 navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 gadulka = { module = "eu.iamkonstantin.kotlin:gadulka", version.ref = "gadulka" }
+compose-multiplatform-media-player = { module = "network.chaintech:compose-multiplatform-media-player", version.ref = "composeMultiplatformMediaPlayer" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }

@@ -5,12 +5,14 @@
     <string name="tab_image">Image</string>
     <string name="tab_video">Video</string>
     <string name="tab_audio">Audio</string>
+    <string name="tab_capabilities">Capabilities</string>
 
     <!-- Image screen -->
     <string name="select_image">Select Image</string>
     <string name="select_image_description">Choose an image from your gallery to compress</string>
     <string name="compress">Compress</string>
     <string name="try_another">Try Another</string>
+    <string name="ok">OK</string>
     <string name="compressing">Compressing…</string>
     <string name="compressing_percent">%1$s</string>
 
@@ -54,10 +56,46 @@
     <string name="sample_rate_44k">44.1 kHz</string>
     <string name="sample_rate_48k">48 kHz</string>
 
-    <!-- Coming soon -->
-    <string name="coming_soon">Coming Soon</string>
-    <string name="coming_soon_description">%1$s compression is under development</string>
+    <!-- Video screen -->
+    <string name="select_video">Select Video</string>
+    <string name="select_video_description">Choose a video file to compress</string>
+    <string name="preset_messaging">Messaging</string>
+    <string name="preset_low_bandwidth">Low Bandwidth</string>
+    <string name="preset_social_media">Social Media</string>
+
+    <!-- Video custom config -->
+    <string name="video_bitrate">Video Bitrate</string>
+    <string name="max_resolution">Max Resolution</string>
+    <string name="resolution_480p">480p</string>
+    <string name="resolution_720p">720p</string>
+    <string name="resolution_1080p">1080p</string>
+    <string name="resolution_original">Original</string>
+    <string name="max_frame_rate">Max Frame Rate</string>
+    <string name="key_frame_interval">Key Frame Interval</string>
+    <string name="frame_rate_suffix">fps</string>
+    <string name="key_frame_interval_suffix">s</string>
 
     <!-- Errors -->
     <string name="error_compression_failed">Compression failed</string>
+    <string name="error_video_unsupported_format">This video\'s format isn\'t supported by your device\'s hardware decoders. Try converting it to H.264 8-bit first.</string>
+    <string name="error_video_decoding_failed">The video couldn\'t be decoded — the file may be corrupt or use an unsupported codec variant.</string>
+    <string name="error_video_encoding_failed">Encoding the compressed output failed. Your device may be low on resources.</string>
+    <string name="error_video_io_failed">Couldn\'t read the input or write the output file.</string>
+
+    <!-- Capabilities screen -->
+    <string name="capabilities_title">Device Capabilities</string>
+    <string name="capabilities_device">Device</string>
+    <string name="capabilities_video_decoders">Video decoders</string>
+    <string name="capabilities_video_encoders">Video encoders</string>
+    <string name="capabilities_audio_decoders">Audio decoders</string>
+    <string name="capabilities_audio_encoders">Audio encoders</string>
+    <string name="capabilities_badge_hw">HW</string>
+    <string name="capabilities_badge_sw">SW</string>
+    <string name="capabilities_10bit">10-bit</string>
+    <string name="capabilities_hdr">HDR</string>
+    <string name="capabilities_probe_card_title">Check a file</string>
+    <string name="capabilities_probe_pick">Pick a video</string>
+    <string name="capabilities_probe_supported">Supported on this device</string>
+    <string name="capabilities_probe_unsupported">Not supported on this device</string>
+    <string name="capabilities_probe_unknown">Support unclear — try anyway</string>
 </resources>

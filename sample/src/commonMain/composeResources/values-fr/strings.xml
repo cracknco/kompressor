@@ -5,12 +5,14 @@
     <string name="tab_image">Image</string>
     <string name="tab_video">Vidéo</string>
     <string name="tab_audio">Audio</string>
+    <string name="tab_capabilities">Capacités</string>
 
     <!-- Image screen -->
     <string name="select_image">Sélectionner une image</string>
     <string name="select_image_description">Choisissez une image de votre galerie à compresser</string>
     <string name="compress">Compresser</string>
     <string name="try_another">Essayer une autre</string>
+    <string name="ok">OK</string>
     <string name="compressing">Compression…</string>
     <string name="compressing_percent">%1$s</string>
 
@@ -54,10 +56,46 @@
     <string name="sample_rate_44k">44,1 kHz</string>
     <string name="sample_rate_48k">48 kHz</string>
 
-    <!-- Coming soon -->
-    <string name="coming_soon">Bientôt disponible</string>
-    <string name="coming_soon_description">La compression %1$s est en cours de développement</string>
+    <!-- Video screen -->
+    <string name="select_video">Sélectionner une vidéo</string>
+    <string name="select_video_description">Choisissez un fichier vidéo à compresser</string>
+    <string name="preset_messaging">Messagerie</string>
+    <string name="preset_low_bandwidth">Faible débit</string>
+    <string name="preset_social_media">Réseaux sociaux</string>
+
+    <!-- Video custom config -->
+    <string name="video_bitrate">Débit vidéo</string>
+    <string name="max_resolution">Résolution max</string>
+    <string name="resolution_480p">480p</string>
+    <string name="resolution_720p">720p</string>
+    <string name="resolution_1080p">1080p</string>
+    <string name="resolution_original">Originale</string>
+    <string name="max_frame_rate">Fréquence max</string>
+    <string name="key_frame_interval">Intervalle d\'images clés</string>
+    <string name="frame_rate_suffix">ips</string>
+    <string name="key_frame_interval_suffix">s</string>
 
     <!-- Errors -->
     <string name="error_compression_failed">Échec de la compression</string>
+    <string name="error_video_unsupported_format">Le format de cette vidéo n\'est pas supporté par les décodeurs matériels de votre appareil. Convertissez-la d\'abord en H.264 8-bit.</string>
+    <string name="error_video_decoding_failed">Impossible de décoder la vidéo — le fichier est peut-être corrompu ou utilise une variante non supportée.</string>
+    <string name="error_video_encoding_failed">L\'encodage de la vidéo compressée a échoué. Votre appareil manque peut-être de ressources.</string>
+    <string name="error_video_io_failed">Impossible de lire le fichier d\'entrée ou d\'écrire la sortie.</string>
+
+    <!-- Capabilities screen -->
+    <string name="capabilities_title">Capacités de l\'appareil</string>
+    <string name="capabilities_device">Appareil</string>
+    <string name="capabilities_video_decoders">Décodeurs vidéo</string>
+    <string name="capabilities_video_encoders">Encodeurs vidéo</string>
+    <string name="capabilities_audio_decoders">Décodeurs audio</string>
+    <string name="capabilities_audio_encoders">Encodeurs audio</string>
+    <string name="capabilities_badge_hw">HW</string>
+    <string name="capabilities_badge_sw">SW</string>
+    <string name="capabilities_10bit">10-bit</string>
+    <string name="capabilities_hdr">HDR</string>
+    <string name="capabilities_probe_card_title">Vérifier un fichier</string>
+    <string name="capabilities_probe_pick">Choisir une vidéo</string>
+    <string name="capabilities_probe_supported">Supporté par cet appareil</string>
+    <string name="capabilities_probe_unsupported">Non supporté par cet appareil</string>
+    <string name="capabilities_probe_unknown">Support incertain — à tester</string>
 </resources>

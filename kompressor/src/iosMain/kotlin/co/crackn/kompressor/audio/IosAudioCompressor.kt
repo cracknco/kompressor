@@ -2,10 +2,13 @@ package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.awaitExportSession
+import co.crackn.kompressor.awaitWriterFinish
+import co.crackn.kompressor.awaitWriterReady
+import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -13,20 +16,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AVFoundation.AVAssetExportPresetAppleM4A
 import platform.AVFoundation.AVAssetExportSession
-import platform.AVFoundation.AVAssetExportSessionStatusCancelled
-import platform.AVFoundation.AVAssetExportSessionStatusCompleted
-import platform.AVFoundation.AVAssetExportSessionStatusFailed
 import platform.AVFoundation.AVAssetReader
 import platform.AVFoundation.AVAssetReaderStatusFailed
 import platform.AVFoundation.AVAssetReaderTrackOutput
 import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
-import platform.AVFoundation.AVAssetWriterStatusCompleted
-import platform.AVFoundation.AVAssetWriterStatusFailed
 import platform.AVFAudio.AVEncoderBitRateKey
 import platform.AVFAudio.AVFormatIDKey
 import platform.AVFAudio.AVLinearPCMBitDepthKey
@@ -44,11 +41,9 @@ import platform.CoreAudioTypes.kAudioFormatMPEG4AAC
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
-import platform.CoreMedia.CMTimeMake
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.CoreMedia.CMTimeMake
 import platform.Foundation.NSURL
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** iOS audio compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
@@ -141,15 +136,25 @@ private class IosPipeline(
             onProgress(PROGRESS_READ_START)
 
             copySamples(readerOutput, writer, writerInput, totalDurationSec, onProgress)
-            writerInput.markAsFinished()
-            checkReaderStatus(reader)
-            awaitWriterFinish(writer)
-            checkWriterCompleted(writer)
+            finishPipeline(reader, writer, writerInput)
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             reader.cancelReading()
             writer.cancelWriting()
             throw e
         }
+    }
+
+    private suspend fun finishPipeline(
+        reader: AVAssetReader,
+        writer: AVAssetWriter,
+        writerInput: AVAssetWriterInput,
+    ) {
+        writerInput.markAsFinished()
+        check(reader.status != AVAssetReaderStatusFailed) {
+            "AVAssetReader failed: ${reader.error?.localizedDescription}"
+        }
+        awaitWriterFinish(writer)
+        checkWriterCompleted(writer)
     }
 
     private fun createReader(
@@ -202,24 +207,6 @@ private class IosPipeline(
         }
     }
 
-    private suspend fun awaitWriterReady(
-        writer: AVAssetWriter,
-        writerInput: AVAssetWriterInput,
-    ) {
-        var waited = 0L
-        while (!writerInput.readyForMoreMediaData) {
-            check(writer.status != AVAssetWriterStatusFailed) {
-                "AVAssetWriter failed while waiting: ${writer.error?.localizedDescription ?: "unknown"}"
-            }
-            check(waited < WRITER_READY_TIMEOUT_MS) {
-                "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
-            }
-            currentCoroutineContext().ensureActive()
-            delay(WRITER_POLL_INTERVAL_MS)
-            waited += WRITER_POLL_INTERVAL_MS
-        }
-    }
-
     private suspend fun reportSampleProgress(
         buffer: platform.CoreMedia.CMSampleBufferRef,
         totalDurationSec: Double,
@@ -236,42 +223,12 @@ private class IosPipeline(
         return if (shouldReport) progress else lastReported
     }
 
-    private fun checkReaderStatus(reader: AVAssetReader) {
-        check(reader.status != AVAssetReaderStatusFailed) {
-            "AVAssetReader failed: ${reader.error?.localizedDescription}"
-        }
-    }
-
-    private suspend fun awaitWriterFinish(writer: AVAssetWriter) {
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { writer.cancelWriting() }
-            writer.finishWritingWithCompletionHandler {
-                if (writer.status == AVAssetWriterStatusCompleted) {
-                    continuation.resume(Unit)
-                } else {
-                    val msg = writer.error?.localizedDescription ?: "unknown"
-                    continuation.resumeWithException(
-                        IllegalStateException("AVAssetWriter failed: $msg"),
-                    )
-                }
-            }
-        }
-    }
-
-    private fun checkWriterCompleted(writer: AVAssetWriter) {
-        check(writer.status == AVAssetWriterStatusCompleted) {
-            "AVAssetWriter not completed: ${writer.error?.localizedDescription}"
-        }
-    }
-
     private companion object {
         const val PCM_BIT_DEPTH = 16
         const val PROGRESS_SETUP = 0.05f
         const val PROGRESS_READ_START = 0.10f
         const val PROGRESS_TRANSCODE_RANGE = 0.85f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
-        const val WRITER_POLL_INTERVAL_MS = 10L
-        const val WRITER_READY_TIMEOUT_MS = 10_000L
     }
 }
 
@@ -296,7 +253,7 @@ private class IosExportSessionPipeline(
         coroutineScope {
             val progressJob = launchProgressPoller(session, onProgress)
             try {
-                awaitExport(session)
+                awaitExportSession(session)
             } finally {
                 progressJob.cancel()
             }
@@ -310,35 +267,6 @@ private class IosExportSessionPipeline(
         while (isActive) {
             onProgress(session.progress)
             delay(PROGRESS_POLL_INTERVAL_MS)
-        }
-    }
-
-    private suspend fun awaitExport(session: AVAssetExportSession) {
-        suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { session.cancelExport() }
-            session.exportAsynchronouslyWithCompletionHandler {
-                when (session.status) {
-                    AVAssetExportSessionStatusCompleted -> {
-                        continuation.resume(Unit)
-                    }
-                    AVAssetExportSessionStatusFailed -> {
-                        val msg = session.error?.localizedDescription ?: "unknown"
-                        continuation.resumeWithException(
-                            IllegalStateException("Export failed: $msg"),
-                        )
-                    }
-                    AVAssetExportSessionStatusCancelled -> {
-                        continuation.resumeWithException(
-                            CancellationException("Export cancelled"),
-                        )
-                    }
-                    else -> {
-                        continuation.resumeWithException(
-                            IllegalStateException("Unexpected export status: ${session.status}"),
-                        )
-                    }
-                }
-            }
         }
     }
 

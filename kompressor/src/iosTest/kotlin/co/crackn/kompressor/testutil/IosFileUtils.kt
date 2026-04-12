@@ -10,6 +10,8 @@ import kotlinx.cinterop.usePinned
 import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.AVFoundation.AVURLAsset
+import platform.AVFoundation.formatDescriptions
+import platform.AVFoundation.tracksWithMediaType
 import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
 import platform.CoreMedia.CMAudioFormatDescriptionRef
 import platform.Foundation.NSData
@@ -45,10 +47,10 @@ fun readAudioMetadata(path: String): AudioMetadata {
     check(tracks.isNotEmpty()) { "No audio track found in output" }
 
     val track = tracks.first() as AVAssetTrack
-    @Suppress("UNCHECKED_CAST")
-    val formatDescriptions = track.formatDescriptions as List<*>
+    val formatDescriptions = track.formatDescriptions
     check(formatDescriptions.isNotEmpty()) { "No format descriptions found" }
 
+    @Suppress("UNCHECKED_CAST")
     val basicDesc = CMAudioFormatDescriptionGetStreamBasicDescription(
         formatDescriptions.first() as CMAudioFormatDescriptionRef,
     )

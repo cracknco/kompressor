@@ -1,3 +1,7 @@
+public final class co/crackn/kompressor/AndroidDeviceCapabilitiesKt {
+	public static final fun queryDeviceCapabilities ()Lco/crackn/kompressor/DeviceCapabilities;
+}
+
 public final class co/crackn/kompressor/AndroidKompressorKt {
 	public static final fun createKompressor ()Lco/crackn/kompressor/Kompressor;
 }
@@ -7,6 +11,48 @@ public final class co/crackn/kompressor/AudioCodec : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lco/crackn/kompressor/AudioCodec;
 	public static fun values ()[Lco/crackn/kompressor/AudioCodec;
+}
+
+public final class co/crackn/kompressor/CodecSupport {
+	public fun <init> (Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Z
+	public final fun component11 ()Ljava/util/List;
+	public final fun component12 ()Ljava/lang/Integer;
+	public final fun component2 ()Lco/crackn/kompressor/CodecSupport$Role;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Lkotlin/Pair;
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Z
+	public final fun copy (Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;)Lco/crackn/kompressor/CodecSupport;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/CodecSupport;Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;ILjava/lang/Object;)Lco/crackn/kompressor/CodecSupport;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAudioMaxChannels ()Ljava/lang/Integer;
+	public final fun getAudioSampleRates ()Ljava/util/List;
+	public final fun getCodecName ()Ljava/lang/String;
+	public final fun getHardwareAccelerated ()Z
+	public final fun getMaxBitrate ()Ljava/lang/Long;
+	public final fun getMaxFrameRate ()Ljava/lang/Integer;
+	public final fun getMaxResolution ()Lkotlin/Pair;
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getProfiles ()Ljava/util/List;
+	public final fun getRole ()Lco/crackn/kompressor/CodecSupport$Role;
+	public final fun getSupports10Bit ()Z
+	public final fun getSupportsHdr ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/CodecSupport$Role : java/lang/Enum {
+	public static final field Decoder Lco/crackn/kompressor/CodecSupport$Role;
+	public static final field Encoder Lco/crackn/kompressor/CodecSupport$Role;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lco/crackn/kompressor/CodecSupport$Role;
+	public static fun values ()[Lco/crackn/kompressor/CodecSupport$Role;
 }
 
 public final class co/crackn/kompressor/CompressionResult {
@@ -26,10 +72,27 @@ public final class co/crackn/kompressor/CompressionResult {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class co/crackn/kompressor/DeviceCapabilities {
+	public fun <init> (Ljava/util/List;Ljava/util/List;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lco/crackn/kompressor/DeviceCapabilities;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/DeviceCapabilities;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lco/crackn/kompressor/DeviceCapabilities;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAudio ()Ljava/util/List;
+	public final fun getDeviceSummary ()Ljava/lang/String;
+	public final fun getVideo ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public abstract interface class co/crackn/kompressor/Kompressor {
+	public abstract fun canCompress (Lco/crackn/kompressor/SourceMediaInfo;)Lco/crackn/kompressor/Supportability;
 	public abstract fun getAudio ()Lco/crackn/kompressor/audio/AudioCompressor;
 	public abstract fun getImage ()Lco/crackn/kompressor/image/ImageCompressor;
 	public abstract fun getVideo ()Lco/crackn/kompressor/video/VideoCompressor;
+	public abstract fun probe-gIAlu-s (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/KompressorInitializer : androidx/startup/Initializer {
@@ -37,6 +100,79 @@ public final class co/crackn/kompressor/KompressorInitializer : androidx/startup
 	public synthetic fun create (Landroid/content/Context;)Ljava/lang/Object;
 	public fun create (Landroid/content/Context;)V
 	public fun dependencies ()Ljava/util/List;
+}
+
+public final class co/crackn/kompressor/SourceMediaInfo {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Long;ZLjava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Long;ZLjava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Integer;
+	public final fun component11 ()Ljava/lang/Long;
+	public final fun component12 ()Z
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()Ljava/lang/Integer;
+	public final fun component15 ()Ljava/lang/Integer;
+	public final fun component16 ()Ljava/lang/Boolean;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun component8 ()Ljava/lang/Integer;
+	public final fun component9 ()Ljava/lang/Float;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Long;ZLjava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;)Lco/crackn/kompressor/SourceMediaInfo;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/SourceMediaInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Long;ZLjava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;ILjava/lang/Object;)Lco/crackn/kompressor/SourceMediaInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAudioChannels ()Ljava/lang/Integer;
+	public final fun getAudioCodec ()Ljava/lang/String;
+	public final fun getAudioSampleRate ()Ljava/lang/Integer;
+	public final fun getBitDepth ()Ljava/lang/Integer;
+	public final fun getBitrate ()Ljava/lang/Integer;
+	public final fun getContainerMimeType ()Ljava/lang/String;
+	public final fun getDurationMs ()Ljava/lang/Long;
+	public final fun getFrameRate ()Ljava/lang/Float;
+	public final fun getHeight ()Ljava/lang/Integer;
+	public final fun getRotationDegrees ()Ljava/lang/Integer;
+	public final fun getVideoCodec ()Ljava/lang/String;
+	public final fun getVideoLevel ()Ljava/lang/String;
+	public final fun getVideoProfile ()Ljava/lang/String;
+	public final fun getWidth ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public final fun isHdr ()Z
+	public final fun isPlayable ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class co/crackn/kompressor/Supportability {
+}
+
+public final class co/crackn/kompressor/Supportability$Supported : co/crackn/kompressor/Supportability {
+	public static final field INSTANCE Lco/crackn/kompressor/Supportability$Supported;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/Supportability$Unknown : co/crackn/kompressor/Supportability {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lco/crackn/kompressor/Supportability$Unknown;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/Supportability$Unknown;Ljava/util/List;ILjava/lang/Object;)Lco/crackn/kompressor/Supportability$Unknown;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReasons ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/Supportability$Unsupported : co/crackn/kompressor/Supportability {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lco/crackn/kompressor/Supportability$Unsupported;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/Supportability$Unsupported;Ljava/util/List;ILjava/lang/Object;)Lco/crackn/kompressor/Supportability$Unsupported;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReasons ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioChannels : java/lang/Enum {
@@ -187,13 +323,52 @@ public final class co/crackn/kompressor/video/VideoCompressionConfig {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract class co/crackn/kompressor/video/VideoCompressionError : java/lang/Exception {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class co/crackn/kompressor/video/VideoCompressionError$DecodingFailed : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/video/VideoCompressionError$EncodingFailed : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/video/VideoCompressionError$IoFailed : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/video/VideoCompressionError$Unknown : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/video/VideoCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
 public abstract interface class co/crackn/kompressor/video/VideoCompressor {
 	public abstract fun compress-yxL6bBk (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public fun getSupportedInputFormats ()Ljava/util/Set;
+	public fun getSupportedOutputFormats ()Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressor$DefaultImpls {
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static fun getSupportedInputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;
+	public static fun getSupportedOutputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/video/VideoPresets {
@@ -201,5 +376,6 @@ public final class co/crackn/kompressor/video/VideoPresets {
 	public final fun getHIGH_QUALITY ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 	public final fun getLOW_BANDWIDTH ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 	public final fun getMESSAGING ()Lco/crackn/kompressor/video/VideoCompressionConfig;
+	public final fun getSOCIAL_MEDIA ()Lco/crackn/kompressor/video/VideoCompressionConfig;
 }
 

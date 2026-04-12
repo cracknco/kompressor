@@ -10,15 +10,37 @@ import co.crackn.kompressor.video.VideoCompressor
  * Obtain an instance via [createKompressor]. Each compressor is lazily initialised —
  * only the ones you access are created.
  */
-interface Kompressor {
+public interface Kompressor {
     /** Image compressor for JPEG (and future format) compression. */
-    val image: ImageCompressor
+    public val image: ImageCompressor
 
     /** Video compressor for H.264 (and future codec) compression. */
-    val video: VideoCompressor
+    public val video: VideoCompressor
 
     /** Audio compressor for AAC (and future codec) compression. */
-    val audio: AudioCompressor
+    public val audio: AudioCompressor
+
+    /**
+     * Inspects [inputPath] and returns its media tracks' metadata.
+     *
+     * Useful for gating UX: probe first, show the user a preview, then call
+     * [canCompress] to check device support before offering compression.
+     *
+     * @return [Result] wrapping [SourceMediaInfo] on success, or the platform
+     *         error on failure (file missing, unreadable, etc.).
+     */
+    public suspend fun probe(inputPath: String): Result<SourceMediaInfo>
+
+    /**
+     * Returns whether the running device has the decoders (and required encoders)
+     * needed to compress a source matching [info].
+     *
+     * This is advisory — it reflects the platform's reported capabilities and
+     * does not guarantee the actual compress call will succeed (drivers can
+     * still fail at runtime). But it catches the common "no decoder for this
+     * profile" failure before the user ever kicks off a transcode.
+     */
+    public fun canCompress(info: SourceMediaInfo): Supportability
 }
 
 /**
@@ -26,4 +48,4 @@ interface Kompressor {
  *
  * On Android the [android.content.Context] is obtained automatically via AndroidX App Startup.
  */
-expect fun createKompressor(): Kompressor
+public expect fun createKompressor(): Kompressor

@@ -51,6 +51,7 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.gadulka)
+            implementation(libs.compose.multiplatform.media.player)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)

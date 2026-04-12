@@ -6,7 +6,16 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import co.crackn.kompressor.AudioCodec
+import co.crackn.kompressor.CODEC_TIMEOUT_US
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.PROGRESS_SETUP
+import co.crackn.kompressor.PROGRESS_TRANSCODE_RANGE
+import co.crackn.kompressor.REMUX_BUFFER_SIZE
+import co.crackn.kompressor.reportMediaCodecProgress
+import co.crackn.kompressor.safeInt
+import co.crackn.kompressor.safeLong
+import co.crackn.kompressor.safeRelease
+import co.crackn.kompressor.safeStopAndRelease
 import co.crackn.kompressor.suspendRunCatching
 import java.io.File
 import java.nio.ByteBuffer
@@ -93,7 +102,7 @@ private suspend fun remux(
             if (size < 0) break
             info.set(0, size, extractor.sampleTime, extractor.sampleFlags)
             muxer.writeSampleData(muxerTrack, buffer, info)
-            lastProgress = reportProgress(extractor.sampleTime, totalDurationUs, lastProgress, onProgress)
+            lastProgress = reportMediaCodecProgress(extractor.sampleTime, totalDurationUs, lastProgress, onProgress)
             extractor.advance()
             yield()
         }
@@ -301,7 +310,7 @@ private class TranscodeLoop(
             muxer.writeSampleData(muxerTrackIndex, buf, encoderInfo)
         }
         encoder.releaseOutputBuffer(status, false)
-        lastProgress = reportProgress(
+        lastProgress = reportMediaCodecProgress(
             encoderInfo.presentationTimeUs, totalDurationUs, lastProgress, onProgress,
         )
         return encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
@@ -319,21 +328,7 @@ private class TranscodeLoop(
     }
 }
 
-// ── Shared helpers ──────────────────────────────────────────────────
-
-private suspend fun reportProgress(
-    currentTimeUs: Long,
-    totalDurationUs: Long,
-    lastReported: Float,
-    onProgress: suspend (Float) -> Unit,
-): Float {
-    if (totalDurationUs <= 0 || currentTimeUs <= 0) return lastReported
-    val fraction = (currentTimeUs.toFloat() / totalDurationUs).coerceAtMost(1f)
-    val progress = PROGRESS_SETUP + PROGRESS_TRANSCODE_RANGE * fraction
-    val shouldReport = progress - lastReported >= PROGRESS_REPORT_THRESHOLD
-    if (shouldReport) onProgress(progress)
-    return if (shouldReport) progress else lastReported
-}
+// ── Helpers ─────────────────────────────────────────────────────────
 
 private fun findAudioTrack(extractor: MediaExtractor): Pair<Int, MediaFormat> {
     for (i in 0 until extractor.trackCount) {
@@ -344,29 +339,8 @@ private fun findAudioTrack(extractor: MediaExtractor): Pair<Int, MediaFormat> {
     throw IllegalArgumentException("No audio track found in input file")
 }
 
-private fun MediaFormat.safeLong(key: String): Long =
-    try { getLong(key) } catch (_: Exception) { 0L }
-
-private fun MediaFormat.safeInt(key: String): Int =
-    try { getInteger(key) } catch (_: Exception) { 0 }
-
-private fun MediaCodec.safeRelease() {
-    try { stop() } catch (_: IllegalStateException) { /* not started */ }
-    release()
-}
-
-private fun MediaMuxer.safeStopAndRelease() {
-    try { stop() } catch (_: IllegalStateException) { /* not started */ }
-    release()
-}
-
 private val NO_PROGRESS: suspend (Float) -> Unit = {}
 
-private const val CODEC_TIMEOUT_US = 0L
-private const val REMUX_BUFFER_SIZE = 256 * 1024
-private const val PROGRESS_SETUP = 0.05f
-private const val PROGRESS_TRANSCODE_RANGE = 0.90f
-private const val PROGRESS_REPORT_THRESHOLD = 0.01f
 private const val BITRATE_TOLERANCE = 0.8f
 private const val AAC_MIME = "audio/mp4a-latm"
 private const val BYTES_PER_SAMPLE = 2

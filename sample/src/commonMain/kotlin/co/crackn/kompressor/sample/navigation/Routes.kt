@@ -12,4 +12,7 @@ sealed interface Route {
 
     @Serializable
     data object Audio : Route
+
+    @Serializable
+    data object Capabilities : Route
 }

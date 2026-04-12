@@ -16,10 +16,19 @@ object VideoPresets {
         audioBitrate = 192_000,
     )
 
-    /** Low bandwidth: 480p, 600 kbps video, 96 kbps audio. */
+    /** Low bandwidth: 480p, 600 kbps video, 96 kbps audio, 24 fps, keyframe every 3s. */
     val LOW_BANDWIDTH = VideoCompressionConfig(
         maxResolution = MaxResolution.SD_480,
         videoBitrate = 600_000,
         audioBitrate = 96_000,
+        maxFrameRate = 24,
+        keyFrameInterval = 3,
+    )
+
+    /** Optimised for social media uploads: 720p, 2.0 Mbps video, 128 kbps audio, keyframe every 1s. */
+    val SOCIAL_MEDIA = VideoCompressionConfig(
+        videoBitrate = 2_000_000,
+        audioBitrate = 128_000,
+        keyFrameInterval = 1,
     )
 }
