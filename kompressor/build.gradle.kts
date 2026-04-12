@@ -80,6 +80,7 @@ kover {
                     "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.video.VideoTranscoderKt",
                     "co.crackn.kompressor.video.VideoTranscoder",
+                    "co.crackn.kompressor.video.BaseTranscodeLoop",
                     "co.crackn.kompressor.video.SurfaceTranscodeLoop",
                     "co.crackn.kompressor.video.ByteBufferTranscodeLoop",
                     "co.crackn.kompressor.video.CodecSelector",

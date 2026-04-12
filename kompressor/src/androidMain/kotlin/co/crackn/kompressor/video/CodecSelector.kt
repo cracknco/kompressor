@@ -5,22 +5,15 @@ import android.media.MediaCodecList
 import android.os.Build
 
 /**
- * Selects the best available H.264 encoder for a given target resolution.
+ * Selects the best available H.264 encoder for a given target resolution,
+ * and finds software fallback decoders when hardware codecs fail.
  *
- * Queries [MediaCodecList] to find hardware and software encoders, validates
- * resolution support via [MediaCodecInfo.VideoCapabilities], and provides a
- * software fallback when hardware codecs cannot handle the input.
+ * Codec enumeration via [MediaCodecList] is expensive (binder IPC on some OEMs),
+ * so results are memoized for the lifetime of the process — codec availability
+ * is static once the device has booted.
  */
 internal object CodecSelector {
 
-    /**
-     * Describes a selected H.264 encoder and its capabilities.
-     *
-     * @property codecName The codec name for [android.media.MediaCodec.createByCodecName].
-     * @property useSurface Whether the codec supports Surface input (zero-copy pipeline).
-     * @property maxWidth Maximum supported width.
-     * @property maxHeight Maximum supported height.
-     */
     data class EncoderChoice(
         val codecName: String,
         val useSurface: Boolean,
@@ -28,29 +21,28 @@ internal object CodecSelector {
         val maxHeight: Int,
     )
 
+    private val h264Encoders: List<EncoderChoice> by lazy { enumerateH264Encoders() }
+
     /**
      * Find the best H.264 encoder for the target dimensions.
      *
-     * Prefers hardware encoders with Surface support for zero-copy performance.
-     * Falls back to software encoders if no hardware encoder supports the resolution.
-     *
-     * @return the best available encoder, or `null` if no H.264 encoder exists.
+     * Prefers hardware encoders with Surface support. Falls back to software
+     * encoders if no hardware encoder supports the resolution.
      */
-    fun findEncoder(width: Int, height: Int): EncoderChoice? {
-        val candidates = collectEncoders()
-        return candidates.firstOrNull { it.useSurface && it.maxWidth >= width && it.maxHeight >= height }
-            ?: candidates.firstOrNull { !it.useSurface }
-            ?: candidates.firstOrNull()
-    }
+    fun findEncoder(width: Int, height: Int): EncoderChoice? =
+        h264Encoders.firstOrNull { it.useSurface && it.maxWidth >= width && it.maxHeight >= height }
+            ?: h264Encoders.firstOrNull { !it.useSurface }
+            ?: h264Encoders.firstOrNull()
 
-    /**
-     * Find a software-only H.264 encoder for fallback.
-     *
-     * Software encoders are slower (~3-5x) but handle any resolution and
-     * never cause SIGSEGV from hardware resource exhaustion.
-     */
+    /** Find a software-only H.264 encoder for fallback. */
     fun findSoftwareEncoder(): EncoderChoice? =
-        collectEncoders().firstOrNull { !it.useSurface }
+        h264Encoders.firstOrNull { !it.useSurface }
+
+    /** Find a software decoder name for the given MIME type. */
+    fun findSoftwareDecoder(mime: String): String? =
+        MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+            .firstOrNull { !it.isEncoder && mime in it.supportedTypes && isSoftware(it) }
+            ?.name
 
     /**
      * Cap target dimensions to the encoder's supported range.
@@ -65,44 +57,33 @@ internal object CodecSelector {
         val scaleW = encoder.maxWidth.toFloat() / targetW
         val scaleH = encoder.maxHeight.toFloat() / targetH
         val scale = minOf(scaleW, scaleH, 1f)
-        val cappedW = roundToEven((targetW * scale).toInt())
-        val cappedH = roundToEven((targetH * scale).toInt())
-        return cappedW to cappedH
+        return roundToEven((targetW * scale).toInt()) to roundToEven((targetH * scale).toInt())
     }
 
-    private fun collectEncoders(): List<EncoderChoice> {
-        val codecs = MediaCodecList(MediaCodecList.ALL_CODECS)
-        return codecs.codecInfos
-            .filter { it.isEncoder && H264_MIME in it.supportedTypes }
-            .mapNotNull { toEncoderChoice(it) }
-    }
-
-    private fun toEncoderChoice(info: MediaCodecInfo): EncoderChoice? {
-        val caps = info.getCapabilitiesForType(H264_MIME)
-        val videoCaps = caps?.videoCapabilities
-        if (caps == null || videoCaps == null) return null
-        val isSoftware = isSoftwareCodec(info)
-        val supportsSurface = SURFACE_COLOR_FORMAT in caps.colorFormats
-        return EncoderChoice(
-            codecName = info.name,
-            useSurface = supportsSurface && !isSoftware,
-            maxWidth = videoCaps.supportedWidths.upper,
-            maxHeight = videoCaps.supportedHeights.upper,
-        )
-    }
-
-    /** Detect if a codec is software-based (works on API 24+). */
-    fun isSoftware(info: MediaCodecInfo): Boolean = isSoftwareCodec(info)
-
-    private fun isSoftwareCodec(info: MediaCodecInfo): Boolean =
+    fun isSoftware(info: MediaCodecInfo): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             info.isSoftwareOnly
         } else {
             info.name.startsWith("OMX.google.") || info.name.startsWith("c2.android.")
         }
 
-    private fun roundToEven(value: Int): Int =
-        if (value % 2 == 0) value else value + 1
+    private fun enumerateH264Encoders(): List<EncoderChoice> =
+        MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+            .filter { it.isEncoder && H264_MIME in it.supportedTypes }
+            .mapNotNull { toEncoderChoice(it) }
+
+    private fun toEncoderChoice(info: MediaCodecInfo): EncoderChoice? {
+        val caps = info.getCapabilitiesForType(H264_MIME)
+        val videoCaps = caps?.videoCapabilities
+        if (caps == null || videoCaps == null) return null
+        val supportsSurface = SURFACE_COLOR_FORMAT in caps.colorFormats
+        return EncoderChoice(
+            codecName = info.name,
+            useSurface = supportsSurface && !isSoftware(info),
+            maxWidth = videoCaps.supportedWidths.upper,
+            maxHeight = videoCaps.supportedHeights.upper,
+        )
+    }
 
     private const val H264_MIME = "video/avc"
     private const val SURFACE_COLOR_FORMAT =

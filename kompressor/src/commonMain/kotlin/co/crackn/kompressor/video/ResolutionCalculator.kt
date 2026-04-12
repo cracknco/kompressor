@@ -42,6 +42,8 @@ internal object ResolutionCalculator {
         return targetWidth to targetHeight
     }
 
-    private fun roundToEven(value: Int): Int =
-        if (value % 2 == 0) value else value + 1
 }
+
+/** H.264 requires even width and height — round up to the nearest even integer. */
+internal fun roundToEven(value: Int): Int = if (value % 2 == 0) value else value + 1
+
