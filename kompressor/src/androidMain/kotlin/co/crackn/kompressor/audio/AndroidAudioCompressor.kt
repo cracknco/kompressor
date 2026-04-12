@@ -2,6 +2,7 @@ package co.crackn.kompressor.audio
 
 import android.content.Context
 import android.media.MediaExtractor
+import android.net.Uri
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import androidx.media3.common.MediaItem
@@ -173,7 +174,16 @@ internal data class InputAudioFormat(
  */
 @Suppress("TooGenericExceptionCaught")
 private fun probeInputFormat(inputPath: String): InputAudioFormat? = try {
-    val extractor = MediaExtractor().apply { setDataSource(inputPath) }
+    val extractor = MediaExtractor().apply {
+        // MediaExtractor.setDataSource(String) can't read content:// URIs (SAF). Use the
+        // Context/Uri overload for content:// and file:// so the probe doesn't silently
+        // return null and disable the AAC passthrough fast path for supported inputs.
+        if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
+            setDataSource(KompressorContext.appContext, Uri.parse(inputPath), null)
+        } else {
+            setDataSource(inputPath)
+        }
+    }
     try {
         (0 until extractor.trackCount)
             .asSequence()
