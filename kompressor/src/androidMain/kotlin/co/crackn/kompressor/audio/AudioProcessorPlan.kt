@@ -99,3 +99,26 @@ internal fun planAudioProcessors(
 // Media3 1.10's `ChannelMixingMatrix.createForConstantGain` only ships default coefficients for
 // mono/stereo inputs. Higher input channel counts throw `UnsupportedOperationException`.
 private const val MAX_SUPPORTED_INPUT_CHANNELS = 2
+
+/**
+ * Reject input files whose channel count exceeds what Media3's built-in mixer can handle.
+ *
+ * Media3 1.10 ships `ChannelMixingMatrix.createForConstantGain` default coefficients only for
+ * 1..2 input channels — 5.1 / 7.1 sources throw [UnsupportedOperationException] mid-configure
+ * with no actionable context. Rejecting upfront with a typed
+ * [AudioCompressionError.UnsupportedConfiguration] lets callers `when`-branch and surface a
+ * useful error (e.g. "please down-mix to stereo first").
+ *
+ * `null` channel count (probe didn't report it) is treated as acceptable — the real pipeline
+ * will surface its own error if the probe failure reflects a genuinely unreadable input.
+ *
+ * Pure function with no platform dependencies, exposed `internal` so the validation rule is
+ * host-testable without spinning up a 5.1 device fixture.
+ */
+internal fun checkSupportedInputChannelCount(inputChannels: Int?) {
+    if (inputChannels != null && inputChannels > MAX_SUPPORTED_INPUT_CHANNELS) {
+        throw AudioCompressionError.UnsupportedConfiguration(
+            "Input has $inputChannels channels; only mono and stereo sources are supported",
+        )
+    }
+}

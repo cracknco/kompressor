@@ -161,7 +161,7 @@ private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentat
  * when the file can't be opened or either dimension is missing / zero.
  */
 @Suppress("TooGenericExceptionCaught")
-private fun probeVideoShortSide(inputPath: String): Int? = try {
+internal fun probeVideoShortSide(inputPath: String): Int? = try {
     val mmr = MediaMetadataRetriever()
     try {
         mmr.setDataSource(inputPath)

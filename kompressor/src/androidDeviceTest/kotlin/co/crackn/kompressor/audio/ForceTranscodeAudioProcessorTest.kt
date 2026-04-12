@@ -22,7 +22,11 @@ import kotlin.test.assertTrue
  * differing output format), this test catches the regression before the whole compressor
  * silently reverts to bitstream-passthrough.
  */
-@Suppress("DEPRECATION") // AudioProcessor.flush() replaced in 1.11+ but we target 1.10.
+// TODO(media3-1.11): `AudioProcessor.flush()` was deprecated in Media3 1.11 in favour of
+//  `flush(StreamMetadata)`. When we bump the Media3 coordinate in `libs.versions.toml`,
+//  migrate these calls and drop the @Suppress — otherwise the deprecation becomes an
+//  `allWarningsAsErrors = true` build failure.
+@Suppress("DEPRECATION")
 class ForceTranscodeAudioProcessorTest {
 
     @Test

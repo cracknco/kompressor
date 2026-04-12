@@ -9,6 +9,7 @@ import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
 import co.crackn.kompressor.video.VideoCompressionError
 import co.crackn.kompressor.video.VideoPresets
+import co.crackn.kompressor.video.probeVideoShortSide
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -126,13 +127,38 @@ class AndroidVideoCompressorTest {
     }
 
     @Test
+    fun probeVideoShortSide_malformedInput_returnsNull() {
+        // Direct assertion on the probe's null-fallback: a file with garbage bytes must not
+        // crash and must not report a fake dimension. This is the branch
+        // `toPresentationOrNull` falls through to when the probe fails, so we test it in
+        // isolation rather than inferring from a larger pipeline error.
+        val garbage = File(tempDir, "garbage_probe.mp4").apply {
+            writeBytes(ByteArray(256) { 0xFF.toByte() })
+        }
+        val shortSide = probeVideoShortSide(garbage.absolutePath)
+        assertEquals(null, shortSide, "Probe must return null on unreadable input, got $shortSide")
+    }
+
+    @Test
+    fun probeVideoShortSide_nonexistentFile_returnsNull() {
+        val shortSide = probeVideoShortSide("/nonexistent/definitely_not_a_video.mp4")
+        assertEquals(null, shortSide, "Probe must return null on missing file, got $shortSide")
+    }
+
+    @Test
+    fun probeVideoShortSide_realVideo_returnsMinDimension() {
+        // Sanity check: a real 1280×720 video must produce 720 as the short side. If this
+        // regressed (e.g. to `max` or to null) every Presentation decision in the compressor
+        // would silently flip to the force-scale path.
+        assertEquals(INPUT_HEIGHT, probeVideoShortSide(inputFile.absolutePath))
+    }
+
+    @Test
     fun compressVideo_malformedInput_probeFails_gracefulError() = runTest {
-        // A file that exists but is not a decodable video — the dimension probe via
-        // MediaMetadataRetriever returns null and [AndroidVideoCompressor] falls back to
-        // applying `Presentation.createForShortSide`. Media3 then surfaces a typed
-        // VideoCompressionError rather than crashing. This validates both branches of the
-        // probe-failure fallback: the probe swallows the exception, and the surrounding
-        // pipeline reports a graceful Result.failure.
+        // End-to-end: a malformed MP4 must produce a graceful typed `VideoCompressionError`
+        // rather than a crash. Paired with the direct probe tests above, this exercises the
+        // full fall-through path: probe returns null → Presentation applied unconditionally
+        // → Media3 fails to open → error wrapped + returned.
         val garbage = File(tempDir, "garbage.mp4").apply { writeBytes(ByteArray(256) { 0xFF.toByte() }) }
         val output = File(tempDir, "out_from_garbage.mp4")
 

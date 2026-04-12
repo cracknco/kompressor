@@ -5,6 +5,7 @@ package co.crackn.kompressor.property
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
+import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -95,6 +96,51 @@ class AudioCompressionPropertyTest {
                     "Compression failed for $config with unexpected error: $error",
                 )
             }
+
+            NSFileManager.defaultManager.removeItemAtPath(inputPath, null)
+            NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
+        }
+    }
+
+    @Test
+    fun smokeSet_knownGoodConfigs_allSucceed() = runTest {
+        // Hard guard against the "all-rejected vacuous pass" failure mode: if a future
+        // regression pushed every random config into `UnsupportedConfiguration`, the
+        // property test above would happily report "all 15 outcomes acceptable" without
+        // ever exercising the success path. This smoke set pins the most common real-world
+        // configurations — if these stop working, a real bug has been introduced.
+        val wavBytes = WavGenerator.generateWavBytes(
+            durationSeconds = 1,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
+        )
+        val smokeConfigs = listOf(
+            "default" to AudioCompressionConfig(),
+            "high-quality" to AudioPresets.HIGH_QUALITY,
+            "voice-message" to AudioPresets.VOICE_MESSAGE,
+            "stereo-128k-44.1" to AudioCompressionConfig(
+                bitrate = 128_000,
+                sampleRate = 44_100,
+                channels = AudioChannels.STEREO,
+            ),
+            "mono-64k-22k" to AudioCompressionConfig(
+                bitrate = 64_000,
+                sampleRate = 22_050,
+                channels = AudioChannels.MONO,
+            ),
+        )
+
+        for ((label, config) in smokeConfigs) {
+            val inputPath = testDir + "smoke_input_$label.wav"
+            val outputPath = testDir + "smoke_output_$label.m4a"
+            writeBytes(inputPath, wavBytes)
+
+            val result = compressor.compress(inputPath, outputPath, config)
+
+            assertTrue(
+                result.isSuccess,
+                "Smoke config '$label' ($config) must succeed end-to-end, got: ${result.exceptionOrNull()}",
+            )
 
             NSFileManager.defaultManager.removeItemAtPath(inputPath, null)
             NSFileManager.defaultManager.removeItemAtPath(outputPath, null)

@@ -59,18 +59,31 @@ fun createTestImage(testDir: String, width: Int, height: Int): String {
  */
 private fun fillGradientPixels(dst: UByteArray, width: Int, height: Int) {
     var idx = 0
+    var prng = PRNG_SEED
     for (y in 0 until height) {
         for (x in 0 until width) {
-            dst[idx++] = gradientChannel(x, y, SCALE_R_X, SCALE_R_Y, PHASE_R)
-            dst[idx++] = gradientChannel(x, y, SCALE_G_X, SCALE_G_Y, PHASE_G)
-            dst[idx++] = gradientChannel(x, y, SCALE_B_X, SCALE_B_Y, PHASE_B)
+            prng = prng * PRNG_MULT + PRNG_INC
+            val noiseR = (((prng ushr PRNG_SHIFT_R) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            val noiseG = (((prng ushr PRNG_SHIFT_G) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            val noiseB = (((prng ushr PRNG_SHIFT_B) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            dst[idx++] = gradientWithNoise(x, y, SCALE_R_X, SCALE_R_Y, PHASE_R, noiseR)
+            dst[idx++] = gradientWithNoise(x, y, SCALE_G_X, SCALE_G_Y, PHASE_G, noiseG)
+            dst[idx++] = gradientWithNoise(x, y, SCALE_B_X, SCALE_B_Y, PHASE_B, noiseB)
             dst[idx++] = ALPHA_OPAQUE
         }
     }
 }
 
-private fun gradientChannel(x: Int, y: Int, xScale: Double, yScale: Double, phase: Double): UByte {
-    val v = CENTER + AMPLITUDE * sin(x / xScale + y / yScale + phase)
+/** Continuous-tone gradient + per-pixel noise — see the Android file for the rationale. */
+private fun gradientWithNoise(
+    x: Int,
+    y: Int,
+    xScale: Double,
+    yScale: Double,
+    phase: Double,
+    noise: Int,
+): UByte {
+    val v = CENTER + AMPLITUDE * sin(x / xScale + y / yScale + phase) + noise
     return v.toInt().coerceIn(0, MAX_BYTE).toUByte()
 }
 
@@ -90,3 +103,12 @@ private const val SCALE_B_Y = 59.0
 private const val PHASE_R = 0.0
 private const val PHASE_G = 1.7
 private const val PHASE_B = 3.2
+
+private const val PRNG_SEED = 2_654_435_761L
+private const val PRNG_MULT = 1_664_525L
+private const val PRNG_INC = 1_013_904_223L
+private const val PRNG_SHIFT_R = 16
+private const val PRNG_SHIFT_G = 20
+private const val PRNG_SHIFT_B = 24
+private const val PRNG_NOISE_MASK = 0x1FL
+private const val PRNG_NOISE_BIAS = 12

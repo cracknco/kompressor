@@ -154,8 +154,8 @@ class GoldenVideoTest {
         const val EXPECTED_MIN_SIZE = 10_000L // Very generous lower bound
         const val EXPECTED_MAX_SIZE = 500_000L // Very generous upper bound
 
-        // Tight-muxer factory override should keep aggregate top-level `free` padding under
-        // 1 KB. Default Media3 muxer reserves 400 000 B after `ftyp`.
-        const val MAX_FREE_BOX_BYTES = 1024L
+        // Tight-muxer factory override keeps aggregate top-level `free` padding ~9 B per box.
+        // 128 B is strict enough to catch any padding regression while leaving a small margin.
+        const val MAX_FREE_BOX_BYTES = 128L
     }
 }

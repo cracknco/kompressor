@@ -26,11 +26,21 @@ import kotlin.math.sin
 fun createTestImage(tempDir: File, width: Int, height: Int): File {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val pixels = IntArray(width * height)
+    // PRNG per-pixel noise layered on top of the gradient — the gradient alone is *too*
+    // compressible (a smooth analytic surface DEFLATE handles decently), so we add ±12 of
+    // deterministic LCG noise per channel to approximate sensor-noise from a real camera.
+    // That pushes PNG output into the 700 KB – 1.5 MB range while keeping JPEG around
+    // 40–120 KB for 1000×1000, making the `outputSize < inputSize` assertion robust.
+    var prng = PRNG_SEED
     for (y in 0 until height) {
         for (x in 0 until width) {
-            val r = gradientChannel(x, y, SCALE_R_X, SCALE_R_Y, PHASE_R)
-            val g = gradientChannel(x, y, SCALE_G_X, SCALE_G_Y, PHASE_G)
-            val b = gradientChannel(x, y, SCALE_B_X, SCALE_B_Y, PHASE_B)
+            prng = prng * PRNG_MULT + PRNG_INC
+            val noiseR = (((prng ushr PRNG_SHIFT_R) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            val noiseG = (((prng ushr PRNG_SHIFT_G) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            val noiseB = (((prng ushr PRNG_SHIFT_B) and PRNG_NOISE_MASK).toInt() - PRNG_NOISE_BIAS)
+            val r = (gradientChannel(x, y, SCALE_R_X, SCALE_R_Y, PHASE_R) + noiseR).coerceIn(0, MAX_BYTE)
+            val g = (gradientChannel(x, y, SCALE_G_X, SCALE_G_Y, PHASE_G) + noiseG).coerceIn(0, MAX_BYTE)
+            val b = (gradientChannel(x, y, SCALE_B_X, SCALE_B_Y, PHASE_B) + noiseB).coerceIn(0, MAX_BYTE)
             pixels[y * width + x] = Color.argb(ALPHA_OPAQUE, r, g, b)
         }
     }
@@ -71,3 +81,14 @@ private const val SCALE_B_Y = 59.0
 private const val PHASE_R = 0.0
 private const val PHASE_G = 1.7
 private const val PHASE_B = 3.2
+
+// Deterministic LCG noise — Numerical Recipes constants. Gives each channel ±12 of variance
+// around the gradient baseline, approximating camera sensor noise.
+private const val PRNG_SEED = 2_654_435_761L
+private const val PRNG_MULT = 1_664_525L
+private const val PRNG_INC = 1_013_904_223L
+private const val PRNG_SHIFT_R = 16
+private const val PRNG_SHIFT_G = 20
+private const val PRNG_SHIFT_B = 24
+private const val PRNG_NOISE_MASK = 0x1FL // 5 bits → 0..31 → shifted to -12..+19 via bias
+private const val PRNG_NOISE_BIAS = 12

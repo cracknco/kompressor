@@ -236,9 +236,11 @@ class GoldenAudioTest {
         const val FAST_PATH_SIZE_RATIO_MAX = 1.10
         const val FAST_PATH_RELATIVE_BUDGET = 0.33
 
-        // Tight-muxer override should keep `free` padding well below 1 KB in aggregate. Raw
-        // header overhead (9 B per box × ~1 box) is the realistic floor; 1024 B gives generous
-        // headroom for future Media3 minor tweaks while catching the 400 KB default regression.
-        const val MAX_FREE_BOX_BYTES = 1024L
+        // Tight-muxer override keeps `free` padding at ~9 B per box (the minimum header +
+        // 1-byte payload we reserve via `setFreeSpaceAfterFileTypeBoxBytes(1)`). 128 B cap is
+        // strict enough to catch any meaningful padding regression (including partial defaults
+        // around a few KB) while leaving room for ~14 tiny free boxes — far more than Media3
+        // should ever emit on a well-formed export.
+        const val MAX_FREE_BOX_BYTES = 128L
     }
 }

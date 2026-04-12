@@ -112,18 +112,22 @@ object Mp4Generator {
 
     /**
      * Fill [dst] with a per-frame-varying YUV420 pattern: a diagonal luma gradient that shifts
-     * by [frameIndex] every frame, plus lightly-varied chroma. This gives the H.264 encoder
-     * enough spatial + temporal entropy that the rate controller actually produces a meaningful
-     * bitstream size — a solid-grey fixture compresses to near-zero at any target bitrate,
-     * which defeats every `size ≈ f(bitrate)` test assertion (see docs on
-     * [GoldenVideoTest.outputSizeWithinExpectedRange] and `compressVideo_bitrateAffectsSize`).
+     * by [frameIndex] every frame, plus lightly-varied chroma. This gives H.264's rate
+     * controller enough spatial + temporal entropy that output size actually tracks the target
+     * bitrate (a solid-grey fixture compresses to near-zero at any target — see the earlier
+     * bug that surfaced with `compressVideo_bitrateAffectsSize` producing near-identical
+     * outputs for low vs high bitrate on the original fixture).
+     *
+     * Intentionally no per-pixel PRNG noise: H.264 cannot efficiently compress random
+     * high-frequency data and the rate controller overshoots its target dramatically (a
+     * 1.2 Mbps target produces ~7 Mbps output with dense noise). Structure-only keeps output
+     * size tightly correlated with target bitrate, which is what every size/bitrate assertion
+     * actually wants. Randomness is the right tool for PNG vs JPEG (where DEFLATE can't find
+     * patterns), not for inter-frame-predicted video.
      */
     private fun fillVaryingYuv(dst: ByteArray, width: Int, height: Int, frameIndex: Int) {
         val ySize = width * height
         val uvSize = ySize / UV_PLANE_DIVISOR
-        // Y plane: diagonal gradient with per-frame phase shift so motion + texture are both
-        // non-trivial. `(x + y + frameIndex * 7)` gives a slow diagonal sweep; masking with
-        // 0xFF wraps around cleanly for a byte channel.
         var yIdx = 0
         for (y in 0 until height) {
             val rowBase = y + frameIndex * LUMA_FRAME_PHASE
@@ -131,11 +135,9 @@ object Mp4Generator {
                 dst[yIdx++] = ((x + rowBase) and BYTE_MASK).toByte()
             }
         }
-        // U plane: slow horizontal sweep
         for (i in 0 until uvSize) {
             dst[ySize + i] = ((i + frameIndex * CHROMA_U_FRAME_PHASE) and BYTE_MASK).toByte()
         }
-        // V plane: slow vertical sweep
         for (i in 0 until uvSize) {
             dst[ySize + uvSize + i] = ((i + frameIndex * CHROMA_V_FRAME_PHASE) and BYTE_MASK).toByte()
         }

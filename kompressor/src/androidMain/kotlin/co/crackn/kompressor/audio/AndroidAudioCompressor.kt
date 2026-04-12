@@ -82,17 +82,9 @@ internal class AndroidAudioCompressor(
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
         // Reject configurations Media3's channel mixer cannot handle before kicking off an
-        // export. `ChannelMixingMatrix.createForConstantGain` only ships default coefficients
-        // for mono / stereo inputs in Media3 1.10; 5.1 / 7.1 sources throw mid-configure with a
-        // stack-trace-level error. Fail fast with a typed [UnsupportedConfiguration] so callers
-        // can `when`-branch and surface an actionable message.
-        probe?.channels?.let { sourceChannels ->
-            if (sourceChannels > MAX_SUPPORTED_SOURCE_CHANNELS) {
-                throw AudioCompressionError.UnsupportedConfiguration(
-                    "Input has $sourceChannels channels; only mono and stereo sources are supported",
-                )
-            }
-        }
+        // export. Check is extracted to `checkSupportedInputChannelCount` so the rule is
+        // covered by host tests without needing a real 5.1 / 7.1 fixture.
+        checkSupportedInputChannelCount(probe?.channels)
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, probe, onProgress)
@@ -171,11 +163,6 @@ internal class AndroidAudioCompressor(
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
         const val AUDIO_MIME_PREFIX = "audio/"
-
-        // Media3 1.10's `ChannelMixingMatrix.createForConstantGain` supports 1..2 input channels.
-        // Anything higher (5.1 / 7.1) cannot be handled by the built-in mixer and is rejected
-        // upfront in the compressor.
-        const val MAX_SUPPORTED_SOURCE_CHANNELS = 2
     }
 }
 
