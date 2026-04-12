@@ -35,7 +35,7 @@ class SupportabilityTest {
         DeviceCapabilities(video = video, audio = audio, deviceSummary = "test")
 
     @Test
-    fun `supported when every required codec present`() {
+    fun supportedWhenEveryRequiredCodecPresent() {
         val caps = capabilitiesFor(
             video = listOf(h264Decoder, h264Encoder),
             audio = listOf(aacDecoder, aacEncoder),
@@ -49,7 +49,7 @@ class SupportabilityTest {
     }
 
     @Test
-    fun `unsupported when decoder missing`() {
+    fun unsupportedWhenDecoderMissing() {
         val caps = capabilitiesFor(
             video = listOf(h264Encoder),
             audio = listOf(aacDecoder, aacEncoder),
@@ -61,7 +61,7 @@ class SupportabilityTest {
     }
 
     @Test
-    fun `unsupported when platform flags not playable`() {
+    fun unsupportedWhenPlatformFlagsNotPlayable() {
         val caps = capabilitiesFor(
             video = listOf(h264Decoder, h264Encoder),
             audio = listOf(aacDecoder, aacEncoder),
@@ -72,7 +72,7 @@ class SupportabilityTest {
     }
 
     @Test
-    fun `unknown when bit depth missing on HEVC with 8-bit-only decoder`() {
+    fun unknownWhenBitDepthMissingOnHEVCWith8bitonlyDecoder() {
         val caps = capabilitiesFor(
             video = listOf(hevcDecoderMainOnly, h264Encoder),
             audio = listOf(aacDecoder, aacEncoder),
@@ -83,7 +83,7 @@ class SupportabilityTest {
     }
 
     @Test
-    fun `unsupported when source resolution exceeds decoder max`() {
+    fun unsupportedWhenSourceResolutionExceedsDecoderMax() {
         val h264Big = h264Decoder.copy(maxResolution = 1920 to 1080)
         val caps = capabilitiesFor(
             video = listOf(h264Big, h264Encoder),
@@ -95,7 +95,7 @@ class SupportabilityTest {
     }
 
     @Test
-    fun `unsupported when 10-bit needed but decoder is 8-bit only`() {
+    fun unsupportedWhen10bitNeededButDecoderIs8bitOnly() {
         val caps = capabilitiesFor(
             video = listOf(hevcDecoderMainOnly, h264Encoder),
             audio = listOf(aacDecoder, aacEncoder),

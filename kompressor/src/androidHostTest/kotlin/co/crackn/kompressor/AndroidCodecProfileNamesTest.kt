@@ -8,7 +8,7 @@ import kotlin.test.Test
 class AndroidCodecProfileNamesTest {
 
     @Test
-    fun `avcProfileName maps known constants`() {
+    fun avcProfileNameMapsKnownConstants() {
         avcProfileName(CodecProfileLevel.AVCProfileBaseline) shouldBe "Baseline"
         avcProfileName(CodecProfileLevel.AVCProfileMain) shouldBe "Main"
         avcProfileName(CodecProfileLevel.AVCProfileHigh) shouldBe "High"
@@ -21,12 +21,12 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `avcProfileName returns empty for unknown`() {
+    fun avcProfileNameReturnsEmptyForUnknown() {
         avcProfileName(Int.MAX_VALUE) shouldBe ""
     }
 
     @Test
-    fun `hevcProfileName maps known constants`() {
+    fun hevcProfileNameMapsKnownConstants() {
         hevcProfileName(CodecProfileLevel.HEVCProfileMain) shouldBe "Main"
         hevcProfileName(CodecProfileLevel.HEVCProfileMain10) shouldBe "Main 10"
         hevcProfileName(CodecProfileLevel.HEVCProfileMainStill) shouldBe "Main Still"
@@ -35,12 +35,12 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `hevcProfileName returns empty for unknown`() {
+    fun hevcProfileNameReturnsEmptyForUnknown() {
         hevcProfileName(-1) shouldBe ""
     }
 
     @Test
-    fun `vp9ProfileName covers all HDR and plain profiles`() {
+    fun vp9ProfileNameCoversAllHDRAndPlainProfiles() {
         vp9ProfileName(CodecProfileLevel.VP9Profile0) shouldBe "Profile 0"
         vp9ProfileName(CodecProfileLevel.VP9Profile1) shouldBe "Profile 1"
         vp9ProfileName(CodecProfileLevel.VP9Profile2) shouldBe "Profile 2 (10-bit)"
@@ -53,7 +53,7 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `av1ProfileName covers all four profiles`() {
+    fun av1ProfileNameCoversAllFourProfiles() {
         av1ProfileName(CodecProfileLevel.AV1ProfileMain8) shouldBe "Main 8-bit"
         av1ProfileName(CodecProfileLevel.AV1ProfileMain10) shouldBe "Main 10-bit"
         av1ProfileName(CodecProfileLevel.AV1ProfileMain10HDR10) shouldBe "Main 10 HDR10"
@@ -62,7 +62,7 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `humanProfileName dispatches by mime`() {
+    fun humanProfileNameDispatchesByMime() {
         humanProfileName(MediaFormat.MIMETYPE_VIDEO_AVC, CodecProfileLevel.AVCProfileHigh) shouldBe "High"
         humanProfileName(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10) shouldBe "Main 10"
         humanProfileName(MediaFormat.MIMETYPE_VIDEO_VP9, CodecProfileLevel.VP9Profile0) shouldBe "Profile 0"
@@ -71,7 +71,7 @@ class AndroidCodecProfileNamesTest {
     }
 
     @Test
-    fun `isTenBitProfile true for the 10-bit and higher-bit-capable profiles of each mime`() {
+    fun isTenBitProfileTrueForThe10bitAndHigherbitcapableProfilesOfEachMime() {
         // HEVC
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10) shouldBe true
         isTenBitProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10) shouldBe true

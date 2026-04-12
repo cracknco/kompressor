@@ -6,7 +6,7 @@ import kotlin.test.Test
 class AndroidProbeProfileNamesTest {
 
     @Test
-    fun `hevcProbeProfileName maps known raw ints`() {
+    fun hevcProbeProfileNameMapsKnownRawInts() {
         hevcProbeProfileName(HEVC_MAIN) shouldBe "Main"
         hevcProbeProfileName(HEVC_MAIN10) shouldBe "Main 10"
         hevcProbeProfileName(HEVC_MAIN10_HDR10) shouldBe "Main 10 HDR10"
@@ -15,7 +15,7 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `avcProbeProfileName maps known raw ints`() {
+    fun avcProbeProfileNameMapsKnownRawInts() {
         avcProbeProfileName(AVC_BASELINE) shouldBe "Baseline"
         avcProbeProfileName(AVC_MAIN) shouldBe "Main"
         avcProbeProfileName(AVC_HIGH) shouldBe "High"
@@ -24,7 +24,7 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `readProbeProfileName falls back to raw int when mime unknown to this table`() {
+    fun readProbeProfileNameFallsBackToRawIntWhenMimeUnknownToThisTable() {
         readProbeProfileName("video/hevc", HEVC_MAIN10) shouldBe "Main 10"
         readProbeProfileName("video/avc", AVC_HIGH) shouldBe "High"
         readProbeProfileName("video/hevc", 42) shouldBe "Profile 42"
@@ -34,7 +34,7 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `isHevc10BitProfile matches the 10-bit family only`() {
+    fun isHevc10BitProfileMatchesThe10bitFamilyOnly() {
         isHevc10BitProfile(HEVC_MAIN10) shouldBe true
         isHevc10BitProfile(HEVC_MAIN10_HDR10) shouldBe true
         isHevc10BitProfile(HEVC_MAIN10_HDR10_PLUS) shouldBe true
@@ -43,40 +43,40 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `readProbeBitDepth honours explicit KEY_BIT_DEPTH first`() {
+    fun readProbeBitDepthHonoursExplicitKEYBITDEPTHFirst() {
         readProbeBitDepth(mime = "video/hevc", profile = HEVC_MAIN, colorFormat = null, explicitBitDepth = 10) shouldBe 10
     }
 
     @Test
-    fun `readProbeBitDepth picks TEN_BIT from YUVP010 color format`() {
+    fun readProbeBitDepthPicksTENBITFromYUVP010ColorFormat() {
         readProbeBitDepth(mime = "video/avc", profile = null, colorFormat = 54, explicitBitDepth = null) shouldBe 10
     }
 
     @Test
-    fun `readProbeBitDepth picks TEN_BIT from HEVC 10-bit profile family`() {
+    fun readProbeBitDepthPicksTENBITFromHEVC10bitProfileFamily() {
         readProbeBitDepth("video/hevc", HEVC_MAIN10, null, null) shouldBe 10
         readProbeBitDepth("video/hevc", HEVC_MAIN10_HDR10, null, null) shouldBe 10
     }
 
     @Test
-    fun `readProbeBitDepth picks TEN_BIT from AVC High 10 profile`() {
+    fun readProbeBitDepthPicksTENBITFromAVCHigh10Profile() {
         readProbeBitDepth("video/avc", AVC_HIGH10, null, null) shouldBe 10
     }
 
     @Test
-    fun `readProbeBitDepth returns EIGHT_BIT for HEVC Main`() {
+    fun readProbeBitDepthReturnsEIGHTBITForHEVCMain() {
         readProbeBitDepth("video/hevc", HEVC_MAIN, null, null) shouldBe 8
     }
 
     @Test
-    fun `readProbeBitDepth returns EIGHT_BIT only for the 3 known 8-bit AVC profiles`() {
+    fun readProbeBitDepthReturnsEIGHTBITOnlyForThe3Known8bitAVCProfiles() {
         readProbeBitDepth("video/avc", AVC_BASELINE, null, null) shouldBe 8
         readProbeBitDepth("video/avc", AVC_MAIN, null, null) shouldBe 8
         readProbeBitDepth("video/avc", AVC_HIGH, null, null) shouldBe 8
     }
 
     @Test
-    fun `readProbeBitDepth returns null for unrecognised AVC profile ints`() {
+    fun readProbeBitDepthReturnsNullForUnrecognisedAVCProfileInts() {
         // High 4:2:2, High 4:4:4, OEM-specific values — unknown, don't brand as 8-bit
         readProbeBitDepth("video/avc", 122, null, null) shouldBe null // High 4:2:2
         readProbeBitDepth("video/avc", 244, null, null) shouldBe null // High 4:4:4
@@ -84,20 +84,20 @@ class AndroidProbeProfileNamesTest {
     }
 
     @Test
-    fun `readProbeBitDepth returns null when nothing is known`() {
+    fun readProbeBitDepthReturnsNullWhenNothingIsKnown() {
         readProbeBitDepth(null, null, null, null) shouldBe null
         readProbeBitDepth("video/vp9", 1, null, null) shouldBe null
     }
 
     @Test
-    fun `isProbeHdrFormat detects ST2084 and HLG transfers`() {
+    fun isProbeHdrFormatDetectsST2084AndHLGTransfers() {
         isProbeHdrFormat(colorTransfer = 6, colorStandard = null, bitDepth = null) shouldBe true
         isProbeHdrFormat(colorTransfer = 7, colorStandard = null, bitDepth = null) shouldBe true
         isProbeHdrFormat(colorTransfer = 3, colorStandard = null, bitDepth = null) shouldBe false
     }
 
     @Test
-    fun `isProbeHdrFormat uses BT2020 plus 10-bit as a proxy when transfer is missing`() {
+    fun isProbeHdrFormatUsesBT2020Plus10bitAsAProxyWhenTransferIsMissing() {
         isProbeHdrFormat(colorTransfer = null, colorStandard = 6, bitDepth = 10) shouldBe true
         isProbeHdrFormat(colorTransfer = null, colorStandard = 6, bitDepth = 8) shouldBe false
         isProbeHdrFormat(colorTransfer = null, colorStandard = 1, bitDepth = 10) shouldBe false

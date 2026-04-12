@@ -18,7 +18,7 @@ class DeletingOutputOnFailureTest {
     }
 
     @Test
-    fun `success leaves output file intact`() {
+    fun successLeavesOutputFileIntact() {
         val output = File(tempDir, "ok.mp4").apply { writeText("payload") }
 
         val result = deletingOutputOnFailure(output.path) { "done" }
@@ -29,7 +29,7 @@ class DeletingOutputOnFailureTest {
     }
 
     @Test
-    fun `throwing block deletes the output and rethrows`() {
+    fun throwingBlockDeletesTheOutputAndRethrows() {
         val output = File(tempDir, "partial.mp4").apply { writeText("garbage") }
 
         shouldThrow<IllegalStateException> {
@@ -39,7 +39,7 @@ class DeletingOutputOnFailureTest {
     }
 
     @Test
-    fun `CancellationException propagates and still deletes the output`() {
+    fun cancellationExceptionPropagatesAndStillDeletesTheOutput() {
         val output = File(tempDir, "cancelled.mp4").apply { writeText("garbage") }
 
         shouldThrow<CancellationException> {
@@ -49,7 +49,7 @@ class DeletingOutputOnFailureTest {
     }
 
     @Test
-    fun `missing output path is tolerated on failure`() {
+    fun missingOutputPathIsToleratedOnFailure() {
         val missing = File(tempDir, "never-written.mp4").path
 
         shouldThrow<IllegalStateException> {

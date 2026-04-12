@@ -8,7 +8,7 @@ import kotlin.test.Test
 class Media3ErrorMappingTest {
 
     @Test
-    fun `DECODING_FORMAT_UNSUPPORTED maps to UnsupportedSourceFormat`() {
+    fun dECODINGFORMATUNSUPPORTEDMapsToUnsupportedSourceFormat() {
         val mapped = classifyExportErrorCode(
             ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
             "detail HEVC 3840x2160",
@@ -19,58 +19,58 @@ class Media3ErrorMappingTest {
     }
 
     @Test
-    fun `DECODER_INIT_FAILED maps to UnsupportedSourceFormat`() {
+    fun dECODERINITFAILEDMapsToUnsupportedSourceFormat() {
         classifyExportErrorCode(ExportException.ERROR_CODE_DECODER_INIT_FAILED, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.UnsupportedSourceFormat>()
     }
 
     @Test
-    fun `DECODING_FAILED maps to DecodingFailed`() {
+    fun dECODINGFAILEDMapsToDecodingFailed() {
         classifyExportErrorCode(ExportException.ERROR_CODE_DECODING_FAILED, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.DecodingFailed>()
     }
 
     @Test
-    fun `ENCODER_INIT_FAILED maps to EncodingFailed`() {
+    fun eNCODERINITFAILEDMapsToEncodingFailed() {
         classifyExportErrorCode(ExportException.ERROR_CODE_ENCODER_INIT_FAILED, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `MUXING_FAILED maps to EncodingFailed`() {
+    fun mUXINGFAILEDMapsToEncodingFailed() {
         classifyExportErrorCode(ExportException.ERROR_CODE_MUXING_FAILED, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `Misc 1xxx error falls through to Unknown`() {
+    fun misc1xxxErrorFallsThroughToUnknown() {
         classifyExportErrorCode(1999, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.Unknown>()
     }
 
     @Test
-    fun `IO 2xxx band maps to IoFailed via fallback`() {
+    fun iO2xxxBandMapsToIoFailedViaFallback() {
         // ERROR_CODE_IO_FILE_NOT_FOUND (2005) etc — the 2xxx band classifies as IO.
         classifyExportErrorCode(2005, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.IoFailed>()
     }
 
     @Test
-    fun `Muxing 7xxx band maps to EncodingFailed via fallback`() {
+    fun muxing7xxxBandMapsToEncodingFailedViaFallback() {
         // ERROR_CODE_MUXING_TIMEOUT (7002) — the 7xxx band classifies as encoding.
         classifyExportErrorCode(7002, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `IO band lower boundary 2000 maps to IoFailed`() {
+    fun iOBandLowerBoundary2000MapsToIoFailed() {
         // Pins the band boundary: 2000 is the first IO code (ERROR_CODE_IO_UNSPECIFIED).
         classifyExportErrorCode(2000, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.IoFailed>()
     }
 
     @Test
-    fun `Encoding band upper boundary 4999 maps to EncodingFailed`() {
+    fun encodingBandUpperBoundary4999MapsToEncodingFailed() {
         // Pins the band boundary: 4999 is the highest code still in the encoding band.
         classifyExportErrorCode(4999, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()

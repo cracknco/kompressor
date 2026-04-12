@@ -11,13 +11,13 @@ import kotlin.test.Test
 class AudioEncoderSettingsFactoryTest {
 
     @Test
-    fun `settings carry the configured bitrate`() {
+    fun settingsCarryTheConfiguredBitrate() {
         val settings = buildAudioEncoderSettings(AudioCompressionConfig(bitrate = 96_000))
         settings.bitrate shouldBe 96_000
     }
 
     @Test
-    fun `bitrate is propagated verbatim across different values`() {
+    fun bitrateIsPropagatedVerbatimAcrossDifferentValues() {
         listOf(32_000, 64_000, 128_000, 192_000, 256_000).forEach { rate ->
             val settings = buildAudioEncoderSettings(AudioCompressionConfig(bitrate = rate))
             settings.bitrate shouldBe rate

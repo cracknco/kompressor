@@ -8,7 +8,7 @@ import kotlin.test.Test
 class AudioCompressionErrorTest {
 
     @Test
-    fun `UnsupportedSourceFormat carries details and cause`() {
+    fun unsupportedSourceFormatCarriesDetailsAndCause() {
         val cause = RuntimeException("boom")
         val error = AudioCompressionError.UnsupportedSourceFormat("audio/flac 96kHz 2ch", cause)
         error.details shouldBe "audio/flac 96kHz 2ch"
@@ -17,7 +17,7 @@ class AudioCompressionErrorTest {
     }
 
     @Test
-    fun `subtypes are distinguishable via when`() {
+    fun subtypesAreDistinguishableViaWhen() {
         val errors = listOf(
             AudioCompressionError.UnsupportedSourceFormat("a"),
             AudioCompressionError.DecodingFailed("b"),
@@ -33,7 +33,7 @@ class AudioCompressionErrorTest {
     }
 
     @Test
-    fun `every subtype prefixes its message with its category`() {
+    fun everySubtypePrefixesItsMessageWithItsCategory() {
         checkNotNull(AudioCompressionError.UnsupportedSourceFormat("x").message) shouldContain "Unsupported"
         checkNotNull(AudioCompressionError.DecodingFailed("x").message) shouldContain "Decoding"
         checkNotNull(AudioCompressionError.EncodingFailed("x").message) shouldContain "Encoding"

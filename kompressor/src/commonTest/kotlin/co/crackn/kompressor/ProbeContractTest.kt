@@ -26,7 +26,7 @@ import kotlinx.coroutines.test.runTest
 class ProbeContractTest {
 
     // NOTE: test methods deliberately use camelCase rather than Kotlin's backtick
-    // "fun `test with spaces`()" style. When these tests run in androidDeviceTest
+    // "fun testWithSpaces()" style. When these tests run in androidDeviceTest
     // (commonTest source is shared with the device test tree), the compiler emits
     // anonymous inner classes whose FQN includes the enclosing method name. D8
     // refuses SimpleNames containing spaces before DEX version 040 (i.e. for any
