@@ -1,30 +1,61 @@
 package co.crackn.kompressor.audio
 
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
+import android.content.Context
 import android.media.MediaExtractor
+import android.net.Uri
 import android.media.MediaFormat
-import android.media.MediaMuxer
+import android.media.MediaMetadataRetriever
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.Transformer
 import co.crackn.kompressor.AudioCodec
-import co.crackn.kompressor.CODEC_TIMEOUT_US
 import co.crackn.kompressor.CompressionResult
-import co.crackn.kompressor.PROGRESS_SETUP
-import co.crackn.kompressor.PROGRESS_TRANSCODE_RANGE
-import co.crackn.kompressor.REMUX_BUFFER_SIZE
-import co.crackn.kompressor.reportMediaCodecProgress
-import co.crackn.kompressor.safeInt
-import co.crackn.kompressor.safeLong
-import co.crackn.kompressor.safeRelease
-import co.crackn.kompressor.safeStopAndRelease
+import co.crackn.kompressor.KompressorContext
+import co.crackn.kompressor.awaitMedia3Export
+import co.crackn.kompressor.collectCodecMimeTypes
+import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
+import co.crackn.kompressor.toMediaItemUri
 import java.io.File
-import java.nio.ByteBuffer
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.yield
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-/** Android audio compressor backed by [MediaCodec] and [MediaMuxer]. */
+/**
+ * Android audio compressor backed by [Transformer][androidx.media3.transformer.Transformer]
+ * (Media3 1.10), configured as an audio-only export via
+ * [EditedMediaItem.Builder.setRemoveVideo].
+ *
+ * Media3 wraps the same `MediaCodec` encoders as the previous hand-rolled pipeline, but hands us
+ * the buffer state-machine, resampling ([androidx.media3.common.audio.SonicAudioProcessor]),
+ * channel mixing ([androidx.media3.common.audio.ChannelMixingAudioProcessor]), and extractor /
+ * muxer plumbing for free. Input formats supported include MP3, AAC, M4A, FLAC, OGG/Opus, WAV,
+ * AMR, ADTS — anything Media3's default extractors can open.
+ *
+ * Fast path: when the probed input is already AAC at roughly the requested sample rate, channels,
+ * and bitrate (within ±20%), we omit the encoder factory and any audio processors so Media3
+ * activates a bitstream-copy passthrough and finishes in milliseconds.
+ *
+ * Platform failures are translated into the typed [AudioCompressionError] hierarchy via
+ * [toAudioCompressionError] so callers can `when`-branch on subtypes.
+ */
 internal class AndroidAudioCompressor : AudioCompressor {
+
+    override val supportedInputFormats: Set<String> by lazy {
+        collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
+    }
+
+    // This implementation only emits AAC (see the `require(config.codec == AudioCodec.AAC)` below
+    // and [buildTransformer] hard-coding `MimeTypes.AUDIO_AAC`). Intersect with the device's
+    // advertised encoders so we don't promise a MIME the device can't actually produce.
+    override val supportedOutputFormats: Set<String> by lazy {
+        collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = AUDIO_MIME_PREFIX)
+            .intersect(setOf(MimeTypes.AUDIO_AAC))
+    }
 
     override suspend fun compress(
         inputPath: String,
@@ -33,26 +64,16 @@ internal class AndroidAudioCompressor : AudioCompressor {
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
         require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
+
         val startNanos = System.nanoTime()
         onProgress(0f)
-        val inputSize = File(inputPath).length()
+        val inputSize = resolveMediaInputSize(inputPath)
 
-        val extractor = MediaExtractor().apply { setDataSource(inputPath) }
-        try {
-            val (trackIndex, trackFormat) = findAudioTrack(extractor)
-            extractor.selectTrack(trackIndex)
-            val totalDurationUs = trackFormat.safeLong(MediaFormat.KEY_DURATION)
-            onProgress(PROGRESS_SETUP)
-            currentCoroutineContext().ensureActive()
+        // Probe off-Main because MediaExtractor does blocking I/O.
+        val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
-            if (canRemux(trackFormat, config)) {
-                remux(extractor, outputPath, trackIndex, totalDurationUs, onProgress)
-            } else {
-                val inputMime = trackFormat.getString(MediaFormat.KEY_MIME) ?: error("No MIME type")
-                transcode(extractor, outputPath, inputMime, trackFormat, config, totalDurationUs, onProgress)
-            }
-        } finally {
-            extractor.release()
+        deletingOutputOnFailure(outputPath) {
+            runTransformer(inputPath, outputPath, config, probe, onProgress)
         }
 
         onProgress(1f)
@@ -61,289 +82,179 @@ internal class AndroidAudioCompressor : AudioCompressor {
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
+    private suspend fun runTransformer(
+        inputPath: String,
+        outputPath: String,
+        config: AudioCompressionConfig,
+        probe: InputAudioFormat?,
+        onProgress: suspend (Float) -> Unit,
+    ) {
+        try {
+            withContext(Dispatchers.Main) {
+                val context = KompressorContext.appContext
+                val plan = planAudioProcessors(probe?.sampleRate, probe?.channels, config)
+                val canPassthrough = plan.isEmpty &&
+                    probe?.mime == MimeTypes.AUDIO_AAC &&
+                    probe.bitrate.qualifiesForPassthrough(config.bitrate)
+                val transformer = buildTransformer(context, config, canPassthrough)
+                val item = buildEditedMediaItem(inputPath, plan)
+                awaitMedia3Export(transformer, item, outputPath, onProgress)
+            }
+        } catch (e: ExportException) {
+            // Prefer the probe (populated on the happy path) for the error description — it's
+            // already in memory and richer than what MediaMetadataRetriever returns. Fall back
+            // to MMR only when the probe itself couldn't read the file.
+            val description = probe?.describe()
+                ?: withContext(Dispatchers.IO) { describeAudioSource(inputPath) }
+            throw e.toAudioCompressionError(description)
+        }
+    }
+
+    private fun buildTransformer(
+        context: Context,
+        config: AudioCompressionConfig,
+        canPassthrough: Boolean,
+    ): Transformer {
+        val builder = Transformer.Builder(context).setAudioMimeType(MimeTypes.AUDIO_AAC)
+        if (!canPassthrough) {
+            builder.setEncoderFactory(buildAudioEncoderFactory(context, config))
+        }
+        return builder.build()
+    }
+
+    private fun buildEditedMediaItem(
+        inputPath: String,
+        plan: AudioProcessorPlan,
+    ): EditedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
+        // Ignore any video track if the input is e.g. an MP4 with both video and audio.
+        .setRemoveVideo(true)
+        .setEffects(Effects(plan.toProcessors(), emptyList()))
+        .build()
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
-    }
-}
-
-// ── Remux fast-path: AAC → AAC bitstream copy ───────────────────────
-
-private fun canRemux(trackFormat: MediaFormat, config: AudioCompressionConfig): Boolean {
-    val channelCount = config.channels.count
-    val mime = trackFormat.getString(MediaFormat.KEY_MIME)
-    val inputRate = trackFormat.safeInt(MediaFormat.KEY_SAMPLE_RATE)
-    val inputChannels = trackFormat.safeInt(MediaFormat.KEY_CHANNEL_COUNT)
-    val inputBitrate = trackFormat.safeInt(MediaFormat.KEY_BIT_RATE)
-    val threshold = (config.bitrate * BITRATE_TOLERANCE).toInt()
-    return mime == AAC_MIME &&
-        (inputRate == 0 || inputRate == config.sampleRate) &&
-        (inputChannels == 0 || inputChannels == channelCount) &&
-        (inputBitrate <= 0 || inputBitrate >= threshold)
-}
-
-private suspend fun remux(
-    extractor: MediaExtractor,
-    outputPath: String,
-    trackIndex: Int,
-    totalDurationUs: Long,
-    onProgress: suspend (Float) -> Unit,
-) {
-    val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-    val muxerTrack = muxer.addTrack(extractor.getTrackFormat(trackIndex))
-    muxer.start()
-    try {
-        val buffer = ByteBuffer.allocate(REMUX_BUFFER_SIZE)
-        val info = MediaCodec.BufferInfo()
-        var lastProgress = PROGRESS_SETUP
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            buffer.clear()
-            val size = extractor.readSampleData(buffer, 0)
-            if (size < 0) break
-            info.set(0, size, extractor.sampleTime, extractor.sampleFlags)
-            muxer.writeSampleData(muxerTrack, buffer, info)
-            lastProgress = reportMediaCodecProgress(extractor.sampleTime, totalDurationUs, lastProgress, onProgress)
-            extractor.advance()
-            yield()
-        }
-    } finally {
-        muxer.safeStopAndRelease()
-    }
-}
-
-// ── Full transcode: decode → encode → mux ───────────────────────────
-
-private fun createProcessor(
-    inputFormat: MediaFormat,
-    config: AudioCompressionConfig,
-    outputChannels: Int,
-): PcmProcessor? {
-    val inputRate = inputFormat.safeInt(MediaFormat.KEY_SAMPLE_RATE).let {
-        if (it > 0) it else config.sampleRate
-    }
-    val inputChannels = inputFormat.safeInt(MediaFormat.KEY_CHANNEL_COUNT).let {
-        if (it > 0) it else outputChannels
-    }
-    if (inputRate == config.sampleRate && inputChannels == outputChannels) return null
-    return PcmProcessor(inputRate, config.sampleRate, inputChannels, outputChannels)
-}
-
-@Suppress("LongParameterList")
-private suspend fun transcode(
-    extractor: MediaExtractor,
-    outputPath: String,
-    inputMime: String,
-    inputFormat: MediaFormat,
-    config: AudioCompressionConfig,
-    totalDurationUs: Long,
-    onProgress: suspend (Float) -> Unit,
-) {
-    val outputChannels = config.channels.count
-    val processor = createProcessor(inputFormat, config, outputChannels)
-    val outputFormat = MediaFormat.createAudioFormat(
-        MediaFormat.MIMETYPE_AUDIO_AAC, config.sampleRate, outputChannels,
-    ).apply {
-        setInteger(MediaFormat.KEY_BIT_RATE, config.bitrate)
-        setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-    }
-    val decoder = MediaCodec.createDecoderByType(inputMime)
-    val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-    val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-    try {
-        decoder.configure(inputFormat, null, null, 0)
-        encoder.configure(outputFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        decoder.start()
-        encoder.start()
-        TranscodeLoop(
-            extractor, decoder, encoder, muxer, processor, config.sampleRate, outputChannels,
-        ).run(totalDurationUs, onProgress)
-    } finally {
-        decoder.safeRelease()
-        encoder.safeRelease()
-        muxer.safeStopAndRelease()
+        const val AUDIO_MIME_PREFIX = "audio/"
     }
 }
 
 /**
- * Single-threaded sequential loop: feed → decode → (resample) → encode → mux.
- *
- * All stages run in the same iteration — this naturally prevents the MediaCodec
- * buffer-pool deadlock that occurs when input and output are not interleaved
- * (the encoder cannot free input slots until its output is consumed).
- *
- * A [PcmProcessor] handles sample-rate and channel conversion when the input format
- * differs from the target config.  A [PcmRingBuffer] accumulates decoded PCM so that
- * encoder input buffers are always filled completely, preventing silent data loss when
- * decoder output exceeds encoder buffer capacity.
+ * Tuple of the format facts we need to decide the Transformer wiring. Absence of a field
+ * (represented by `null`) means the extractor didn't report it and we should defer to Media3
+ * defaults.
  */
-@Suppress("TooManyFunctions", "LongParameterList")
-private class TranscodeLoop(
-    private val extractor: MediaExtractor,
-    private val decoder: MediaCodec,
-    private val encoder: MediaCodec,
-    private val muxer: MediaMuxer,
-    private val processor: PcmProcessor?,
-    private val outputSampleRate: Int,
-    private val outputChannels: Int,
+internal data class InputAudioFormat(
+    val mime: String?,
+    val sampleRate: Int?,
+    val channels: Int?,
+    val bitrate: Int?,
 ) {
-    private val decoderInfo = MediaCodec.BufferInfo()
-    private val encoderInfo = MediaCodec.BufferInfo()
-    private val pcmBuffer = PcmRingBuffer(outputChannels * BYTES_PER_SAMPLE)
-    private var muxerTrackIndex = -1
-    private var muxerStarted = false
-    private var extractorDone = false
-    private var decoderDone = false
-    private var outputSamplesWritten = 0L
-    private var cachedEncoderCapacity = DEFAULT_ENCODER_BUF_SIZE
-    private var lastProgress = PROGRESS_SETUP
-
-    suspend fun run(totalDurationUs: Long, onProgress: suspend (Float) -> Unit) {
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            val bufferFull = pcmBuffer.size >= PCM_BUFFER_HIGH_WATER
-            if (!extractorDone && !bufferFull) feedDecoder()
-            if (!decoderDone && !bufferFull) drainDecoder()
-            if (bufferFull) feedEncoderFromBuffer()
-            val encoderDone = drainEncoder(totalDurationUs, onProgress)
-            if (encoderDone) break
-            yield()
+    /** Format this probe as a short human-readable description for error messages. */
+    fun describe(): String? = buildString {
+        mime?.let { append(it) }
+        if (sampleRate != null) {
+            if (isNotEmpty()) append(' ')
+            append(sampleRate).append("Hz")
         }
-    }
+        if (channels != null) {
+            if (isNotEmpty()) append(' ')
+            append(channels).append("ch")
+        }
+        if (bitrate != null) {
+            if (isNotEmpty()) append(' ')
+            append(bitrate).append(" bps")
+        }
+    }.ifBlank { null }
+}
 
-    private fun feedDecoder() {
-        val idx = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-        if (idx < 0) return
-        val buf = decoder.getInputBuffer(idx) ?: return
-        val size = extractor.readSampleData(buf, 0)
-        if (size < 0) {
-            decoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            extractorDone = true
+/**
+ * Inspect the input file with a short-lived [MediaExtractor] to find the first audio track and
+ * its (sample rate, channel count, bitrate). Runs on [Dispatchers.IO] from the caller.
+ * Returns `null` if the file has no readable audio track — Media3 will surface a proper error
+ * later. Cancellation propagates; other failures become `null` (best-effort probe).
+ */
+@Suppress("TooGenericExceptionCaught")
+private fun probeInputFormat(inputPath: String): InputAudioFormat? = try {
+    val extractor = MediaExtractor().apply {
+        // MediaExtractor.setDataSource(String) can't read content:// URIs (SAF). Use the
+        // Context/Uri overload for content:// and file:// so the probe doesn't silently
+        // return null and disable the AAC passthrough fast path for supported inputs.
+        if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
+            setDataSource(KompressorContext.appContext, Uri.parse(inputPath), null)
         } else {
-            decoder.queueInputBuffer(idx, 0, size, extractor.sampleTime, 0)
-            extractor.advance()
+            setDataSource(inputPath)
         }
     }
-
-    private suspend fun drainDecoder() {
-        val status = decoder.dequeueOutputBuffer(decoderInfo, CODEC_TIMEOUT_US)
-        if (status < 0) return
-        val isEos = decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-
-        if (decoderInfo.size > 0) {
-            val decoded = decoder.getOutputBuffer(status) ?: error("Decoder output null")
-            decoded.position(decoderInfo.offset)
-            decoded.limit(decoderInfo.offset + decoderInfo.size)
-
-            val pcmData = processor?.process(decoded) ?: decoded
-            pcmBuffer.write(pcmData)
-            feedEncoderFromBuffer()
-        }
-
-        decoder.releaseOutputBuffer(status, false)
-
-        if (isEos) {
-            flushRemainingPcm()
-            val eosIdx = awaitEncoderInput()
-            encoder.queueInputBuffer(eosIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            decoderDone = true
-        }
+    try {
+        (0 until extractor.trackCount)
+            .asSequence()
+            .map { extractor.getTrackFormat(it) }
+            .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+            ?.toInputAudioFormat()
+    } finally {
+        extractor.release()
     }
+} catch (ce: CancellationException) {
+    throw ce
+} catch (_: Throwable) {
+    null
+}
 
-    private suspend fun feedEncoderFromBuffer() {
-        while (pcmBuffer.hasChunk(cachedEncoderCapacity)) {
-            if (!feedOneEncoderChunk()) return
-        }
-    }
+private fun MediaFormat.toInputAudioFormat(): InputAudioFormat = InputAudioFormat(
+    mime = getString(MediaFormat.KEY_MIME),
+    sampleRate = intOrNull(MediaFormat.KEY_SAMPLE_RATE),
+    channels = intOrNull(MediaFormat.KEY_CHANNEL_COUNT),
+    bitrate = intOrNull(MediaFormat.KEY_BIT_RATE),
+)
 
-    private fun feedOneEncoderChunk(): Boolean {
-        var handled = false
-        val encIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-        if (encIdx >= 0) {
-            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input buffer null")
-            cachedEncoderCapacity = encBuf.capacity()
-            if (pcmBuffer.hasChunk(encBuf.capacity())) {
-                val bytes = pcmBuffer.readChunk(encBuf)
-                encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
-                advanceSampleCount(bytes)
-                handled = true
+private fun MediaFormat.intOrNull(key: String): Int? =
+    if (containsKey(key)) getInteger(key).takeIf { it > 0 } else null
+
+/**
+ * Should we bitstream-passthrough the input AAC instead of re-encoding?
+ *
+ * We require the source bitrate to be **approximately equal** to the target — within ±20% on
+ * both sides. The lower bound avoids masquerading a low-quality source as fulfilling a higher
+ * target bitrate; the upper bound avoids passing through a source that is significantly larger
+ * than the user asked for (which would defeat the purpose of "compress").
+ *
+ * Returns `false` when the source bitrate is unknown: without a bitrate to compare against we
+ * cannot guarantee the source satisfies the requested target, so we force a full re-encode rather
+ * than risk passthrough-ing an unknown (possibly much higher) bitrate.
+ */
+private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean {
+    if (this == null) return false
+    val lower = (targetBitrate * (1f - PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
+    val upper = (targetBitrate * (1f + PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
+    return this in lower..upper
+}
+
+/**
+ * Build a short human-readable description of the source using [MediaMetadataRetriever].
+ * Invoked only on the error path and only when [probeInputFormat] returned `null` (so the
+ * cheap in-memory probe wasn't available). Best-effort — returns null on any failure other
+ * than cancellation.
+ */
+@Suppress("TooGenericExceptionCaught")
+private fun describeAudioSource(inputPath: String): String? = try {
+    val mmr = MediaMetadataRetriever()
+    try {
+        mmr.setDataSource(inputPath)
+        val mime = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+        val bitrate = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+        buildString {
+            mime?.let { append(it) }
+            bitrate?.let {
+                if (isNotEmpty()) append(' ')
+                append(it).append(" bps")
             }
-        }
-        return handled
+        }.ifBlank { null }
+    } finally {
+        mmr.release()
     }
-
-    private suspend fun flushRemainingPcm() {
-        while (pcmBuffer.hasRemaining()) {
-            val encIdx = awaitEncoderInput()
-            val encBuf = encoder.getInputBuffer(encIdx) ?: error("Encoder input null")
-            val bytes = pcmBuffer.flush(encBuf)
-            encoder.queueInputBuffer(encIdx, 0, bytes, computePtsUs(), 0)
-            advanceSampleCount(bytes)
-        }
-    }
-
-    private fun computePtsUs(): Long =
-        outputSamplesWritten * MICROS_PER_SECOND / outputSampleRate
-
-    private fun advanceSampleCount(bytes: Int) {
-        val bytesPerFrame = outputChannels * BYTES_PER_SAMPLE
-        outputSamplesWritten += bytes / bytesPerFrame
-    }
-
-
-    @Suppress("ReturnCount")
-    private suspend fun drainEncoder(
-        totalDurationUs: Long,
-        onProgress: suspend (Float) -> Unit,
-    ): Boolean {
-        val status = encoder.dequeueOutputBuffer(encoderInfo, CODEC_TIMEOUT_US)
-        if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-            muxerTrackIndex = muxer.addTrack(encoder.outputFormat)
-            muxer.start()
-            muxerStarted = true
-            return false
-        }
-        if (status < 0) return false
-
-        val buf = encoder.getOutputBuffer(status) ?: error("Encoder output null")
-        if (encoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) encoderInfo.size = 0
-        if (encoderInfo.size > 0 && muxerStarted) {
-            muxer.writeSampleData(muxerTrackIndex, buf, encoderInfo)
-        }
-        encoder.releaseOutputBuffer(status, false)
-        lastProgress = reportMediaCodecProgress(
-            encoderInfo.presentationTimeUs, totalDurationUs, lastProgress, onProgress,
-        )
-        return encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-    }
-
-    private suspend fun awaitEncoderInput(): Int {
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            val index = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-            if (index >= 0) return index
-            // Drain encoder output while waiting to prevent buffer-pool deadlock
-            drainEncoder(0, NO_PROGRESS)
-            yield()
-        }
-    }
+} catch (ce: CancellationException) {
+    throw ce
+} catch (_: Throwable) {
+    null
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
-private fun findAudioTrack(extractor: MediaExtractor): Pair<Int, MediaFormat> {
-    for (i in 0 until extractor.trackCount) {
-        val format = extractor.getTrackFormat(i)
-        val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-        if (mime.startsWith("audio/")) return i to format
-    }
-    throw IllegalArgumentException("No audio track found in input file")
-}
-
-private val NO_PROGRESS: suspend (Float) -> Unit = {}
-
-private const val BITRATE_TOLERANCE = 0.8f
-private const val AAC_MIME = "audio/mp4a-latm"
-private const val BYTES_PER_SAMPLE = 2
-private const val MICROS_PER_SECOND = 1_000_000L
-private const val PCM_BUFFER_HIGH_WATER = PcmRingBuffer.DEFAULT_MAX_CAPACITY / 4
-private const val DEFAULT_ENCODER_BUF_SIZE = 8_192
+private const val PASSTHROUGH_BITRATE_TOLERANCE = 0.2f

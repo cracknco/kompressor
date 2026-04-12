@@ -4,6 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -105,9 +106,48 @@ class AudioCompressionPropertyTest {
         assertTrue(progressValues.last() >= FINAL_PROGRESS_MIN, "Final progress should reach ~1.0")
     }
 
+    @Test
+    fun randomInputFormatCrossConfig_alwaysProducesValidM4a() = runTest {
+        checkAll(
+            PropTestConfig(seed = SEED, iterations = CROSS_FORMAT_ITERATIONS),
+            Arb.element(InputFormat.WAV, InputFormat.AAC),
+            Arb.int(64_000..160_000),
+            Arb.element(22_050, 44_100),
+            Arb.element(AudioChannels.MONO, AudioChannels.STEREO),
+        ) { inputFormat, bitrate, sampleRate, channels ->
+            val config = AudioCompressionConfig(
+                bitrate = bitrate,
+                sampleRate = sampleRate,
+                channels = channels,
+            )
+            val input = when (inputFormat) {
+                InputFormat.WAV -> File(tempDir, "cross_in_${System.nanoTime()}.wav").apply {
+                    writeBytes(WavGenerator.generateWavBytes(1, SAMPLE_RATE_44K, STEREO))
+                }
+                InputFormat.AAC -> File(tempDir, "cross_in_${System.nanoTime()}.m4a").also {
+                    AudioInputFixtures.createAacM4a(it, 1, SAMPLE_RATE_44K, STEREO, bitrate = 128_000)
+                }
+            }
+            val output = File(tempDir, "cross_out_${System.nanoTime()}.m4a")
+
+            val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+            assertTrue(
+                result.isSuccess,
+                "compress failed for ($inputFormat, $config): ${result.exceptionOrNull()}",
+            )
+            assertTrue(OutputValidators.isValidM4a(output.readBytes()))
+
+            input.delete()
+            output.delete()
+        }
+    }
+
+    private enum class InputFormat { WAV, AAC }
+
     private companion object {
         const val SEED = 12345L
         const val ITERATIONS = 15
+        const val CROSS_FORMAT_ITERATIONS = 10
         const val FINAL_PROGRESS_MIN = 0.99f
     }
 }

@@ -5,6 +5,7 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.MONO
@@ -13,13 +14,23 @@ import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.hasVideoTrack
 import co.crackn.kompressor.testutil.readAudioDurationMs
 import co.crackn.kompressor.testutil.readAudioMetadata
+import co.crackn.kompressor.testutil.readAudioTrackInfo
+import co.crackn.kompressor.testutil.readContainerBitrate
 import java.io.File
 import kotlin.math.abs
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -252,6 +263,121 @@ class AndroidAudioCompressorTest {
         assertEquals(STEREO, metadata.channels, "Output should maintain stereo channels")
     }
 
+    @Test
+    fun aacInput_matchingConfig_producesValidOutput() = runTest {
+        val input = File(tempDir, "input_aac.m4a")
+        AudioInputFixtures.createAacM4a(
+            input,
+            durationSeconds = 2,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
+            bitrate = 128_000,
+        )
+        val output = File(tempDir, "aac_passthrough.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+
+        assertTrue(result.isSuccess, "AAC → AAC should succeed: ${result.exceptionOrNull()}")
+        assertTrue(output.exists())
+        assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Passthrough output must be valid M4A")
+        val meta = readAudioTrackInfo(output)
+        assertEquals(SAMPLE_RATE_44K, meta.sampleRate)
+        assertEquals(STEREO, meta.channels)
+    }
+
+    @Test
+    fun mp4WithVideoAndAudio_producesAudioOnlyOutput() = runTest {
+        val input = File(tempDir, "input_mixed.mp4")
+        AudioInputFixtures.createMp4WithVideoAndAudio(
+            input,
+            durationSeconds = 2,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
+        )
+        val output = File(tempDir, "audio_only.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+
+        assertTrue(result.isSuccess, "MP4(A+V) → M4A should succeed: ${result.exceptionOrNull()}")
+        assertTrue(output.exists())
+        assertTrue(OutputValidators.isValidM4a(output.readBytes()))
+        assertTrue(!hasVideoTrack(output), "Output must not contain a video track")
+        val meta = readAudioTrackInfo(output)
+        assertTrue(meta.mime.startsWith("audio/"))
+    }
+
+    @Test
+    fun cancellation_deletesPartialOutput() = runBlocking {
+        val input = createTestWavFile(CANCELLATION_INPUT_SECONDS, SAMPLE_RATE_44K, STEREO)
+        val output = File(tempDir, "cancelled.m4a")
+        val scope = CoroutineScope(Dispatchers.Default + Job())
+        val progressSeen = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val job = scope.launch {
+            compressor.compress(
+                inputPath = input.absolutePath,
+                outputPath = output.absolutePath,
+                onProgress = { p ->
+                    // Wait until the transformer has actually started producing output before we
+                    // cancel, otherwise the output file may never have existed and the assertion
+                    // passes vacuously.
+                    if (p > 0f && !progressSeen.isCompleted) progressSeen.complete(Unit)
+                },
+            )
+        }
+        // Bound the wait and always clean up the launched coroutine in a finally block so a
+        // timeout on progressSeen.await() doesn't leak the job.
+        try {
+            withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
+        } finally {
+            job.cancel()
+            withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+        }
+
+        assertTrue(!output.exists(), "Cancelled output must be deleted, but got ${output.length()} bytes")
+    }
+
+    @Test
+    fun bitrateRespected_withinTolerance() = runTest {
+        val input = createTestWavFile(3, SAMPLE_RATE_44K, STEREO)
+        val output = File(tempDir, "bitrate_check.m4a")
+        val target = 128_000
+
+        val result = compressor.compress(
+            input.absolutePath,
+            output.absolutePath,
+            AudioCompressionConfig(bitrate = target),
+        )
+        assertTrue(result.isSuccess)
+
+        val observed: Int = assertNotNull(readContainerBitrate(output), "Output container should report a bitrate")
+        // Encoder tolerance is platform-dependent; allow ±50% around the request for robustness.
+        val low = (target * 0.5).toInt()
+        val high = (target * 1.5).toInt()
+        assertTrue(
+            observed in low..high,
+            "Observed bitrate $observed should be within [$low, $high] for target $target",
+        )
+    }
+
+    @Test
+    fun supportedInputFormats_containsCommonAudioMimes() {
+        val formats = compressor.supportedInputFormats
+        // At least one common audio MIME should be advertised. Devices vary, so we accept any.
+        val expected = setOf("audio/mp4a-latm", "audio/mpeg", "audio/flac", "audio/raw")
+        assertTrue(
+            formats.any { it in expected },
+            "Expected at least one of $expected in $formats",
+        )
+    }
+
+    @Test
+    fun supportedOutputFormats_containsAac() {
+        assertTrue(
+            "audio/mp4a-latm" in compressor.supportedOutputFormats,
+            "AAC must be a supported output: ${compressor.supportedOutputFormats}",
+        )
+    }
+
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): File {
         val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)
@@ -262,5 +388,10 @@ class AndroidAudioCompressorTest {
 
     private companion object {
         const val MS_PER_SECOND = 1_000L
+
+        // Long enough that the transformer always reports at least one progress event before
+        // the test cancels, even on a slow CI emulator.
+        const val CANCELLATION_INPUT_SECONDS = 10
+        const val CANCELLATION_TIMEOUT_MS = 15_000L
     }
 }
