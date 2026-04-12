@@ -8,12 +8,12 @@ import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
-import androidx.media3.transformer.InAppMp4Muxer
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
+import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.resolveMediaInputSize
@@ -78,15 +78,15 @@ internal class AndroidVideoCompressor : VideoCompressor {
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ) {
-        // Probe source dimensions off-Main so [toPresentationOrNull] can skip scaling when the
+        // Probe source short side off-Main so [toPresentationOrNull] can skip scaling when the
         // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
         // input with `HIGH_QUALITY` preset targeting 1080p).
-        val sourceDimensions = withContext(Dispatchers.IO) { probeVideoDimensions(inputPath) }
+        val sourceShortSide = withContext(Dispatchers.IO) { probeVideoShortSide(inputPath) }
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
-                val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceDimensions)
+                val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceShortSide)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -110,22 +110,17 @@ internal class AndroidVideoCompressor : VideoCompressor {
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(encoderFactory)
-            // Drop Media3's default 400 KB `moov` pre-reservation so short clips don't end up
-            // dominated by `free`-box padding. See the matching helper in AndroidAudioCompressor
-            // (`buildTightMp4MuxerFactory`) for the full rationale. Without this, a 1 s 1280×720
-            // clip at 400 kbps and one at 2 Mbps both land around 400 KB, defeating any
-            // size-vs-bitrate assertion.
-            .setMuxerFactory(InAppMp4Muxer.Factory().setFreeSpaceAfterFileTypeBoxBytes(1))
+            .setMuxerFactory(buildTightMp4MuxerFactory())
             .build()
     }
 
     private fun buildEditedMediaItem(
         inputPath: String,
         maxResolution: MaxResolution,
-        sourceDimensions: Pair<Int, Int>?,
+        sourceShortSide: Int?,
     ): EditedMediaItem {
         val videoEffects = buildList {
-            maxResolution.toPresentationOrNull(sourceDimensions)?.let(::add)
+            maxResolution.toPresentationOrNull(sourceShortSide)?.let(::add)
         }
         return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
             .setEffects(Effects(emptyList(), videoEffects))
@@ -143,35 +138,30 @@ internal class AndroidVideoCompressor : VideoCompressor {
  *
  * `Presentation.createForShortSide(n)` forces the output's shortest edge to be exactly `n`,
  * including upscaling when the source is smaller. We cap this to strictly downscaling by
- * comparing against the probed source dimensions; if the source shortest edge already fits,
- * returning `null` keeps the original resolution.
+ * comparing against the probed source; when the source already fits, returning `null` keeps
+ * the original resolution.
  *
- * If [sourceDimensions] is `null` (probe failed or returned zeros), we conservatively fall back
- * to the original behaviour — applying the Presentation — since we can't prove no-upscale
- * safely. In practice MediaMetadataRetriever always reports dimensions for files Media3 can
- * actually transcode, so the fallback path is only hit for genuinely unreadable inputs which
- * Media3 will fail on anyway.
+ * `sourceShortSide == null` (probe failed) falls back to the original force-scale behaviour
+ * since we can't prove no-upscale; Media3 will surface a real error for genuinely unreadable
+ * inputs anyway.
  */
-private fun MaxResolution.toPresentationOrNull(sourceDimensions: Pair<Int, Int>?): Presentation? =
+private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentation? =
     when (this) {
         is MaxResolution.Original -> null
-        is MaxResolution.Custom -> {
-            val shortSide = sourceDimensions?.let { minOf(it.first, it.second) }
-            if (shortSide != null && shortSide <= maxShortEdge) {
+        is MaxResolution.Custom ->
+            if (sourceShortSide != null && sourceShortSide <= maxShortEdge) {
                 null
             } else {
                 Presentation.createForShortSide(maxShortEdge)
             }
-        }
     }
 
 /**
- * Best-effort probe of a video's `(width, height)` using [MediaMetadataRetriever]. Returns
- * `null` when the file can't be opened or either dimension is missing — callers should fall
- * back to applying effects unconditionally.
+ * Best-effort probe of a video's shortest edge via [MediaMetadataRetriever]. Returns `null`
+ * when the file can't be opened or either dimension is missing / zero.
  */
 @Suppress("TooGenericExceptionCaught")
-private fun probeVideoDimensions(inputPath: String): Pair<Int, Int>? = try {
+private fun probeVideoShortSide(inputPath: String): Int? = try {
     val mmr = MediaMetadataRetriever()
     try {
         mmr.setDataSource(inputPath)
@@ -181,7 +171,7 @@ private fun probeVideoDimensions(inputPath: String): Pair<Int, Int>? = try {
         val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
-        if (w != null && h != null) w to h else null
+        if (w != null && h != null) minOf(w, h) else null
     } finally {
         mmr.release()
     }

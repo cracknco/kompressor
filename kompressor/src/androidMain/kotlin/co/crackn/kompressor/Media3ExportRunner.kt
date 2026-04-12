@@ -8,11 +8,13 @@ import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.InAppMp4Muxer
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -86,7 +88,7 @@ internal suspend fun awaitMedia3Export(
                 if (continuation.isActive) continuation.resumeWithException(t)
             }
         }
-    } catch (ce: kotlinx.coroutines.CancellationException) {
+    } catch (ce: CancellationException) {
         // Synchronously cancel Media3 on the Main looper so the muxer fully closes its
         // FileOutputStream *before* the coroutine unwinds and the surrounding
         // `deletingOutputOnFailure` runs its File.delete(). Without this, Media3 may still be
@@ -118,6 +120,28 @@ private fun CoroutineScope.launchMedia3ProgressPoller(
         delay(MEDIA3_PROGRESS_POLL_INTERVAL_MS)
     }
 }
+
+/**
+ * A Media3 [androidx.media3.muxer.Muxer.Factory] that skips the default 400 KB `moov`-reservation.
+ *
+ * Media3 1.10's [androidx.media3.transformer.DefaultMuxer] delegates to [InAppMp4Muxer] which
+ * defaults to [androidx.media3.muxer.Mp4Muxer.Builder.setAttemptStreamableOutputEnabled] `= true`
+ * and reserves 400 000 bytes after `ftyp` for a front-loaded `moov` box. Short outputs (audio:
+ * 30–150 KB, short test-fixture video: < 200 KB) never fill that reservation — the remainder
+ * stays as a `free` padding box, bloating every output by ≥ 400 KB and masking any
+ * bitrate-vs-size assertion.
+ *
+ * `setFreeSpaceAfterFileTypeBoxBytes(1)` is the one knob [InAppMp4Muxer.Factory] exposes to
+ * bypass the 400 KB default: the muxer reserves just 1 byte, discovers at finalize time that
+ * the real `moov` doesn't fit, and writes a minimal 9-byte `free` box at the head with the full
+ * `moov` relocated to the tail. Net container overhead: ~30 bytes instead of ~400 KB.
+ *
+ * Shared between [co.crackn.kompressor.audio.AndroidAudioCompressor] and
+ * [co.crackn.kompressor.video.AndroidVideoCompressor] — the padding bug is independent of
+ * the track type.
+ */
+internal fun buildTightMp4MuxerFactory(): InAppMp4Muxer.Factory =
+    InAppMp4Muxer.Factory().setFreeSpaceAfterFileTypeBoxBytes(1)
 
 /**
  * Collect MIME types declared by the platform's [MediaCodecList] for the requested role
