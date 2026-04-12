@@ -80,8 +80,21 @@ kover {
                     "co.crackn.kompressor.*.Android*",
                     "co.crackn.kompressor.*.Ios*",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-                    "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
+                    // Shared Media3 → coroutines glue. The Transformer listener + progress
+                    // poller can only be exercised on an emulator/device where Media3 has a
+                    // real codec stack to drive. Wildcard also excludes the inner lambda
+                    // classes the Kotlin compiler generates for the listener / progress job.
+                    "co.crackn.kompressor.Media3ExportRunnerKt",
+                    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
+                    // Runtime-only probe data class populated from MediaExtractor (device).
+                    "co.crackn.kompressor.audio.InputAudioFormat",
+                    // The plan *selection* logic (`planAudioProcessors`) is in the same file
+                    // and covered by host tests; the data class itself plus `toProcessors`
+                    // instantiates Media3 audio processors that pull in `android.util.SparseArray`
+                    // and can only run on a device.
+                    "co.crackn.kompressor.audio.AudioProcessorPlan",
+                    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
                     // Device/simulator-only platform glue. Pure logic extracted from
                     // these has been moved to separate files that ARE covered.
                     "co.crackn.kompressor.AndroidKompressor",

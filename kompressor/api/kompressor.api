@@ -203,13 +203,52 @@ public final class co/crackn/kompressor/audio/AudioCompressionConfig {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract class co/crackn/kompressor/audio/AudioCompressionError : java/lang/Exception {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class co/crackn/kompressor/audio/AudioCompressionError$DecodingFailed : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/audio/AudioCompressionError$EncodingFailed : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/audio/AudioCompressionError$IoFailed : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/audio/AudioCompressionError$Unknown : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
 public abstract interface class co/crackn/kompressor/audio/AudioCompressor {
 	public abstract fun compress-yxL6bBk (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public fun getSupportedInputFormats ()Ljava/util/Set;
+	public fun getSupportedOutputFormats ()Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressor$DefaultImpls {
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static fun getSupportedInputFormats (Lco/crackn/kompressor/audio/AudioCompressor;)Ljava/util/Set;
+	public static fun getSupportedOutputFormats (Lco/crackn/kompressor/audio/AudioCompressor;)Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/audio/AudioPresets {

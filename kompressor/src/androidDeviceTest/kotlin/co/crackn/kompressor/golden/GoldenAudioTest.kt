@@ -5,6 +5,7 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -112,6 +113,74 @@ class GoldenAudioTest {
         )
     }
 
+    @Test
+    fun aacInput_matchingConfig_triggersFastPath() = runTest {
+        val input = File(tempDir, "golden_aac_in.m4a")
+        AudioInputFixtures.createAacM4a(
+            input,
+            durationSeconds = 2,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
+            bitrate = 128_000,
+        )
+        val output = File(tempDir, "golden_aac_passthrough.m4a")
+
+        val start = System.nanoTime()
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val elapsedMs = (System.nanoTime() - start) / 1_000_000L
+
+        assertTrue(result.isSuccess, "Passthrough should succeed: ${result.exceptionOrNull()}")
+        assertTrue(OutputValidators.isValidM4a(output.readBytes()))
+        // Passthrough should be very fast (<3s even on slow emulators). A full transcode of
+        // 2s of audio typically takes >3s — this gap pins the fast path.
+        assertTrue(
+            elapsedMs < FAST_PATH_BUDGET_MS,
+            "Passthrough took ${elapsedMs}ms, expected < ${FAST_PATH_BUDGET_MS}ms",
+        )
+        // Output size should be within a tight tolerance of input (remux only, no re-encode).
+        val ratio = output.length().toDouble() / input.length().toDouble()
+        assertTrue(
+            ratio in FAST_PATH_SIZE_RATIO_MIN..FAST_PATH_SIZE_RATIO_MAX,
+            "Passthrough size ratio $ratio should be near 1.0",
+        )
+    }
+
+    @Test
+    fun outputBitrateLowerThanInputForVoicePreset() = runTest {
+        val input = createWav(durationSeconds = 3, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
+        val output = File(tempDir, "golden_voice_vs_input.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath, AudioPresets.VOICE_MESSAGE)
+        assertTrue(result.isSuccess)
+
+        // Voice preset is 32kbps mono 22kHz — vastly smaller than 44.1kHz stereo PCM input.
+        assertTrue(
+            output.length() < input.length() / 4,
+            "Voice preset output ${output.length()} should be <1/4 of PCM input ${input.length()}",
+        )
+    }
+
+    @Test
+    fun outputDurationMatchesInputAcrossRateConversion() = runTest {
+        val durationSec = 3
+        val input = createWav(durationSeconds = durationSec, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
+        val output = File(tempDir, "golden_duration_preservation.m4a")
+
+        val result = compressor.compress(
+            input.absolutePath,
+            output.absolutePath,
+            AudioCompressionConfig(sampleRate = 22_050, channels = AudioChannels.MONO),
+        )
+        assertTrue(result.isSuccess)
+
+        val outMs = readAudioDurationMs(output)
+        val expectedMs = durationSec * 1_000L
+        assertTrue(
+            abs(outMs - expectedMs) < DURATION_TOLERANCE_MS,
+            "Duration $outMs ms should be within ${DURATION_TOLERANCE_MS}ms of $expectedMs ms",
+        )
+    }
+
     private fun createWav(durationSeconds: Int, sampleRate: Int, channels: Int): File {
         val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)
         val file = File(tempDir, "golden_input_${sampleRate}_${channels}ch_${durationSeconds}s.wav")
@@ -123,5 +192,10 @@ class GoldenAudioTest {
         const val EXPECTED_DURATION_2S_MS = 2_000L
         const val EXPECTED_MIN_BYTES = 24_000L // 3s at 128kbps ≈ 48KB, -50% margin
         const val EXPECTED_MAX_BYTES = 72_000L // 3s at 128kbps ≈ 48KB, +50% margin
+
+        // Passthrough performance / size expectations.
+        const val FAST_PATH_BUDGET_MS = 3_000L
+        const val FAST_PATH_SIZE_RATIO_MIN = 0.90
+        const val FAST_PATH_SIZE_RATIO_MAX = 1.10
     }
 }

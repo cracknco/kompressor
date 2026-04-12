@@ -1,4 +1,4 @@
-package co.crackn.kompressor.video
+package co.crackn.kompressor
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe

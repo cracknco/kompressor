@@ -1,56 +1,48 @@
 package co.crackn.kompressor.video
 
-import android.media.MediaCodecList
 import android.media.MediaMetadataRetriever
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.Presentation
-import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
-import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.KompressorContext
+import co.crackn.kompressor.awaitMedia3Export
+import co.crackn.kompressor.collectCodecMimeTypes
+import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.suspendRunCatching
 import java.io.File
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /**
  * Android video compressor backed by [Transformer][androidx.media3.transformer.Transformer]
  * (Media3 1.10).
  *
- * Media3 Transformer handles codec selection, hardware/software fallback, HDR tone
- * mapping, rotation, and all the codec state-machine quirks that OEM MediaCodec
- * implementations throw at us. This keeps the library truly native (uses MediaCodec
- * under the hood) with zero bundled codec binaries.
+ * Media3 Transformer handles codec selection, hardware/software fallback, HDR tone mapping,
+ * rotation, and all the codec state-machine quirks that OEM MediaCodec implementations throw at
+ * us. This keeps the library truly native (uses MediaCodec under the hood) with zero bundled
+ * codec binaries. The listener / progress / cancellation glue lives in [awaitMedia3Export], shared
+ * with the audio compressor.
  *
- * Platform failures are translated into the typed [VideoCompressionError]
- * hierarchy via [toVideoCompressionError] so that callers can `when`-branch on
- * actionable error subtypes (e.g. [VideoCompressionError.UnsupportedSourceFormat]
- * for the "device can't decode HEVC 10-bit" case) rather than a generic
- * `ExportException`.
+ * Platform failures are translated into the typed [VideoCompressionError] hierarchy via
+ * [toVideoCompressionError] so that callers can `when`-branch on actionable error subtypes
+ * (e.g. [VideoCompressionError.UnsupportedSourceFormat] for the "device can't decode HEVC 10-bit"
+ * case) rather than a generic `ExportException`.
  */
 internal class AndroidVideoCompressor : VideoCompressor {
 
     override val supportedInputFormats: Set<String> by lazy {
-        collectCodecMimeTypes(isEncoder = false, videoOnly = true)
+        collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = "video/")
     }
 
     override val supportedOutputFormats: Set<String> by lazy {
-        collectCodecMimeTypes(isEncoder = true, videoOnly = true)
+        collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = "video/")
     }
 
     override suspend fun compress(
@@ -106,7 +98,7 @@ internal class AndroidVideoCompressor : VideoCompressor {
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
                 val item = buildEditedMediaItem(inputPath, config.maxResolution)
-                awaitExport(transformer, item, outputPath, onProgress)
+                awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
             // describeSource does blocking I/O via MediaMetadataRetriever — keep it off Main.
@@ -158,9 +150,8 @@ private fun MaxResolution.toPresentationOrNull(): Presentation? = when (this) {
 }
 
 /**
- * Build a short human-readable description of the source file (codec + resolution)
- * to embed in error messages. Best-effort — silently returns null if the retriever
- * can't open the file.
+ * Build a short human-readable description of the source file (codec + resolution) to embed in
+ * error messages. Best-effort — silently returns null if the retriever can't open the file.
  */
 private fun describeSource(inputPath: String): String? = runCatching {
     val mmr = MediaMetadataRetriever()
@@ -185,78 +176,3 @@ private fun describeSource(inputPath: String): String? = runCatching {
         mmr.release()
     }
 }.getOrNull()
-
-private fun collectCodecMimeTypes(isEncoder: Boolean, videoOnly: Boolean): Set<String> =
-    MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
-        .asSequence()
-        .filter { it.isEncoder == isEncoder }
-        .flatMap { it.supportedTypes.asSequence() }
-        .filter { !videoOnly || it.startsWith("video/") }
-        .toSet()
-
-/**
- * Wraps [Transformer]'s listener + progress-holder API in a cancellable suspend function.
- *
- * The Transformer must be started and polled on its application-looper thread
- * (we run the whole export on [Dispatchers.Main] via `runTransformer`).
- */
-private suspend fun awaitExport(
-    transformer: Transformer,
-    item: EditedMediaItem,
-    outputPath: String,
-    onProgress: suspend (Float) -> Unit,
-) = coroutineScope {
-    val progressJob = launchProgressPoller(transformer, onProgress)
-    try {
-        suspendCancellableCoroutine<Unit> { continuation ->
-            val listener = object : Transformer.Listener {
-                override fun onCompleted(composition: Composition, result: ExportResult) {
-                    transformer.removeListener(this)
-                    // Guard against the cancel-race: invokeOnCancellation may have already
-                    // cancelled the continuation before the Main-looper drains this callback.
-                    if (continuation.isActive) continuation.resume(Unit)
-                }
-
-                override fun onError(
-                    composition: Composition,
-                    result: ExportResult,
-                    exception: ExportException,
-                ) {
-                    transformer.removeListener(this)
-                    if (continuation.isActive) continuation.resumeWithException(exception)
-                }
-            }
-            continuation.invokeOnCancellation {
-                transformer.removeListener(listener)
-                transformer.cancel()
-            }
-            transformer.addListener(listener)
-            transformer.start(item, outputPath)
-        }
-    } finally {
-        progressJob.cancel()
-    }
-}
-
-private fun CoroutineScope.launchProgressPoller(
-    transformer: Transformer,
-    onProgress: suspend (Float) -> Unit,
-) = launch {
-    val holder = androidx.media3.transformer.ProgressHolder()
-    var lastReported = 0f
-    while (isActive) {
-        val state = transformer.getProgress(holder)
-        if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
-            val progress = (holder.progress / PROGRESS_PERCENT_MAX).coerceIn(0f, 1f)
-            if (progress - lastReported >= PROGRESS_REPORT_THRESHOLD) {
-                onProgress(progress)
-                lastReported = progress
-            }
-        }
-        delay(PROGRESS_POLL_INTERVAL_MS)
-    }
-}
-
-private const val PROGRESS_POLL_INTERVAL_MS = 100L
-private const val PROGRESS_REPORT_THRESHOLD = 0.01f
-private const val PROGRESS_PERCENT_MAX = 100f
