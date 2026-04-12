@@ -5,6 +5,7 @@
     <string name="tab_image">Image</string>
     <string name="tab_video">Vidéo</string>
     <string name="tab_audio">Audio</string>
+    <string name="tab_capabilities">Capacités</string>
 
     <!-- Image screen -->
     <string name="select_image">Sélectionner une image</string>
@@ -75,4 +76,25 @@
 
     <!-- Errors -->
     <string name="error_compression_failed">Échec de la compression</string>
+    <string name="error_video_unsupported_format">Le format de cette vidéo n\'est pas supporté par les décodeurs matériels de votre appareil. Convertissez-la d\'abord en H.264 8-bit.</string>
+    <string name="error_video_decoding_failed">Impossible de décoder la vidéo — le fichier est peut-être corrompu ou utilise une variante non supportée.</string>
+    <string name="error_video_encoding_failed">L\'encodage de la vidéo compressée a échoué. Votre appareil manque peut-être de ressources.</string>
+    <string name="error_video_io_failed">Impossible de lire le fichier d\'entrée ou d\'écrire la sortie.</string>
+
+    <!-- Capabilities screen -->
+    <string name="capabilities_title">Capacités de l\'appareil</string>
+    <string name="capabilities_device">Appareil</string>
+    <string name="capabilities_video_decoders">Décodeurs vidéo</string>
+    <string name="capabilities_video_encoders">Encodeurs vidéo</string>
+    <string name="capabilities_audio_decoders">Décodeurs audio</string>
+    <string name="capabilities_audio_encoders">Encodeurs audio</string>
+    <string name="capabilities_badge_hw">HW</string>
+    <string name="capabilities_badge_sw">SW</string>
+    <string name="capabilities_10bit">10-bit</string>
+    <string name="capabilities_hdr">HDR</string>
+    <string name="capabilities_probe_card_title">Vérifier un fichier</string>
+    <string name="capabilities_probe_pick">Choisir une vidéo</string>
+    <string name="capabilities_probe_supported">Supporté par cet appareil</string>
+    <string name="capabilities_probe_unsupported">Non supporté par cet appareil</string>
+    <string name="capabilities_probe_unknown">Support incertain — à tester</string>
 </resources>

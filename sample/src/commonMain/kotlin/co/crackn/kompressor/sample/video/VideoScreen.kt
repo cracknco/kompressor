@@ -20,6 +20,10 @@ import co.crackn.kompressor.sample.common.CompressButton
 import co.crackn.kompressor.sample.common.ProgressSection
 import kompressor.sample.generated.resources.Res
 import kompressor.sample.generated.resources.error_compression_failed
+import kompressor.sample.generated.resources.error_video_decoding_failed
+import kompressor.sample.generated.resources.error_video_encoding_failed
+import kompressor.sample.generated.resources.error_video_io_failed
+import kompressor.sample.generated.resources.error_video_unsupported_format
 import kompressor.sample.generated.resources.try_another
 import org.jetbrains.compose.resources.stringResource
 
@@ -29,13 +33,24 @@ fun VideoScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
-    val errorMessage = stringResource(Res.string.error_compression_failed)
+    val errorTitle = stringResource(Res.string.error_compression_failed)
+    val unsupportedMsg = stringResource(Res.string.error_video_unsupported_format)
+    val decodingMsg = stringResource(Res.string.error_video_decoding_failed)
+    val encodingMsg = stringResource(Res.string.error_video_encoding_failed)
+    val ioMsg = stringResource(Res.string.error_video_io_failed)
 
-    state.error?.let { error ->
+    state.error?.let { rawError ->
+        val localized = when (state.errorKind) {
+            VideoErrorKind.UnsupportedFormat -> unsupportedMsg
+            VideoErrorKind.DecodingFailed -> decodingMsg
+            VideoErrorKind.EncodingFailed -> encodingMsg
+            VideoErrorKind.IoFailed -> ioMsg
+            VideoErrorKind.Other, null -> rawError
+        }
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text(errorMessage) },
-            text = { Text(error) },
+            title = { Text(errorTitle) },
+            text = { Text(localized) },
             confirmButton = {
                 TextButton(onClick = viewModel::clearError) { Text("OK") }
             },

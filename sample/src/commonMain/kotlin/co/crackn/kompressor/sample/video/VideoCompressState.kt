@@ -18,4 +18,8 @@ data class VideoCompressState(
     val isCompressing: Boolean = false,
     val result: CompressionResult? = null,
     val error: String? = null,
+    val errorKind: VideoErrorKind? = null,
 )
+
+/** High-level bucket of the last failure — used to pick a localized message. */
+enum class VideoErrorKind { UnsupportedFormat, DecodingFailed, EncodingFailed, IoFailed, Other }

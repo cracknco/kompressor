@@ -44,9 +44,18 @@ import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
 import platform.Foundation.NSURL
 
+// Baseline input/output MIME coverage for AVFoundation on iOS 15+. VideoToolbox
+// can decode additional formats on newer chipsets (ProRes, VP9), but H.264 +
+// HEVC (including 10-bit on A10 Fusion and later) are the guaranteed matrix.
+private val IOS_SUPPORTED_INPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
+private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
+
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
 internal class IosVideoCompressor : VideoCompressor {
+
+    override val supportedInputFormats: Set<String> = IOS_SUPPORTED_INPUT_MIMES
+    override val supportedOutputFormats: Set<String> = IOS_SUPPORTED_OUTPUT_MIMES
 
     override suspend fun compress(
         inputPath: String,

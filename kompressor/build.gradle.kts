@@ -58,6 +58,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.androidx.exifinterface)
             implementation(libs.androidx.startup.runtime)
+            implementation(libs.androidx.media3.transformer)
+            implementation(libs.androidx.media3.effect)
+            implementation(libs.androidx.media3.common)
         }
 
         getByName("androidDeviceTest").dependencies {
@@ -78,12 +81,7 @@ kover {
                     "co.crackn.kompressor.*.Ios*",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
                     "co.crackn.kompressor.audio.TranscodeLoop",
-                    "co.crackn.kompressor.video.VideoTranscoderKt",
-                    "co.crackn.kompressor.video.VideoTranscoder",
-                    "co.crackn.kompressor.video.BaseTranscodeLoop",
-                    "co.crackn.kompressor.video.SurfaceTranscodeLoop",
-                    "co.crackn.kompressor.video.ByteBufferTranscodeLoop",
-                    "co.crackn.kompressor.video.CodecSelector",
+                    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.IosKompressor",
                     "co.crackn.kompressor.IosFileUtils*",

@@ -6,6 +6,7 @@ import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.Kompressor
 import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
+import co.crackn.kompressor.video.VideoCompressionError
 import co.crackn.kompressor.video.VideoPresets
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
@@ -139,7 +140,7 @@ class VideoCompressViewModel(
     }
 
     fun clearError() {
-        _state.update { it.copy(error = null) }
+        _state.update { it.copy(error = null, errorKind = null) }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -161,12 +162,20 @@ class VideoCompressViewModel(
 
     private fun handleFailure(error: Throwable) {
         val failedOutputPath = _state.value.compressedVideoPath
+        val kind = when (error) {
+            is VideoCompressionError.UnsupportedSourceFormat -> VideoErrorKind.UnsupportedFormat
+            is VideoCompressionError.DecodingFailed -> VideoErrorKind.DecodingFailed
+            is VideoCompressionError.EncodingFailed -> VideoErrorKind.EncodingFailed
+            is VideoCompressionError.IoFailed -> VideoErrorKind.IoFailed
+            else -> VideoErrorKind.Other
+        }
         _state.update {
             it.copy(
                 isCompressing = false,
                 progress = 0f,
                 compressedVideoPath = null,
                 error = error.message ?: "Unknown error",
+                errorKind = kind,
             )
         }
         if (failedOutputPath != null) {
