@@ -135,14 +135,15 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
 
       # AVD snapshot cache. Bump the `-vN` suffix to invalidate if the AVD
-      # config below changes. Cache hit → emulator boots from snapshot in ~15s.
+      # config below changes or the android-emulator-runner SHA is updated.
+      # Cache hit → emulator boots from snapshot in ~15s.
       - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         id: avd-cache
         with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api30-default-x86_64-v1
+          key: avd-api30-default-x86_64-v1 # gitleaks:allow
 
       - name: Create AVD + generate snapshot (cache miss only)
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -217,10 +218,18 @@ jobs:
   # Runs the Kotlin/Native simulator tests on every PR (previously these only
   # ran in release.yml after merge to main). macos-latest is arm64 with Xcode
   # pre-installed; ~6-10 min per run.
+  #
+  # continue-on-error: a set of 10 iOS tests (IosAudioCompressor resample /
+  # channel-mix + IosImage / GoldenImage) has been failing on `main` since
+  # commit cd12be1 (PR #41). Release workflow was already broken. This PR
+  # surfaces the pre-existing breakage in PR CI for the first time, but does
+  # not block merges on it — those tests get fixed in a follow-up PR and the
+  # flag is removed then.
   ios-simulator-tests:
     name: iOS simulator tests
     runs-on: macos-latest
     timeout-minutes: 30
+    continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5

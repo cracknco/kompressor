@@ -21,6 +21,24 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
+        // Several transitive dependencies (AndroidX, Media3, Kotest) ship the same
+        // Apache 2.0 / LGPL license notice files. Without these excludes the
+        // `mergeAndroidDeviceTestJavaResource` task fails with DuplicateRelativeFileException
+        // on the APK packaging step for instrumentation tests.
+        packaging {
+            resources.excludes.addAll(
+                listOf(
+                    "META-INF/AL2.0",
+                    "META-INF/LGPL2.1",
+                    "META-INF/licenses/ASM",
+                    "META-INF/DEPENDENCIES",
+                    "META-INF/LICENSE*",
+                    "META-INF/NOTICE*",
+                    "META-INF/*.kotlin_module",
+                ),
+            )
+        }
+
         withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
