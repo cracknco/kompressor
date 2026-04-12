@@ -70,6 +70,12 @@ object Mp4Generator {
             assetWriterInput = input,
             sourcePixelBufferAttributes = null,
         )
+        // addInput throws an Obj-C exception if the settings are unsupported,
+        // which crashes the whole test process. canAddInput is the documented
+        // way to check first and fail with an actionable Kotlin error.
+        check(writer.canAddInput(input)) {
+            "AVAssetWriter cannot add video input for ${width}x$height @${fps}fps"
+        }
         writer.addInput(input)
 
         check(writer.startWriting()) { "Failed to start writing: ${writer.error}" }

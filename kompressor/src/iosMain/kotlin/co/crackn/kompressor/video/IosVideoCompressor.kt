@@ -48,7 +48,12 @@ import platform.Foundation.NSURL
 // can decode additional formats on newer chipsets (ProRes, VP9), but H.264 +
 // HEVC (including 10-bit on A10 Fusion and later) are the guaranteed matrix.
 private val IOS_SUPPORTED_INPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
-private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
+
+// Only H.264 is actually wired in buildVideoSettings today. Expand this when
+// VideoCodec gains an HEVC variant AND buildVideoSettings handles it — keeping
+// the advertised set in sync with the implementation avoids misleading callers
+// that inspect supportedOutputFormats before calling compress().
+private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc")
 
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
