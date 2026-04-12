@@ -7,6 +7,7 @@ import co.crackn.kompressor.testutil.readVideoMetadata
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
+import co.crackn.kompressor.video.VideoCompressionError
 import co.crackn.kompressor.video.VideoPresets
 import java.io.File
 import kotlin.test.assertEquals
@@ -122,6 +123,27 @@ class AndroidVideoCompressorTest {
         val output = File(tempDir, "out.mp4")
         val result = compressor.compress("/nonexistent/video.mp4", output.absolutePath)
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun compressVideo_malformedInput_probeFails_gracefulError() = runTest {
+        // A file that exists but is not a decodable video — the dimension probe via
+        // MediaMetadataRetriever returns null and [AndroidVideoCompressor] falls back to
+        // applying `Presentation.createForShortSide`. Media3 then surfaces a typed
+        // VideoCompressionError rather than crashing. This validates both branches of the
+        // probe-failure fallback: the probe swallows the exception, and the surrounding
+        // pipeline reports a graceful Result.failure.
+        val garbage = File(tempDir, "garbage.mp4").apply { writeBytes(ByteArray(256) { 0xFF.toByte() }) }
+        val output = File(tempDir, "out_from_garbage.mp4")
+
+        val result = compressor.compress(garbage.absolutePath, output.absolutePath)
+
+        assertTrue(result.isFailure, "Malformed input must produce a graceful Result.failure, not a crash")
+        val err = result.exceptionOrNull()
+        assertTrue(
+            err is VideoCompressionError,
+            "Error must be a typed VideoCompressionError, got ${err?.let { it::class.simpleName }}: $err",
+        )
     }
 
     @Test

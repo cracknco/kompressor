@@ -7,6 +7,7 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.readTopLevelMp4Boxes
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -70,6 +71,20 @@ class GoldenAudioTest {
         val metadata = readAudioMetadata(output)
         assertEquals(SAMPLE_RATE_44K, metadata.sampleRate, "Sample rate should match default config")
         assertEquals(STEREO, metadata.channels, "Channel count should match default config")
+
+        // Structural gate: verify the tight MP4 muxer factory is actually in effect. Media3
+        // 1.10's default muxer front-loads a `moov` reservation of 400_000 bytes; without the
+        // `setFreeSpaceAfterFileTypeBoxBytes(1)` override every output contains a `free`
+        // padding box of that size, turning "size ≈ f(bitrate)" assertions into noise. If a
+        // future refactor drops the muxer factory wiring, this assertion catches it directly
+        // at the container level — without depending on byte-count ranges that might still
+        // pass by coincidence.
+        val freeBoxTotal = readTopLevelMp4Boxes(output).filter { it.type == "free" }.sumOf { it.size }
+        assertTrue(
+            freeBoxTotal < MAX_FREE_BOX_BYTES,
+            "Top-level `free` boxes total $freeBoxTotal B — the tight-muxer override must keep " +
+                "this below $MAX_FREE_BOX_BYTES B (Media3 default reserves 400 000 B)",
+        )
     }
 
     @Test
@@ -123,21 +138,48 @@ class GoldenAudioTest {
             channels = STEREO,
             bitrate = 128_000,
         )
-        val output = File(tempDir, "golden_aac_passthrough.m4a")
+        val passthroughOutput = File(tempDir, "golden_aac_passthrough.m4a")
+        val transcodeOutput = File(tempDir, "golden_aac_transcoded.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        // Record a full re-encode wall time as the baseline — this is the same code path the
+        // fast path must avoid. Using a relative ratio instead of an absolute budget (we used
+        // to assert `< 3 s`, which was flaky on loaded CI hardware) isolates the behaviour
+        // from the device's encoder throughput: regardless of absolute speed, passthrough
+        // must be strictly faster than re-encoding because it skips decode + encode entirely.
+        val transcodeResult = compressor.compress(
+            input.absolutePath,
+            transcodeOutput.absolutePath,
+            AudioCompressionConfig(bitrate = 64_000),
+        )
+        assertTrue(transcodeResult.isSuccess, "Re-encode baseline must succeed: ${transcodeResult.exceptionOrNull()}")
+        val transcodeMs = transcodeResult.getOrThrow().durationMs
 
-        assertTrue(result.isSuccess, "Passthrough should succeed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidM4a(output.readBytes()))
-        // We used to gate passthrough on a wall-clock budget (<3s). That's too flaky on loaded
-        // CI emulators — functional invariants below (size ratio near 1.0, valid M4A, metadata
-        // preserved) are a more reliable signature of the fast path. Latency checks belong in
-        // a dedicated benchmark, not a golden test.
-        // Output size should be within a tight tolerance of input (remux only, no re-encode).
-        val ratio = output.length().toDouble() / input.length().toDouble()
+        val passthroughResult = compressor.compress(input.absolutePath, passthroughOutput.absolutePath)
+
         assertTrue(
-            ratio in FAST_PATH_SIZE_RATIO_MIN..FAST_PATH_SIZE_RATIO_MAX,
-            "Passthrough size ratio $ratio should be near 1.0",
+            passthroughResult.isSuccess,
+            "Passthrough should succeed: ${passthroughResult.exceptionOrNull()}",
+        )
+        assertTrue(OutputValidators.isValidM4a(passthroughOutput.readBytes()))
+
+        // Functional invariants: output size within a tight tolerance of input (remux only,
+        // no re-encode) — this is the signature that Media3 actually took the fast path.
+        val sizeRatio = passthroughOutput.length().toDouble() / input.length().toDouble()
+        assertTrue(
+            sizeRatio in FAST_PATH_SIZE_RATIO_MIN..FAST_PATH_SIZE_RATIO_MAX,
+            "Passthrough size ratio $sizeRatio should be near 1.0",
+        )
+
+        // Performance invariant: the fast path must be *substantially* faster than a full
+        // re-encode of the same source. The relative budget is deliberately loose (33 %) —
+        // we only need the check to catch a regression where the fast path is silently
+        // disabled and Media3 ends up re-encoding, which would push durations into the
+        // same order of magnitude as the baseline.
+        val passthroughMs = passthroughResult.getOrThrow().durationMs
+        assertTrue(
+            passthroughMs < transcodeMs * FAST_PATH_RELATIVE_BUDGET,
+            "Passthrough ($passthroughMs ms) should be < ${FAST_PATH_RELATIVE_BUDGET * 100}% of " +
+                "re-encode baseline ($transcodeMs ms)",
         )
     }
 
@@ -192,5 +234,11 @@ class GoldenAudioTest {
         // Passthrough size expectations.
         const val FAST_PATH_SIZE_RATIO_MIN = 0.90
         const val FAST_PATH_SIZE_RATIO_MAX = 1.10
+        const val FAST_PATH_RELATIVE_BUDGET = 0.33
+
+        // Tight-muxer override should keep `free` padding well below 1 KB in aggregate. Raw
+        // header overhead (9 B per box × ~1 box) is the realistic floor; 1024 B gives generous
+        // headroom for future Media3 minor tweaks while catching the 400 KB default regression.
+        const val MAX_FREE_BOX_BYTES = 1024L
     }
 }
