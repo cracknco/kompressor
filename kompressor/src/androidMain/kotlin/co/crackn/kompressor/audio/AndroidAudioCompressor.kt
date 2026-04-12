@@ -10,6 +10,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.InAppMp4Muxer
 import androidx.media3.transformer.Transformer
 import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
@@ -115,12 +116,31 @@ internal class AndroidAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         canPassthrough: Boolean,
     ): Transformer {
-        val builder = Transformer.Builder(context).setAudioMimeType(MimeTypes.AUDIO_AAC)
+        val builder = Transformer.Builder(context)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setMuxerFactory(buildTightMp4MuxerFactory())
         if (!canPassthrough) {
             builder.setEncoderFactory(buildAudioEncoderFactory(context, config))
         }
         return builder.build()
     }
+
+    /**
+     * Build a Media3 [Muxer.Factory][androidx.media3.muxer.Muxer.Factory] that skips the default
+     * 400 KB `moov`-reservation. Media3 1.10's [androidx.media3.transformer.DefaultMuxer]
+     * delegates to [InAppMp4Muxer] which defaults to
+     * [androidx.media3.muxer.Mp4Muxer.Builder.setAttemptStreamableOutputEnabled] `= true` and
+     * reserves 400 000 bytes after `ftyp` for a front-loaded `moov` box. Small audio files
+     * (typical AAC output: 30-150 KB) never fill that reservation — the remainder stays as a
+     * `free` padding box and bloats every output by ≥ 400 KB.
+     *
+     * `setFreeSpaceAfterFileTypeBoxBytes(1)` is the one knob [InAppMp4Muxer.Factory] exposes to
+     * bypass the 400 KB default: the muxer reserves just 1 byte, discovers at finalize time that
+     * the real `moov` doesn't fit, and writes a minimal 9-byte `free` box at the head with the
+     * full `moov` relocated to the tail. Net container overhead: ~30 bytes instead of ~400 KB.
+     */
+    private fun buildTightMp4MuxerFactory() =
+        InAppMp4Muxer.Factory().setFreeSpaceAfterFileTypeBoxBytes(1)
 
     private fun buildEditedMediaItem(
         inputPath: String,

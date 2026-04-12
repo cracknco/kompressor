@@ -45,8 +45,11 @@ class AndroidImageCompressorTest {
         assertTrue(output.exists())
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
-        assertTrue(compression.compressionRatio < 1f)
         assertTrue(compression.durationMs >= 0)
+        // No `compressionRatio < 1f` here — that's not a universal invariant on synthetic PNG
+        // fixtures. A 1000×1000 PNG made of ~15k 8-px palette tiles (see [createTestImage]) often
+        // beats JPEG's per-block DCT overhead. Format validity + non-zero sizes are the functional
+        // invariants; real-world compression is covered by `compressImage_qualityAffectsSize`.
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output should be valid JPEG")
     }
 

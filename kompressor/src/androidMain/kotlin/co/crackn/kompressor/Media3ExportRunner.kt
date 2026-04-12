@@ -40,6 +40,15 @@ internal suspend fun awaitMedia3Export(
     onProgress: suspend (Float) -> Unit,
 ) = coroutineScope {
     val progressJob = launchMedia3ProgressPoller(transformer, onProgress)
+    // Track whether the export needs a synchronous cancel on the caller's withContext(Main)
+    // frame when cancellation arrives. `Transformer.cancel()` is a synchronous finaliser —
+    // after it returns, the muxer has closed its FileOutputStream and won't re-touch the
+    // output path. Running it *outside* the cancellation throw path (via invokeOnCancellation
+    // posted to Main) is a race: the coroutine unwinds while Media3 is still flushing, and a
+    // partial-output cleanup (File.delete) loses to a late muxer write that recreates the file.
+    // Instead we `transformer.cancel()` from the catch block, which is guaranteed to run on
+    // the same Main-looper frame the caller wrapped us in.
+    var started = false
     try {
         suspendCancellableCoroutine<Unit> { continuation ->
             val listener = object : Transformer.Listener {
@@ -60,17 +69,15 @@ internal suspend fun awaitMedia3Export(
                 }
             }
             continuation.invokeOnCancellation {
-                // invokeOnCancellation can fire from any thread. Transformer.removeListener /
-                // cancel must be called on the application-looper thread — hop explicitly so
-                // we never touch the Transformer off its owning thread.
-                mainHandler.post {
-                    transformer.removeListener(listener)
-                    transformer.cancel()
-                }
+                // Best-effort remove the listener so Media3 doesn't call back into a dead
+                // continuation; the authoritative transformer.cancel() is done synchronously
+                // in the outer catch below where we're guaranteed to be on Main.
+                mainHandler.post { transformer.removeListener(listener) }
             }
             try {
                 transformer.addListener(listener)
                 transformer.start(item, outputPath)
+                started = true
             } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
                 // Synchronous failures from addListener/start would otherwise leak the listener.
                 // We're already on the Main looper (caller wraps this in withContext(Main)), so
@@ -79,6 +86,13 @@ internal suspend fun awaitMedia3Export(
                 if (continuation.isActive) continuation.resumeWithException(t)
             }
         }
+    } catch (ce: kotlinx.coroutines.CancellationException) {
+        // Synchronously cancel Media3 on the Main looper so the muxer fully closes its
+        // FileOutputStream *before* the coroutine unwinds and the surrounding
+        // `deletingOutputOnFailure` runs its File.delete(). Without this, Media3 may still be
+        // writing — or finalising its moov — when we delete, and recreate the file afterwards.
+        if (started) transformer.cancel()
+        throw ce
     } finally {
         progressJob.cancel()
     }

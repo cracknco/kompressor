@@ -98,7 +98,11 @@ class AndroidAudioCompressorTest {
     }
 
     @Test
-    fun compressAudio_monoReducesSize() = runTest {
+    fun compressAudio_monoChannelCountIsHonoured() = runTest {
+        // AAC at a fixed bitrate produces roughly the same file size regardless of channel count,
+        // so comparing mono vs stereo byte sizes at equal bitrate is not a reliable signal.
+        // Instead verify the functional contract: the output carries the configured channel
+        // count, which is what callers actually observe.
         val input = createTestWavFile(3, SAMPLE_RATE_44K, STEREO)
         val outputMono = File(tempDir, "mono.m4a")
         val outputStereo = File(tempDir, "stereo.m4a")
@@ -114,15 +118,11 @@ class AndroidAudioCompressorTest {
             outputStereo.absolutePath,
             config.copy(channels = AudioChannels.STEREO),
         )
-        assertTrue(monoResult.isSuccess)
-        assertTrue(stereoResult.isSuccess)
-        assertTrue(outputMono.exists())
-        assertTrue(outputStereo.exists())
+        assertTrue(monoResult.isSuccess, "mono compression failed: ${monoResult.exceptionOrNull()}")
+        assertTrue(stereoResult.isSuccess, "stereo compression failed: ${stereoResult.exceptionOrNull()}")
 
-        assertTrue(
-            outputMono.length() <= outputStereo.length(),
-            "mono (${outputMono.length()}) should be <= stereo (${outputStereo.length()})",
-        )
+        assertEquals(MONO, readAudioMetadata(outputMono).channels, "Output should be mono when configured")
+        assertEquals(STEREO, readAudioMetadata(outputStereo).channels, "Output should be stereo when configured")
     }
 
     @Test
@@ -391,7 +391,10 @@ class AndroidAudioCompressorTest {
 
         // Long enough that the transformer always reports at least one progress event before
         // the test cancels, even on a slow CI emulator.
-        const val CANCELLATION_INPUT_SECONDS = 10
+        // Longer-than-necessary input so the Media3 encoder can't finish the whole export before
+        // the test's `job.cancel()` is observed. Fast devices (Samsung A53 etc.) complete a 10 s
+        // PCM→AAC transcode in under 300 ms, which races the progress-then-cancel handshake.
+        const val CANCELLATION_INPUT_SECONDS = 120
         const val CANCELLATION_TIMEOUT_MS = 15_000L
     }
 }

@@ -34,13 +34,17 @@ internal data class AudioProcessorPlan(
         channelMixing?.let { spec ->
             add(
                 ChannelMixingAudioProcessor().apply {
-                    // Register matrices for every input-channel count Media3's default audio
-                    // decoders can produce (1..8 covers MONO through 7.1 surround). The
-                    // processor picks the right matrix at configure time from the actual input
-                    // AudioFormat, so we don't need to know the input channel count up-front.
-                    // Only registering MONO/STEREO would fail configure() on multichannel inputs
-                    // like 5.1 AAC.
-                    for (inputChannels in 1..MAX_INPUT_CHANNELS) {
+                    // Register matrices for every input-channel count for which Media3 ships a
+                    // default constant-gain matrix. In Media3 1.10 that is limited to 1→{1,2}
+                    // and 2→{1,2} — `ChannelMixingMatrix.createForConstantGain` throws
+                    // `UnsupportedOperationException` for anything ≥ 3 input channels.
+                    //
+                    // Multichannel inputs (5.1 / 7.1) will surface a Media3 configure-time
+                    // error with a clear message rather than a mysterious runtime crash.
+                    // The `ChannelMixingAudioProcessor` picks the right matrix from the actual
+                    // input AudioFormat at configure time, so pre-registering both supported
+                    // input counts is safe regardless of which the decoder emits.
+                    for (inputChannels in 1..MAX_SUPPORTED_INPUT_CHANNELS) {
                         putChannelMixingMatrix(
                             ChannelMixingMatrix.createForConstantGain(
                                 inputChannels,
@@ -92,4 +96,6 @@ internal fun planAudioProcessors(
     )
 }
 
-private const val MAX_INPUT_CHANNELS = 8
+// Media3 1.10's `ChannelMixingMatrix.createForConstantGain` only ships default coefficients for
+// mono/stereo inputs. Higher input channel counts throw `UnsupportedOperationException`.
+private const val MAX_SUPPORTED_INPUT_CHANNELS = 2

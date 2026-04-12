@@ -77,11 +77,15 @@ internal class AndroidVideoCompressor : VideoCompressor {
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ) {
+        // Probe source dimensions off-Main so [toPresentationOrNull] can skip scaling when the
+        // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
+        // input with `HIGH_QUALITY` preset targeting 1080p).
+        val sourceDimensions = withContext(Dispatchers.IO) { probeVideoDimensions(inputPath) }
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
-                val item = buildEditedMediaItem(inputPath, config.maxResolution)
+                val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceDimensions)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -108,9 +112,13 @@ internal class AndroidVideoCompressor : VideoCompressor {
             .build()
     }
 
-    private fun buildEditedMediaItem(inputPath: String, maxResolution: MaxResolution): EditedMediaItem {
+    private fun buildEditedMediaItem(
+        inputPath: String,
+        maxResolution: MaxResolution,
+        sourceDimensions: Pair<Int, Int>?,
+    ): EditedMediaItem {
         val videoEffects = buildList {
-            maxResolution.toPresentationOrNull()?.let(::add)
+            maxResolution.toPresentationOrNull(sourceDimensions)?.let(::add)
         }
         return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
             .setEffects(Effects(emptyList(), videoEffects))
@@ -122,10 +130,56 @@ internal class AndroidVideoCompressor : VideoCompressor {
     }
 }
 
-/** Scale down to the shortest edge target; no effect when [MaxResolution.Original]. */
-private fun MaxResolution.toPresentationOrNull(): Presentation? = when (this) {
-    is MaxResolution.Original -> null
-    is MaxResolution.Custom -> Presentation.createForShortSide(maxShortEdge)
+/**
+ * Scale down to the shortest edge target; no effect when [MaxResolution.Original], and no effect
+ * when the source is already within the target (no upscaling).
+ *
+ * `Presentation.createForShortSide(n)` forces the output's shortest edge to be exactly `n`,
+ * including upscaling when the source is smaller. We cap this to strictly downscaling by
+ * comparing against the probed source dimensions; if the source shortest edge already fits,
+ * returning `null` keeps the original resolution.
+ *
+ * If [sourceDimensions] is `null` (probe failed or returned zeros), we conservatively fall back
+ * to the original behaviour — applying the Presentation — since we can't prove no-upscale
+ * safely. In practice MediaMetadataRetriever always reports dimensions for files Media3 can
+ * actually transcode, so the fallback path is only hit for genuinely unreadable inputs which
+ * Media3 will fail on anyway.
+ */
+private fun MaxResolution.toPresentationOrNull(sourceDimensions: Pair<Int, Int>?): Presentation? =
+    when (this) {
+        is MaxResolution.Original -> null
+        is MaxResolution.Custom -> {
+            val shortSide = sourceDimensions?.let { minOf(it.first, it.second) }
+            if (shortSide != null && shortSide <= maxShortEdge) {
+                null
+            } else {
+                Presentation.createForShortSide(maxShortEdge)
+            }
+        }
+    }
+
+/**
+ * Best-effort probe of a video's `(width, height)` using [MediaMetadataRetriever]. Returns
+ * `null` when the file can't be opened or either dimension is missing — callers should fall
+ * back to applying effects unconditionally.
+ */
+@Suppress("TooGenericExceptionCaught")
+private fun probeVideoDimensions(inputPath: String): Pair<Int, Int>? = try {
+    val mmr = MediaMetadataRetriever()
+    try {
+        mmr.setDataSource(inputPath)
+        val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+        val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+        if (w != null && h != null) w to h else null
+    } finally {
+        mmr.release()
+    }
+} catch (_: Throwable) {
+    null
 }
 
 /**
