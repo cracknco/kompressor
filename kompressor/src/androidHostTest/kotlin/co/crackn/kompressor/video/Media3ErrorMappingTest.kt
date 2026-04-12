@@ -61,4 +61,18 @@ class Media3ErrorMappingTest {
         classifyExportErrorCode(7002, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
     }
+
+    @Test
+    fun `IO band lower boundary 2000 maps to IoFailed`() {
+        // Pins the band boundary: 2000 is the first IO code (ERROR_CODE_IO_UNSPECIFIED).
+        classifyExportErrorCode(2000, "d", null)
+            .shouldBeInstanceOf<VideoCompressionError.IoFailed>()
+    }
+
+    @Test
+    fun `Encoding band upper boundary 4999 maps to EncodingFailed`() {
+        // Pins the band boundary: 4999 is the highest code still in the encoding band.
+        classifyExportErrorCode(4999, "d", null)
+            .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
+    }
 }

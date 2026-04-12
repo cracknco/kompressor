@@ -63,12 +63,8 @@ internal class AndroidVideoCompressor : VideoCompressor {
         onProgress(0f)
         val inputSize = File(inputPath).length()
 
-        try {
+        deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, onProgress)
-        } catch (t: Throwable) {
-            // Partial output from a cancelled or failed export must not leak to the caller.
-            runCatching { File(outputPath).delete() }
-            throw t
         }
 
         onProgress(1f)
