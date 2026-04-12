@@ -1,19 +1,18 @@
-# Gitleaks configuration — extends the upstream defaults so we only need to
-# declare allowlist entries for our known false positives.
+# Gitleaks configuration. Extends the upstream defaults and whitelists the
+# known-safe high-entropy strings in our workflow files (build-cache
+# identifiers that happen to trip the generic-api-key entropy heuristic).
 #
-# The `gitleaks-action` GitHub Action loads this file automatically from the
-# repo root. Bump the SHA in the action pin (.github/workflows/pr.yml) to
-# pick up any new/removed rules.
+# The gitleaks-action pinned in .github/workflows/pr.yml loads this file
+# automatically from the repo root.
 
 [extend]
 useDefault = true
 
-# ── Allowlist: known false positives ───────────────────────────────────────
-[[allowlists]]
-description = "AVD + Konan cache keys in GitHub Actions workflows. These are build-cache identifiers, not secrets — high character variety just happens to trip the generic-api-key entropy heuristic."
-targetRules = ["generic-api-key"]
-paths = ['''\.github/workflows/.*\.ya?ml''']
+[allowlist]
+description = "Build-cache identifiers in GitHub Actions workflow files — not secrets."
+paths = [
+    '''\.github/workflows/.*\.ya?ml''',
+]
 regexes = [
     '''avd-api\d+-[a-z_]+-[a-z0-9_]+-v\d+''',
-    '''native-\$\{\{ hashFiles\(.*\) \}\}''',
 ]

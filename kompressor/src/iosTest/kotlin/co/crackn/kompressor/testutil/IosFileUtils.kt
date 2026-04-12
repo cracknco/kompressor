@@ -5,15 +5,9 @@ package co.crackn.kompressor.testutil
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.pointed
 import kotlinx.cinterop.usePinned
-import platform.AVFoundation.AVAssetTrack
-import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFAudio.AVAudioFile
 import platform.AVFoundation.AVURLAsset
-import platform.AVFoundation.formatDescriptions
-import platform.AVFoundation.tracksWithMediaType
-import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
-import platform.CoreMedia.CMAudioFormatDescriptionRef
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
@@ -40,32 +34,30 @@ fun readBytes(path: String): ByteArray {
 
 data class AudioMetadata(val sampleRate: Int, val channels: Int)
 
+/**
+ * Reads audio sample rate + channel count.
+ *
+ * Uses [AVAudioFile.processingFormat] rather than `AVAssetTrack.formatDescriptions` because the
+ * latter returns a `List<*>` of CoreFoundation opaque pointers (`CMAudioFormatDescriptionRef`)
+ * that Kotlin/Native refuses to cast with `as` — it raises `ClassCastException` at runtime since
+ * the Obj-C bridge wraps the elements in a private holder, not the raw CF pointer. AVAudioFile
+ * exposes the format via an `AVAudioFormat` Obj-C object with direct `sampleRate` / `channelCount`
+ * properties, so no cast is needed.
+ */
 fun readAudioMetadata(path: String): AudioMetadata {
-    val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
-    @Suppress("UNCHECKED_CAST")
-    val tracks = asset.tracksWithMediaType(AVMediaTypeAudio)
-    check(tracks.isNotEmpty()) { "No audio track found in output" }
-
-    val track = tracks.first() as AVAssetTrack
-    val formatDescriptions = track.formatDescriptions
-    check(formatDescriptions.isNotEmpty()) { "No format descriptions found" }
-
-    @Suppress("UNCHECKED_CAST")
-    val basicDesc = CMAudioFormatDescriptionGetStreamBasicDescription(
-        formatDescriptions.first() as CMAudioFormatDescriptionRef,
-    )
-    checkNotNull(basicDesc) { "Could not read audio format description" }
-
+    // K/N binding for -[AVAudioFile initForReading:error:] types the return as
+    // non-nullable, so we trust it and let an ObjC-side failure propagate as an
+    // exception rather than gating with an unreachable elvis branch.
+    val file = AVAudioFile(forReading = NSURL.fileURLWithPath(path), error = null)
+    val format = file.processingFormat
     return AudioMetadata(
-        sampleRate = basicDesc.pointed.mSampleRate.toInt(),
-        channels = basicDesc.pointed.mChannelsPerFrame.toInt(),
+        sampleRate = format.sampleRate.toInt(),
+        channels = format.channelCount.toInt(),
     )
 }
 
 fun readAudioDurationSec(path: String): Double {
-    val asset = platform.AVFoundation.AVURLAsset(
-        uRL = NSURL.fileURLWithPath(path), options = null,
-    )
+    val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
     return platform.CoreMedia.CMTimeGetSeconds(asset.duration)
 }
 

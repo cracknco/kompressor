@@ -215,18 +215,9 @@ jobs:
           if-no-files-found: ignore
 
   # ── iOS simulator tests ──────────────────────────────────
-  # Runs the Kotlin/Native simulator tests on every PR (previously these only
-  # ran in release.yml after merge to main). macos-latest is arm64 with Xcode
-  # pre-installed; ~6-10 min per run.
-  #
-  # A set of 10 iOS tests (IosAudioCompressor resample / channel-mix +
-  # IosImage / GoldenImage) has been failing on `main` since commit cd12be1
-  # (PR #41). Release workflow has been red since then. This PR surfaces the
-  # pre-existing breakage in PR CI for the first time, but does not block
-  # merges on it — continue-on-error is applied to the test step itself so
-  # the job concludes green while the failures still show up in the report
-  # artifact. Remove `continue-on-error` in the follow-up PR that fixes the
-  # 10 tests.
+  # Runs the Kotlin/Native simulator tests on every PR. macos-latest is arm64
+  # with Xcode pre-installed; ~6-10 min per run. Same command is repeated in
+  # release.yml:test-native as a belt-and-suspenders gate before publishing.
   ios-simulator-tests:
     name: iOS simulator tests
     runs-on: macos-latest
@@ -245,7 +236,6 @@ jobs:
             ~/.konan
           key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
       - name: Run iOS simulator tests
-        continue-on-error: true
         run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
       - name: Upload iOS test report
         if: always()
