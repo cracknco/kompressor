@@ -219,17 +219,18 @@ jobs:
   # ran in release.yml after merge to main). macos-latest is arm64 with Xcode
   # pre-installed; ~6-10 min per run.
   #
-  # continue-on-error: a set of 10 iOS tests (IosAudioCompressor resample /
-  # channel-mix + IosImage / GoldenImage) has been failing on `main` since
-  # commit cd12be1 (PR #41). Release workflow was already broken. This PR
-  # surfaces the pre-existing breakage in PR CI for the first time, but does
-  # not block merges on it — those tests get fixed in a follow-up PR and the
-  # flag is removed then.
+  # A set of 10 iOS tests (IosAudioCompressor resample / channel-mix +
+  # IosImage / GoldenImage) has been failing on `main` since commit cd12be1
+  # (PR #41). Release workflow has been red since then. This PR surfaces the
+  # pre-existing breakage in PR CI for the first time, but does not block
+  # merges on it — continue-on-error is applied to the test step itself so
+  # the job concludes green while the failures still show up in the report
+  # artifact. Remove `continue-on-error` in the follow-up PR that fixes the
+  # 10 tests.
   ios-simulator-tests:
     name: iOS simulator tests
     runs-on: macos-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
@@ -244,6 +245,7 @@ jobs:
             ~/.konan
           key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
       - name: Run iOS simulator tests
+        continue-on-error: true
         run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
       - name: Upload iOS test report
         if: always()
