@@ -79,6 +79,11 @@ kotlin {
         }
 
         androidMain.dependencies {
+            // `kotlinx-coroutines-core` is inherited from commonMain but it does NOT provide
+            // the Handler-backed Dispatchers.Main on Android. Without this artifact, any
+            // `withContext(Dispatchers.Main)` (used by the Media3 Transformer integration)
+            // throws "Module with the Main dispatcher had failed to initialize" at runtime.
+            implementation(libs.kotlinx.coroutines.android)
             implementation(libs.androidx.exifinterface)
             implementation(libs.androidx.startup.runtime)
             implementation(libs.androidx.media3.transformer)
