@@ -83,8 +83,13 @@ kover {
                     "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
                     "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.AndroidKompressorKt",
+                    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
                     "co.crackn.kompressor.IosKompressor",
+                    "co.crackn.kompressor.IosKompressorKt",
+                    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
                     "co.crackn.kompressor.IosFileUtils*",
+                    "co.crackn.kompressor.MediaCodecUtilsKt",
                     "co.crackn.kompressor.KompressorInitializer",
                     "co.crackn.kompressor.KompressorContext",
                 )
