@@ -8,9 +8,10 @@ import kotlin.math.roundToInt
  * Rules:
  * - [MaxResolution.Original] preserves source scale (no upscaling) but still rounds
  *   odd width/height up to the nearest even number (required by H.264).
- * - [MaxResolution.Custom] scales proportionally so the shortest edge matches
- *   [MaxResolution.Custom.maxShortEdge], unless the source is already smaller
- *   (no upscaling).
+ * - [MaxResolution.Custom] scales proportionally so the shortest edge is **at most**
+ *   [MaxResolution.Custom.maxShortEdge] (H.264 even-dimension rounding via
+ *   `roundDownToEven()` may reduce it by up to one pixel), unless the source is
+ *   already smaller (no upscaling).
  * - Output dimensions are always rounded to the nearest even number because
  *   H.264 requires even width and height.
  */

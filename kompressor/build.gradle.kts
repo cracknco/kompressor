@@ -86,6 +86,8 @@ kover {
                     "co.crackn.kompressor.IosFileUtils*",
                     "co.crackn.kompressor.KompressorInitializer",
                     "co.crackn.kompressor.KompressorContext",
+                    // Android-only media codec utilities (require device tests to exercise)
+                    "co.crackn.kompressor.MediaCodecUtilsKt",
                 )
             }
         }

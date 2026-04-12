@@ -51,6 +51,7 @@ internal class VideoTranscoder(
             transcodeWithResources(
                 extractor, videoIdx, audioFormat, targetW, targetH, totalDurationUs, rotationDegrees, onProgress,
             )
+            onProgress(1f)
         } finally {
             extractor.release()
         }
@@ -135,6 +136,13 @@ internal class VideoTranscoder(
         }
     }
 
+    /**
+     * Remuxes (bitstream-copies) the original audio track into the already-started [muxer].
+     *
+     * **Note**: [VideoCompressionConfig.audioCodec] and [VideoCompressionConfig.audioBitrate]
+     * are **not** applied on Android — audio re-encoding is not supported by this implementation.
+     * The original audio bitstream is copied without modification.
+     */
     private suspend fun remuxAudio(muxer: MediaMuxer, muxerAudioTrack: Int) {
         val audioExtractor = MediaExtractor().apply { setDataSource(inputPath) }
         try {
@@ -178,8 +186,10 @@ internal class VideoTranscoder(
 
     private fun createDecoder(inputFormat: MediaFormat, outputSurface: Surface): MediaCodec {
         val mime = inputFormat.getString(MediaFormat.KEY_MIME) ?: error("No video MIME type")
+        // codebadger:suppress(resource-leak) — caller (transcodeWithCodecs) releases via safeRelease() in finally
         val decoder = MediaCodec.createDecoderByType(mime)
         decoder.configure(inputFormat, outputSurface, null, 0)
+        // codebadger:suppress(resource-leak) — start() is not a resource allocation; decoder released by caller
         decoder.start()
         return decoder
     }
@@ -289,6 +299,7 @@ private class VideoTranscodeLoop(
             }
         }
         if (rotationDegrees != 0) muxer.setOrientationHint(rotationDegrees)
+        // codebadger:suppress(resource-leak) — muxer is released by the caller via safeStopAndRelease() in finally
         muxer.start()
         muxerStarted = true
     }

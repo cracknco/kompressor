@@ -54,8 +54,8 @@ class ResolutionCalculatorTest {
     @Test
     fun downscaleTo480p() {
         val (w, h) = ResolutionCalculator.calculate(1920, 1080, MaxResolution.SD_480)
-        // 480/1080 = 0.444 → 1920*0.444 = 854 (round even = 854), 480
-        val expectedW = 854
+        // 480/1080 = 0.444 → 1920*0.444 = 853.33 → roundDownToEven = 852, height = 480
+        val expectedW = 852
         assertEquals(expectedW, w)
         assertEquals(480, h)
     }
