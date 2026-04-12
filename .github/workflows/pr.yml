@@ -153,9 +153,13 @@ jobs:
       # Invoke Firebase Test Lab. Same APK is passed to both --app and --test
       # because :kompressor: is a library module; AGP produces a single
       # self-instrumenting test APK that bundles AndroidJUnitRunner.
+      #
+      # We deliberately do NOT pass `--results-bucket` — gcloud auto-creates
+      # the default `test-lab-<project>_<timestamp>` bucket on first run if
+      # the SA has Storage Admin rights, and FTL uploads logs + JUnit XML +
+      # instrumentation .ec coverage there. The run output prints a console
+      # URL where the user can browse the artefacts.
       - name: Run on Firebase Test Lab (Pixel 5 API 33)
-        env:
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           gcloud firebase test android run \
             --type instrumentation \
@@ -166,28 +170,8 @@ jobs:
             --timeout 15m \
             --no-record-video \
             --no-performance-metrics \
-            --results-bucket test-lab-kompressor \
-            --results-dir "ci-${RUN_ID}" \
             --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
             --directories-to-pull /sdcard
-
-      - name: Download FTL results from GCS
-        if: always()
-        env:
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          mkdir -p build/ftl-results
-          gcloud storage cp -r \
-            "gs://test-lab-kompressor/ci-${RUN_ID}/*" \
-            build/ftl-results/ || echo "::warning::No FTL results artefact found."
-
-      - name: Upload FTL results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ftl-results
-          path: build/ftl-results/
-          if-no-files-found: ignore
 
   # ── iOS simulator tests ──────────────────────────────────
   # Runs the Kotlin/Native simulator tests on every PR. macos-latest is arm64

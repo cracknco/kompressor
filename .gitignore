@@ -11,3 +11,7 @@ xcuserdata
 .kotlin
 #So we don't accidentally commit our private keys
 *.gpg
+# Firebase / GCP service account JSON — should only ever live in a GitHub secret,
+# never on disk inside the repo.
+*firebase-adminsdk*.json
+*-service-account*.json
