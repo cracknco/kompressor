@@ -154,12 +154,15 @@ jobs:
       # because :kompressor: is a library module; AGP produces a single
       # self-instrumenting test APK that bundles AndroidJUnitRunner.
       #
-      # We deliberately do NOT pass `--results-bucket` — gcloud auto-creates
-      # the default `test-lab-<project>_<timestamp>` bucket on first run if
-      # the SA has Storage Admin rights, and FTL uploads logs + JUnit XML +
-      # instrumentation .ec coverage there. The run output prints a console
-      # URL where the user can browse the artefacts.
+      # --results-bucket: we use a bucket we created and IAM-bound explicitly
+      # (`test-lab-kompressor-ci`) rather than FTL's auto-generated bucket.
+      # The auto-bucket is created with the FTL service's IAM, not our SA's,
+      # leading to `403 storage.objects.create denied` on upload. An explicit
+      # bucket with `storage.objectAdmin` granted to the admin-SDK SA sidesteps
+      # that entirely.
       - name: Run on Firebase Test Lab (Pixel 5 API 33)
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           gcloud firebase test android run \
             --type instrumentation \
@@ -170,6 +173,8 @@ jobs:
             --timeout 15m \
             --no-record-video \
             --no-performance-metrics \
+            --results-bucket test-lab-kompressor-ci \
+            --results-dir "ci-${RUN_ID}" \
             --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
             --directories-to-pull /sdcard
 
