@@ -67,9 +67,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-  # ── Tests + Kover ────────────────────────────────────────
+  # ── Host tests, API check, coverage gate ─────────────────
+  # Fast gate that runs on every PR without touching an emulator. Catches
+  # regressions in commonTest + androidHostTest + public API in < 5 min.
   test:
-    name: Tests & coverage
+    name: Tests & coverage (host)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -97,3 +99,146 @@ jobs:
         with:
           name: kover-report
           path: kompressor/build/reports/kover/
+
+  # ── Android device tests (emulator) ──────────────────────
+  # Runs the 47 `androidDeviceTest` tests that validate the Media3 Transformer
+  # pipeline end-to-end — AAC passthrough, cancellation cleanup, MP3/FLAC/OGG
+  # extraction, golden image/video/audio fixtures. Requires a booted emulator,
+  # so it runs on ubuntu-latest with KVM acceleration.
+  android-device-tests:
+    name: Android device tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Enable KVM
+        # reactivecircus/android-emulator-runner needs /dev/kvm accessible to
+        # a non-root user; GitHub runners ship the kernel module but not the
+        # udev rule, so we add it before booting the AVD.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+
+      # AVD snapshot cache. Bump the `-vN` suffix to invalidate if the AVD
+      # config below changes. Cache hit → emulator boots from snapshot in ~15s.
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api30-default-x86_64-v1
+
+      - name: Create AVD + generate snapshot (cache miss only)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@0a638108440efd5c7f980e6ba145dbcdd8f32009 # v2.37.0
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Match the test-run step so animation-disable state is baked into the snapshot
+          # that gets cached; otherwise the first test run after a cold cache re-applies it.
+          disable-animations: true
+          script: echo "Generated AVD snapshot for caching."
+
+      # Run host tests inside the same runner so the subsequent Kover report
+      # sees both host and device coverage sources. The host run is incremental
+      # (<1 min) because Gradle's cache is already warm by this point.
+      - name: Run host + device tests
+        uses: reactivecircus/android-emulator-runner@0a638108440efd5c7f980e6ba145dbcdd8f32009 # v2.37.0
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            ./gradlew :kompressor:testAndroidHostTest :kompressor:connectedAndroidDeviceTest --stacktrace
+
+      # Full Kover report includes the instrumentation .ec files dropped by the
+      # device run under kompressor/build/outputs/code_coverage/. We do NOT run
+      # `koverVerify` here yet — the host-only gate in the `test` job is the
+      # source of truth until we've measured device coverage numbers on a real
+      # PR run and can safely trim the Android* exclusions + raise the gate.
+      #
+      # Gated on success() so we don't publish a "full" artifact that is actually
+      # host-only when device tests failed and never produced any .ec files.
+      - name: Kover — full report (host + device)
+        if: success()
+        run: ./gradlew :kompressor:koverXmlReport
+
+      - name: Upload device test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android-device-test-report
+          path: |
+            kompressor/build/reports/androidTests/
+            kompressor/build/outputs/androidTest-results/
+
+      - name: Upload full Kover report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kover-report-full
+          path: kompressor/build/reports/kover/
+
+      - name: Upload instrumentation coverage (.ec)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android-device-coverage-ec
+          path: kompressor/build/outputs/code_coverage/**/*.ec
+          if-no-files-found: ignore
+
+  # ── iOS simulator tests ──────────────────────────────────
+  # Runs the Kotlin/Native simulator tests on every PR (previously these only
+  # ran in release.yml after merge to main). macos-latest is arm64 with Xcode
+  # pre-installed; ~6-10 min per run.
+  ios-simulator-tests:
+    name: iOS simulator tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - name: Run iOS simulator tests
+        run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
+      - name: Upload iOS test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-simulator-test-report
+          path: kompressor/build/reports/tests/iosSimulatorArm64Test/

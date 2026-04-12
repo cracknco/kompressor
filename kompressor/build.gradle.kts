@@ -25,6 +25,11 @@ kotlin {
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
             sourceSetTreeName = "test"
+        }.configure {
+            // JaCoCo instrumentation so `connectedAndroidDeviceTest` emits `.ec` coverage
+            // files under kompressor/build/outputs/code_coverage/. Kover picks these up
+            // automatically when `koverXmlReport` runs after the device test task.
+            enableCoverage = true
         }
 
         compilations.configureEach {
