@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import co.crackn.kompressor.video.MaxResolution
 import kompressor.sample.generated.resources.Res
 import kompressor.sample.generated.resources.bitrate_kbps_suffix
+import kompressor.sample.generated.resources.frame_rate_suffix
 import kompressor.sample.generated.resources.key_frame_interval
 import kompressor.sample.generated.resources.key_frame_interval_suffix
 import kompressor.sample.generated.resources.max_frame_rate
@@ -84,7 +85,7 @@ fun VideoCustomConfigPanel(
                 options = frameRateOptions,
                 selected = maxFrameRate,
                 onSelected = onMaxFrameRateChanged,
-                suffix = "fps",
+                suffix = stringResource(Res.string.frame_rate_suffix),
             )
 
             Text(
@@ -95,7 +96,7 @@ fun VideoCustomConfigPanel(
                 options = keyFrameIntervalOptions,
                 selected = keyFrameInterval,
                 onSelected = onKeyFrameIntervalChanged,
-                suffix = "s",
+                suffix = stringResource(Res.string.key_frame_interval_suffix),
             )
         }
     }

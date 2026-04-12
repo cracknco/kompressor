@@ -37,10 +37,9 @@ fun VideoScreen(
     val errorMessage = stringResource(Res.string.error_compression_failed)
 
     LaunchedEffect(state.error) {
-        state.error?.let { error ->
-            snackbarHostState.showSnackbar("$errorMessage: $error")
-            viewModel.clearError()
-        }
+        val error = state.error ?: return@LaunchedEffect
+        viewModel.clearError()
+        snackbarHostState.showSnackbar("$errorMessage: $error")
     }
 
     Box(modifier = modifier.fillMaxSize()) {

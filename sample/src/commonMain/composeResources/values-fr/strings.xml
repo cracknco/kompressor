@@ -73,10 +73,6 @@
     <string name="frame_rate_suffix">ips</string>
     <string name="key_frame_interval_suffix">s</string>
 
-    <!-- Coming soon -->
-    <string name="coming_soon">Bientôt disponible</string>
-    <string name="coming_soon_description">La compression %1$s est en cours de développement</string>
-
     <!-- Errors -->
     <string name="error_compression_failed">Échec de la compression</string>
 </resources>

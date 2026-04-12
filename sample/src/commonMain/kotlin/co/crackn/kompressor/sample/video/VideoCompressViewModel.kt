@@ -93,6 +93,7 @@ class VideoCompressViewModel(
     }
 
     fun compress() {
+        if (_state.value.isCompressing) return
         val inputPath = _state.value.selectedVideoPath ?: return
 
         _state.update {
@@ -159,12 +160,19 @@ class VideoCompressViewModel(
     }
 
     private fun handleFailure(error: Throwable) {
+        val failedOutputPath = _state.value.compressedVideoPath
         _state.update {
             it.copy(
                 isCompressing = false,
                 progress = 0f,
+                compressedVideoPath = null,
                 error = error.message ?: "Unknown error",
             )
+        }
+        if (failedOutputPath != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { PlatformFile(failedOutputPath).delete(mustExist = false) }
+            }
         }
     }
 
