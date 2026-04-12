@@ -51,10 +51,8 @@ class IosImageCompressorTest {
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
         assertTrue(compression.durationMs >= 0)
-        // Intentionally no `compressionRatio < 1` here: PNG can beat JPEG on synthetic fixtures
-        // (dense palette of ~16k unique 8-px tiles compresses extremely well in DEFLATE).
-        // The useful invariants are "produced a valid JPEG" and "dimensions preserved",
-        // which `compressImage_noResize` / `compressImage_withResize_reducesDimensions` cover.
+        // No `compressionRatio < 1` here — that's not a universal invariant on synthetic
+        // fixtures. See the matching note in GoldenImageTest.square1000_defaultConfig_*.
         val outputBytes = readBytes(outputPath)
         assertTrue(OutputValidators.isValidJpeg(outputBytes), "Output should be valid JPEG")
     }

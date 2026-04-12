@@ -44,9 +44,12 @@ class GoldenImageTest {
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
-        // NOTE: we don't assert "JPEG < PNG" here — PNG of a flat-colour synthetic fixture
-        // (two solid rectangles) compresses via RLE + palette to a few hundred bytes, which
-        // JPEG cannot match. Valid format + preserved dimensions are the useful invariants.
+        // Intentionally no "outputSize < inputSize" assertion: that is not a universal JPEG
+        // invariant, only one that holds on real photographic inputs. PNG of an 8x8-tiled
+        // synthetic fixture (~15k unique colours) palettes efficiently — JPEG's per-block
+        // DCT header + quantised coefficients rarely beat it. We verify the functional
+        // invariants (valid JPEG format, preserved dimensions) instead. Real-world
+        // compression behaviour is covered by `outputSizeScalesWithQuality` below.
 
         // Verify dimensions unchanged (no resize config)
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
