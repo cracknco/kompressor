@@ -45,8 +45,11 @@ class AndroidImageCompressorTest {
         assertTrue(output.exists())
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
-        assertTrue(compression.compressionRatio < 1f)
         assertTrue(compression.durationMs >= 0)
+        assertTrue(
+            compression.compressionRatio < 1f,
+            "JPEG should compress PNG input: ratio=${compression.compressionRatio}",
+        )
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output should be valid JPEG")
     }
 

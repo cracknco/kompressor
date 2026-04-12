@@ -8,7 +8,7 @@ import kotlin.test.Test
 class VideoCompressionErrorTest {
 
     @Test
-    fun `UnsupportedSourceFormat carries details and cause`() {
+    fun unsupportedSourceFormatCarriesDetailsAndCause() {
         val cause = RuntimeException("boom")
         val error = VideoCompressionError.UnsupportedSourceFormat("HEVC Main 10, 4K", cause)
         error.details shouldBe "HEVC Main 10, 4K"
@@ -17,7 +17,7 @@ class VideoCompressionErrorTest {
     }
 
     @Test
-    fun `subtypes are distinguishable via when`() {
+    fun subtypesAreDistinguishableViaWhen() {
         val errors = listOf(
             VideoCompressionError.UnsupportedSourceFormat("a"),
             VideoCompressionError.DecodingFailed("b"),

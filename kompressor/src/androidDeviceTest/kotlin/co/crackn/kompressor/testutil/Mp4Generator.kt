@@ -61,8 +61,7 @@ object Mp4Generator {
         frameCount: Int,
         fps: Int,
     ) {
-        val yuvSize = width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR
-        val yuvData = createSolidYuv(width, height)
+        val yuvData = ByteArray(width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR)
         val info = MediaCodec.BufferInfo()
         var muxerTrack = -1
         var muxerStarted = false
@@ -75,6 +74,7 @@ object Mp4Generator {
                 if (inputIdx >= 0) {
                     val inputBuf = encoder.getInputBuffer(inputIdx) ?: error("No input buffer")
                     if (framesSubmitted < frameCount) {
+                        fillVaryingYuv(yuvData, width, height, framesSubmitted)
                         inputBuf.clear()
                         val written = minOf(yuvData.size, inputBuf.capacity())
                         inputBuf.put(yuvData, 0, written)
@@ -110,17 +110,37 @@ object Mp4Generator {
         }
     }
 
-    private fun createSolidYuv(width: Int, height: Int): ByteArray {
+    /**
+     * Fill [dst] with a per-frame-varying YUV420 pattern: a diagonal luma gradient that shifts
+     * by [frameIndex] every frame, plus lightly-varied chroma. This gives H.264's rate
+     * controller enough spatial + temporal entropy that output size actually tracks the target
+     * bitrate (a solid-grey fixture compresses to near-zero at any target — see the earlier
+     * bug that surfaced with `compressVideo_bitrateAffectsSize` producing near-identical
+     * outputs for low vs high bitrate on the original fixture).
+     *
+     * Intentionally no per-pixel PRNG noise: H.264 cannot efficiently compress random
+     * high-frequency data and the rate controller overshoots its target dramatically (a
+     * 1.2 Mbps target produces ~7 Mbps output with dense noise). Structure-only keeps output
+     * size tightly correlated with target bitrate, which is what every size/bitrate assertion
+     * actually wants. Randomness is the right tool for PNG vs JPEG (where DEFLATE can't find
+     * patterns), not for inter-frame-predicted video.
+     */
+    private fun fillVaryingYuv(dst: ByteArray, width: Int, height: Int, frameIndex: Int) {
         val ySize = width * height
         val uvSize = ySize / UV_PLANE_DIVISOR
-        val data = ByteArray(ySize + uvSize * 2)
-        // Y plane: mid-grey (128)
-        data.fill(Y_VALUE.toByte(), 0, ySize)
-        // U plane: neutral (128)
-        data.fill(UV_VALUE.toByte(), ySize, ySize + uvSize)
-        // V plane: neutral (128)
-        data.fill(UV_VALUE.toByte(), ySize + uvSize, data.size)
-        return data
+        var yIdx = 0
+        for (y in 0 until height) {
+            val rowBase = y + frameIndex * LUMA_FRAME_PHASE
+            for (x in 0 until width) {
+                dst[yIdx++] = ((x + rowBase) and BYTE_MASK).toByte()
+            }
+        }
+        for (i in 0 until uvSize) {
+            dst[ySize + i] = ((i + frameIndex * CHROMA_U_FRAME_PHASE) and BYTE_MASK).toByte()
+        }
+        for (i in 0 until uvSize) {
+            dst[ySize + uvSize + i] = ((i + frameIndex * CHROMA_V_FRAME_PHASE) and BYTE_MASK).toByte()
+        }
     }
 
     private const val H264_MIME = "video/avc"
@@ -134,6 +154,8 @@ object Mp4Generator {
     private const val YUV_BYTES_PER_PIXEL = 3
     private const val YUV_DIVISOR = 2
     private const val UV_PLANE_DIVISOR = 4
-    private const val Y_VALUE = 128
-    private const val UV_VALUE = 128
+    private const val BYTE_MASK = 0xFF
+    private const val LUMA_FRAME_PHASE = 7
+    private const val CHROMA_U_FRAME_PHASE = 3
+    private const val CHROMA_V_FRAME_PHASE = 5
 }

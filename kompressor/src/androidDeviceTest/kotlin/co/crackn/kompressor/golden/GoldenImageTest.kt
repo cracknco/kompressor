@@ -43,11 +43,14 @@ class GoldenImageTest {
         val result = compressor.compress(input.absolutePath, output.absolutePath)
 
         assertTrue(result.isSuccess)
-        val compression = result.getOrThrow()
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
-        assertTrue(compression.outputSize < compression.inputSize, "JPEG should compress PNG input")
+        val compression = result.getOrThrow()
+        assertTrue(
+            compression.outputSize < compression.inputSize,
+            "JPEG must beat PNG on the continuous-tone fixture: " +
+                "output=${compression.outputSize}, input=${compression.inputSize}",
+        )
 
-        // Verify dimensions unchanged (no resize config)
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(output.absolutePath, options)
         assertEquals(1000, options.outWidth, "Width should be preserved")

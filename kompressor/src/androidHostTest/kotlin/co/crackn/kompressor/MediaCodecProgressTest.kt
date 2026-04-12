@@ -10,7 +10,7 @@ import kotlinx.coroutines.test.runTest
 class MediaCodecProgressTest {
 
     @Test
-    fun `returns lastReported and does not fire callback when duration is zero`() = runTest {
+    fun returnsLastReportedAndDoesNotFireCallbackWhenDurationIsZero() = runTest {
         val reported = mutableListOf<Float>()
 
         val result = reportMediaCodecProgress(
@@ -25,7 +25,7 @@ class MediaCodecProgressTest {
     }
 
     @Test
-    fun `returns lastReported when currentTime is non-positive`() = runTest {
+    fun returnsLastReportedWhenCurrentTimeIsNonpositive() = runTest {
         val reported = mutableListOf<Float>()
 
         val result = reportMediaCodecProgress(
@@ -40,7 +40,7 @@ class MediaCodecProgressTest {
     }
 
     @Test
-    fun `does not fire below threshold but advances above`() = runTest {
+    fun doesNotFireBelowThresholdButAdvancesAbove() = runTest {
         val reported = mutableListOf<Float>()
 
         // 1% of total duration → progress ~= PROGRESS_SETUP + 0.009 → below threshold
@@ -55,7 +55,7 @@ class MediaCodecProgressTest {
     }
 
     @Test
-    fun `clamps output fraction at 1_0`() = runTest {
+    fun clampsOutputFractionAt10() = runTest {
         val reported = mutableListOf<Float>()
 
         val result = reportMediaCodecProgress(

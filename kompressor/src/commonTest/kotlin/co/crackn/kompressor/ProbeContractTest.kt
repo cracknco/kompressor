@@ -25,8 +25,16 @@ import kotlinx.coroutines.test.runTest
  */
 class ProbeContractTest {
 
+    // NOTE: test methods deliberately use camelCase rather than Kotlin's backtick
+    // "fun testWithSpaces()" style. When these tests run in androidDeviceTest
+    // (commonTest source is shared with the device test tree), the compiler emits
+    // anonymous inner classes whose FQN includes the enclosing method name. D8
+    // refuses SimpleNames containing spaces before DEX version 040 (i.e. for any
+    // variant with `minSdk < 26`). We keep minSdk 24 on the library, so backticked
+    // names elsewhere in this file used to break `connectedAndroidDeviceTest`.
+
     @Test
-    fun `probe wraps normal failure in Result failure`() = runTest {
+    fun probeWrapsNormalFailureInResultFailure() = runTest {
         val kompressor = FakeKompressor(probeOutcome = FakeOutcome.FailIo)
 
         val result = kompressor.probe("whatever")
@@ -35,7 +43,7 @@ class ProbeContractTest {
     }
 
     @Test
-    fun `probe surfaces SourceMediaInfo on success`() = runTest {
+    fun probeSurfacesSourceMediaInfoOnSuccess() = runTest {
         val info = SourceMediaInfo(videoCodec = "video/avc", width = 1280, height = 720)
         val kompressor = FakeKompressor(probeOutcome = FakeOutcome.Succeed(info))
 
@@ -46,14 +54,14 @@ class ProbeContractTest {
     }
 
     @Test
-    fun `probe propagates CancellationException`() = runTest {
+    fun probePropagatesCancellationException() = runTest {
         val kompressor = FakeKompressor(probeOutcome = FakeOutcome.Cancel)
 
         shouldThrow<CancellationException> { kompressor.probe("whatever") }
     }
 
     @Test
-    fun `canCompress returns Supported when probed info matches capabilities`() = runTest {
+    fun canCompressReturnsSupportedWhenProbedInfoMatchesCapabilities() = runTest {
         val info = SourceMediaInfo(
             videoCodec = "video/avc",
             audioCodec = "audio/mp4a-latm",

@@ -13,7 +13,7 @@ import kotlin.test.Test
 class AudioMedia3ErrorMappingTest {
 
     @Test
-    fun `DECODING_FORMAT_UNSUPPORTED maps to UnsupportedSourceFormat`() {
+    fun dECODINGFORMATUNSUPPORTEDMapsToUnsupportedSourceFormat() {
         val mapped = classifyAudioExportErrorCode(
             ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
             "detail FLAC 96kHz",
@@ -24,65 +24,65 @@ class AudioMedia3ErrorMappingTest {
     }
 
     @Test
-    fun `DECODER_INIT_FAILED maps to UnsupportedSourceFormat`() {
+    fun dECODERINITFAILEDMapsToUnsupportedSourceFormat() {
         classifyAudioExportErrorCode(ExportException.ERROR_CODE_DECODER_INIT_FAILED, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.UnsupportedSourceFormat>()
     }
 
     @Test
-    fun `DECODING_FAILED maps to DecodingFailed`() {
+    fun dECODINGFAILEDMapsToDecodingFailed() {
         classifyAudioExportErrorCode(ExportException.ERROR_CODE_DECODING_FAILED, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.DecodingFailed>()
     }
 
     @Test
-    fun `ENCODER_INIT_FAILED maps to EncodingFailed`() {
+    fun eNCODERINITFAILEDMapsToEncodingFailed() {
         classifyAudioExportErrorCode(ExportException.ERROR_CODE_ENCODER_INIT_FAILED, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `MUXING_FAILED maps to EncodingFailed`() {
+    fun mUXINGFAILEDMapsToEncodingFailed() {
         classifyAudioExportErrorCode(ExportException.ERROR_CODE_MUXING_FAILED, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `Misc 1xxx error falls through to Unknown`() {
+    fun misc1xxxErrorFallsThroughToUnknown() {
         classifyAudioExportErrorCode(1999, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.Unknown>()
     }
 
     @Test
-    fun `IO 2xxx band maps to IoFailed via fallback`() {
+    fun iO2xxxBandMapsToIoFailedViaFallback() {
         // ERROR_CODE_IO_FILE_NOT_FOUND (2005) etc — the 2xxx band classifies as IO.
         classifyAudioExportErrorCode(2005, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.IoFailed>()
     }
 
     @Test
-    fun `Muxing 7xxx band maps to EncodingFailed via fallback`() {
+    fun muxing7xxxBandMapsToEncodingFailedViaFallback() {
         // ERROR_CODE_MUXING_TIMEOUT (7002) — the 7xxx band classifies as encoding.
         classifyAudioExportErrorCode(7002, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `Audio processing 6xxx band maps to EncodingFailed`() {
+    fun audioProcessing6xxxBandMapsToEncodingFailed() {
         // ERROR_CODE_AUDIO_PROCESSING_FAILED — audio-specific band, covered by the fallback.
         classifyAudioExportErrorCode(6001, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
     }
 
     @Test
-    fun `IO band lower boundary 2000 maps to IoFailed`() {
+    fun iOBandLowerBoundary2000MapsToIoFailed() {
         // Pins the band boundary: 2000 is the first IO code (ERROR_CODE_IO_UNSPECIFIED).
         classifyAudioExportErrorCode(2000, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.IoFailed>()
     }
 
     @Test
-    fun `Encoding band upper boundary 4999 maps to EncodingFailed`() {
+    fun encodingBandUpperBoundary4999MapsToEncodingFailed() {
         // Pins the band boundary: 4999 is the highest code still in the encoding band.
         classifyAudioExportErrorCode(4999, "d", null)
             .shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()

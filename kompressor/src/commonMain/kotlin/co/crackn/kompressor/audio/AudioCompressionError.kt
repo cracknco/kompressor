@@ -57,6 +57,20 @@ public sealed class AudioCompressionError(
         cause: Throwable? = null,
     ) : AudioCompressionError("IO failed: $details", cause)
 
+    /**
+     * The requested [AudioCompressionConfig] is not supported for this input on the current
+     * platform — e.g. iOS cannot upmix a mono source to a stereo output, or the input has more
+     * channels (5.1 / 7.1) than the compressor's channel mixer can handle. The library surfaces
+     * this *before* opening the encoder so callers can fall back to a different config (e.g.
+     * request `AudioChannels.MONO` on a mono source, or decline to compress multichannel input)
+     * without racing platform diagnostics.
+     */
+    public class UnsupportedConfiguration(
+        /** Free-form diagnostic — which dimension of the config is incompatible with the source. */
+        public val details: String,
+        cause: Throwable? = null,
+    ) : AudioCompressionError("Unsupported configuration: $details", cause)
+
     /** Fallback for platform errors we couldn't classify. */
     public class Unknown(
         /** Free-form diagnostic — usually the original platform error message. */

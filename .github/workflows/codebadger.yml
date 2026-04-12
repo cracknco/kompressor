@@ -21,12 +21,15 @@ jobs:
           fetch-depth: 0
 
       # ── Resolve Joern version for caching ──────────────────
-      - name: Get Joern version
+      # Pinned to 4.0.500 — Joern 4.0.518 regressed with a deterministic
+      # `NoSuchElementException: key not found: MethodRef[…]` inside
+      # `ReachingDefPass` on this project's Kotlin CPG (caught on PR #45
+      # once a cache-key rotation forced a fresh parse). The crash is an
+      # upstream Joern Kotlin-frontend bug, not a finding against our code.
+      # Revisit this pin when a later Joern release fixes it.
+      - name: Resolve Joern version
         id: joern-version
-        run: |
-          VERSION=$(curl -sI https://github.com/joernio/joern/releases/latest \
-            | grep -i ^location: | sed 's|.*/v||;s/\r//')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        run: echo "version=4.0.500" >> "$GITHUB_OUTPUT"
 
       # ── Cache Joern CLI (~500 MB) ──────────────────────────
       - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
@@ -35,11 +38,16 @@ jobs:
           path: joern-cli
           key: joern-cli-${{ steps.joern-version.outputs.version }}
 
+      # joern-install.sh with no `--version` flag defaults to downloading the "latest"
+      # release archive, ignoring which release tag the install-script itself came from.
+      # Pass `--version=` explicitly so the version pin is actually honoured.
       - name: Install Joern
         if: steps.joern-cache.outputs.cache-hit != 'true'
+        env:
+          JOERN_VERSION: ${{ steps.joern-version.outputs.version }}
         run: |
-          curl -fsSL "https://github.com/joernio/joern/releases/download/v${{ steps.joern-version.outputs.version }}/joern-install.sh" \
-            | bash -s -- --install-dir=.
+          curl -fsSL "https://github.com/joernio/joern/releases/download/v${JOERN_VERSION}/joern-install.sh" \
+            | bash -s -- --install-dir=. "--version=v${JOERN_VERSION}"
 
       - name: Add Joern to PATH
         run: echo "$PWD/joern-cli" >> "$GITHUB_PATH"

@@ -7,6 +7,7 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.SlowAudioProcessor
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
@@ -27,6 +28,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -98,7 +100,11 @@ class AndroidAudioCompressorTest {
     }
 
     @Test
-    fun compressAudio_monoReducesSize() = runTest {
+    fun compressAudio_monoChannelCountIsHonoured() = runTest {
+        // AAC at a fixed bitrate produces roughly the same file size regardless of channel count,
+        // so comparing mono vs stereo byte sizes at equal bitrate is not a reliable signal.
+        // Instead verify the functional contract: the output carries the configured channel
+        // count, which is what callers actually observe.
         val input = createTestWavFile(3, SAMPLE_RATE_44K, STEREO)
         val outputMono = File(tempDir, "mono.m4a")
         val outputStereo = File(tempDir, "stereo.m4a")
@@ -114,15 +120,11 @@ class AndroidAudioCompressorTest {
             outputStereo.absolutePath,
             config.copy(channels = AudioChannels.STEREO),
         )
-        assertTrue(monoResult.isSuccess)
-        assertTrue(stereoResult.isSuccess)
-        assertTrue(outputMono.exists())
-        assertTrue(outputStereo.exists())
+        assertTrue(monoResult.isSuccess, "mono compression failed: ${monoResult.exceptionOrNull()}")
+        assertTrue(stereoResult.isSuccess, "stereo compression failed: ${stereoResult.exceptionOrNull()}")
 
-        assertTrue(
-            outputMono.length() <= outputStereo.length(),
-            "mono (${outputMono.length()}) should be <= stereo (${outputStereo.length()})",
-        )
+        assertEquals(MONO, readAudioMetadata(outputMono).channels, "Output should be mono when configured")
+        assertEquals(STEREO, readAudioMetadata(outputStereo).channels, "Output should be stereo when configured")
     }
 
     @Test
@@ -308,32 +310,32 @@ class AndroidAudioCompressorTest {
 
     @Test
     fun cancellation_deletesPartialOutput() = runBlocking {
+        // Inject a [SlowAudioProcessor] into the Media3 Effects chain so the encoder
+        // deterministically takes longer than the cancel delay, regardless of device speed.
+        // Without this, fast hardware (Samsung A53, future devices) can finish the entire
+        // transcode before the cancel handshake lands, leaving the output file in place and
+        // making the cleanup assertion silently vacuous.
+        val slowCompressor = AndroidAudioCompressor(
+            testExtraAudioProcessors = listOf(SlowAudioProcessor(SLOW_PROCESSOR_DELAY_MS)),
+        )
         val input = createTestWavFile(CANCELLATION_INPUT_SECONDS, SAMPLE_RATE_44K, STEREO)
         val output = File(tempDir, "cancelled.m4a")
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        val progressSeen = kotlinx.coroutines.CompletableDeferred<Unit>()
         val job = scope.launch {
-            compressor.compress(
-                inputPath = input.absolutePath,
-                outputPath = output.absolutePath,
-                onProgress = { p ->
-                    // Wait until the transformer has actually started producing output before we
-                    // cancel, otherwise the output file may never have existed and the assertion
-                    // passes vacuously.
-                    if (p > 0f && !progressSeen.isCompleted) progressSeen.complete(Unit)
-                },
-            )
-        }
-        // Bound the wait and always clean up the launched coroutine in a finally block so a
-        // timeout on progressSeen.await() doesn't leak the job.
-        try {
-            withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
-        } finally {
-            job.cancel()
-            withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
         }
 
-        assertTrue(!output.exists(), "Cancelled output must be deleted, but got ${output.length()} bytes")
+        // The SlowAudioProcessor guarantees the encoder can't finish in < 1 second, so a 200 ms
+        // delay reliably places the cancel mid-export on every device we care about.
+        delay(CANCELLATION_START_DELAY_MS)
+        job.cancel()
+        withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+
+        assertTrue(job.isCancelled, "Cancel must have interrupted the export, not completed normally")
+        assertTrue(
+            !output.exists(),
+            "Cancelled export must delete its partial output, got ${output.length()} bytes",
+        )
     }
 
     @Test
@@ -389,9 +391,16 @@ class AndroidAudioCompressorTest {
     private companion object {
         const val MS_PER_SECOND = 1_000L
 
-        // Long enough that the transformer always reports at least one progress event before
-        // the test cancels, even on a slow CI emulator.
-        const val CANCELLATION_INPUT_SECONDS = 10
+        // Input size matters less than the [SlowAudioProcessor] stall in
+        // `cancellation_deletesPartialOutput` — 5 s is ample to trigger several encoder cycles,
+        // and keeps WAV generation fast on the emulator.
+        const val CANCELLATION_INPUT_SECONDS = 5
+
+        // Delay per sample-buffer the injected [SlowAudioProcessor] stalls the audio pipeline.
+        // Media3 typically queues ~20 buffers/second at 44.1 kHz stereo, so 50 ms/buffer adds
+        // ~1 s wall time per second of audio — trivially outlasts the 200 ms cancel delay.
+        const val SLOW_PROCESSOR_DELAY_MS = 50L
+        const val CANCELLATION_START_DELAY_MS = 200L
         const val CANCELLATION_TIMEOUT_MS = 15_000L
     }
 }

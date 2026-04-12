@@ -3,6 +3,7 @@ package co.crackn.kompressor.golden
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.readTopLevelMp4Boxes
 import co.crackn.kompressor.testutil.readVideoMetadata
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.MaxResolution
@@ -57,6 +58,16 @@ class GoldenVideoTest {
         // Default is 720p — input is already 720p, so no downscale
         assertTrue(metadata.width in (INPUT_WIDTH - 2)..(INPUT_WIDTH + 2), "Width should be ~$INPUT_WIDTH")
         assertTrue(metadata.height in (INPUT_HEIGHT - 2)..(INPUT_HEIGHT + 2), "Height should be ~$INPUT_HEIGHT")
+
+        // Structural gate: same tight-muxer check as the audio golden. A regression that drops
+        // the muxer factory override would reintroduce Media3's default 400 KB `moov`
+        // reservation as a top-level `free` box.
+        val freeBoxTotal = readTopLevelMp4Boxes(output).filter { it.type == "free" }.sumOf { it.size }
+        assertTrue(
+            freeBoxTotal < MAX_FREE_BOX_BYTES,
+            "Top-level `free` boxes total $freeBoxTotal B — the tight-muxer override must keep " +
+                "this below $MAX_FREE_BOX_BYTES B (Media3 default reserves 400 000 B)",
+        )
     }
 
     @Test
@@ -142,5 +153,9 @@ class GoldenVideoTest {
         const val MAX_480P_SHORT = 482
         const val EXPECTED_MIN_SIZE = 10_000L // Very generous lower bound
         const val EXPECTED_MAX_SIZE = 500_000L // Very generous upper bound
+
+        // Tight-muxer factory override keeps aggregate top-level `free` padding ~9 B per box.
+        // 128 B is strict enough to catch any padding regression while leaving a small margin.
+        const val MAX_FREE_BOX_BYTES = 128L
     }
 }

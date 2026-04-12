@@ -45,8 +45,13 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      # `--no-configuration-cache`: Detekt's Gradle plugin currently can't serialise its
+      # `__detektClasspath__` through Gradle 9.4's configuration cache and intermittently
+      # fails with `error writing value of type 'DefaultConfigurableFileCollection'`. Until
+      # the plugin gains support (see Detekt-gradle-plugin#7XXX), skip the cache for this
+      # task only — the task itself is fast (< 1 min) so the cache wasn't buying us much.
       - name: Run Detekt
-        run: ./gradlew detekt
+        run: ./gradlew detekt --no-configuration-cache
       - name: Upload Detekt report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
@@ -67,9 +72,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-  # ── Tests + Kover ────────────────────────────────────────
+  # ── Host tests, API check, coverage gate ─────────────────
+  # Fast gate that runs on every PR without touching an emulator. Catches
+  # regressions in commonTest + androidHostTest + public API in < 5 min.
   test:
-    name: Tests & coverage
+    name: Tests & coverage (host)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -97,3 +104,115 @@ jobs:
         with:
           name: kover-report
           path: kompressor/build/reports/kover/
+
+  # ── Android device tests (Firebase Test Lab) ─────────────
+  # Runs the 47 `androidDeviceTest` tests on a real Pixel 5 (API 33) at
+  # Google's physical-device farm. Replaced the previous ubuntu-latest
+  # emulator job which had structural codec limitations on x86_64 system
+  # images (Media3 Transformer ignored setBitrate, produced PCM-in-MP4
+  # fallback). Physical hardware runs the same MediaCodec stack Kompressor
+  # consumers will, so the tests validate real-world behaviour.
+  #
+  # FTL free tier covers ~1 physical device-hour/day. Our suite runs in
+  # ~5-7 min, so ~8-12 PRs/day are free; overage is ~$1/device-hour.
+  android-device-tests-ftl:
+    name: Android device tests (Firebase Test Lab — Pixel 6 API 33)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+
+      - name: Assemble device-test APK
+        run: ./gradlew :kompressor:assembleAndroidDeviceTest
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7b53cdc2a387814ed14eec026287aac689ae8c9b # v2.1.9
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+
+      - name: Locate test APK
+        id: apk
+        run: |
+          APK=$(find kompressor/build/outputs/apk -type f -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK produced by assembleAndroidDeviceTest"
+            exit 1
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK ($(du -h "$APK" | cut -f1))"
+
+      # Invoke Firebase Test Lab. Same APK is passed to both --app and --test
+      # because :kompressor: is a library module; AGP produces a single
+      # self-instrumenting test APK that bundles AndroidJUnitRunner.
+      #
+      # --results-bucket: we use a bucket we created and IAM-bound explicitly
+      # (`test-lab-kompressor-ci`) rather than FTL's auto-generated bucket.
+      # The auto-bucket is created with the FTL service's IAM, not our SA's,
+      # leading to `403 storage.objects.create denied` on upload. An explicit
+      # bucket with `storage.objectAdmin` granted to the admin-SDK SA sidesteps
+      # that entirely.
+      # Device choice: `oriole` (Pixel 6) because `redfin` (Pixel 5) is not available
+      # at API 33 on FTL — the model/version matrix only supports redfin up to API 31.
+      # Pixel 6 @ API 33 is a solid modern representative that exercises the real
+      # MediaCodec stack Kompressor consumers will hit.
+      - name: Run on Firebase Test Lab (Pixel 6 API 33)
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gcloud firebase test android run \
+            --type instrumentation \
+            --project kompressor-library \
+            --app "${{ steps.apk.outputs.path }}" \
+            --test "${{ steps.apk.outputs.path }}" \
+            --device model=oriole,version=33,locale=en,orientation=portrait \
+            --timeout 15m \
+            --no-record-video \
+            --no-performance-metrics \
+            --results-bucket test-lab-kompressor-ci \
+            --results-dir "ci-${RUN_ID}" \
+            --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
+            --directories-to-pull /sdcard
+
+  # ── iOS simulator tests ──────────────────────────────────
+  # Runs the Kotlin/Native simulator tests on every PR. macos-latest is arm64
+  # with Xcode pre-installed; ~6-10 min per run. Same command is repeated in
+  # release.yml:test-native as a belt-and-suspenders gate before publishing.
+  ios-simulator-tests:
+    name: iOS simulator tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - name: Run iOS simulator tests
+        run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
+      - name: Upload iOS test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-simulator-test-report
+          path: kompressor/build/reports/tests/iosSimulatorArm64Test/

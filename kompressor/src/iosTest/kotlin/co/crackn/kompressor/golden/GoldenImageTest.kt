@@ -53,9 +53,13 @@ class GoldenImageTest {
         val result = compressor.compress(inputPath, outputPath)
 
         assertTrue(result.isSuccess)
-        val compression = result.getOrThrow()
         assertTrue(OutputValidators.isValidJpeg(readBytes(outputPath)), "Output must be valid JPEG")
-        assertTrue(compression.outputSize < compression.inputSize, "JPEG should compress PNG input")
+        val compression = result.getOrThrow()
+        assertTrue(
+            compression.outputSize < compression.inputSize,
+            "JPEG must beat PNG on the continuous-tone fixture: " +
+                "output=${compression.outputSize}, input=${compression.inputSize}",
+        )
 
         val outputImage = UIImage(contentsOfFile = outputPath)
         val cgImage = outputImage.CGImage!!

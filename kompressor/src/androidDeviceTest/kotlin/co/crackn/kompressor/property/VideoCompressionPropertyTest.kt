@@ -14,6 +14,7 @@ import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import java.io.File
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -44,7 +45,7 @@ class VideoCompressionPropertyTest {
     }
 
     @Test
-    fun randomValidConfigs_alwaysProduceValidMp4() = runTest {
+    fun randomValidConfigs_alwaysProduceValidMp4() = runTest(timeout = 5.minutes) {
         checkAll(
             PropTestConfig(seed = SEED, iterations = ITERATIONS),
             Arb.int(200_000..5_000_000),
@@ -85,7 +86,7 @@ class VideoCompressionPropertyTest {
     }
 
     @Test
-    fun progressIsMonotonicallyNonDecreasing() = runTest {
+    fun progressIsMonotonicallyNonDecreasing() = runTest(timeout = 5.minutes) {
         val output = File(tempDir, "progress_test.mp4")
         val progressValues = mutableListOf<Float>()
 

@@ -13,6 +13,7 @@ import androidx.media3.transformer.VideoEncoderSettings
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
+import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.resolveMediaInputSize
@@ -77,11 +78,15 @@ internal class AndroidVideoCompressor : VideoCompressor {
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ) {
+        // Probe source short side off-Main so [toPresentationOrNull] can skip scaling when the
+        // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
+        // input with `HIGH_QUALITY` preset targeting 1080p).
+        val sourceShortSide = withContext(Dispatchers.IO) { probeVideoShortSide(inputPath) }
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
-                val item = buildEditedMediaItem(inputPath, config.maxResolution)
+                val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceShortSide)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -105,12 +110,17 @@ internal class AndroidVideoCompressor : VideoCompressor {
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(encoderFactory)
+            .setMuxerFactory(buildTightMp4MuxerFactory())
             .build()
     }
 
-    private fun buildEditedMediaItem(inputPath: String, maxResolution: MaxResolution): EditedMediaItem {
+    private fun buildEditedMediaItem(
+        inputPath: String,
+        maxResolution: MaxResolution,
+        sourceShortSide: Int?,
+    ): EditedMediaItem {
         val videoEffects = buildList {
-            maxResolution.toPresentationOrNull()?.let(::add)
+            maxResolution.toPresentationOrNull(sourceShortSide)?.let(::add)
         }
         return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
             .setEffects(Effects(emptyList(), videoEffects))
@@ -122,10 +132,51 @@ internal class AndroidVideoCompressor : VideoCompressor {
     }
 }
 
-/** Scale down to the shortest edge target; no effect when [MaxResolution.Original]. */
-private fun MaxResolution.toPresentationOrNull(): Presentation? = when (this) {
-    is MaxResolution.Original -> null
-    is MaxResolution.Custom -> Presentation.createForShortSide(maxShortEdge)
+/**
+ * Scale down to the shortest edge target; no effect when [MaxResolution.Original], and no effect
+ * when the source is already within the target (no upscaling).
+ *
+ * `Presentation.createForShortSide(n)` forces the output's shortest edge to be exactly `n`,
+ * including upscaling when the source is smaller. We cap this to strictly downscaling by
+ * comparing against the probed source; when the source already fits, returning `null` keeps
+ * the original resolution.
+ *
+ * `sourceShortSide == null` (probe failed) falls back to the original force-scale behaviour
+ * since we can't prove no-upscale; Media3 will surface a real error for genuinely unreadable
+ * inputs anyway.
+ */
+private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentation? =
+    when (this) {
+        is MaxResolution.Original -> null
+        is MaxResolution.Custom ->
+            if (sourceShortSide != null && sourceShortSide <= maxShortEdge) {
+                null
+            } else {
+                Presentation.createForShortSide(maxShortEdge)
+            }
+    }
+
+/**
+ * Best-effort probe of a video's shortest edge via [MediaMetadataRetriever]. Returns `null`
+ * when the file can't be opened or either dimension is missing / zero.
+ */
+@Suppress("TooGenericExceptionCaught")
+internal fun probeVideoShortSide(inputPath: String): Int? = try {
+    val mmr = MediaMetadataRetriever()
+    try {
+        mmr.setDataSource(inputPath)
+        val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+        val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+        if (w != null && h != null) minOf(w, h) else null
+    } finally {
+        mmr.release()
+    }
+} catch (_: Throwable) {
+    null
 }
 
 /**

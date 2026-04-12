@@ -15,6 +15,7 @@ import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
+import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.resolveMediaInputSize
@@ -43,7 +44,15 @@ import kotlinx.coroutines.withContext
  * Platform failures are translated into the typed [AudioCompressionError] hierarchy via
  * [toAudioCompressionError] so callers can `when`-branch on subtypes.
  */
-internal class AndroidAudioCompressor : AudioCompressor {
+internal class AndroidAudioCompressor(
+    /**
+     * Extra audio processors appended to the Effects chain **for testing only**. Production
+     * `createKompressor()` uses the default empty list. Device tests inject a slow / blocking
+     * processor here to make cancellation and timeout scenarios deterministic regardless of
+     * the encoder's wall-clock throughput.
+     */
+    private val testExtraAudioProcessors: List<androidx.media3.common.audio.AudioProcessor> = emptyList(),
+) : AudioCompressor {
 
     override val supportedInputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
@@ -72,6 +81,11 @@ internal class AndroidAudioCompressor : AudioCompressor {
         // Probe off-Main because MediaExtractor does blocking I/O.
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
+        // Reject configurations Media3's channel mixer cannot handle before kicking off an
+        // export. Check is extracted to `checkSupportedInputChannelCount` so the rule is
+        // covered by host tests without needing a real 5.1 / 7.1 fixture.
+        checkSupportedInputChannelCount(probe?.channels)
+
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, probe, onProgress)
         }
@@ -97,7 +111,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
                     probe?.mime == MimeTypes.AUDIO_AAC &&
                     probe.bitrate.qualifiesForPassthrough(config.bitrate)
                 val transformer = buildTransformer(context, config, canPassthrough)
-                val item = buildEditedMediaItem(inputPath, plan)
+                val item = buildEditedMediaItem(inputPath, plan, canPassthrough)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -115,7 +129,9 @@ internal class AndroidAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         canPassthrough: Boolean,
     ): Transformer {
-        val builder = Transformer.Builder(context).setAudioMimeType(MimeTypes.AUDIO_AAC)
+        val builder = Transformer.Builder(context)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setMuxerFactory(buildTightMp4MuxerFactory())
         if (!canPassthrough) {
             builder.setEncoderFactory(buildAudioEncoderFactory(context, config))
         }
@@ -125,11 +141,24 @@ internal class AndroidAudioCompressor : AudioCompressor {
     private fun buildEditedMediaItem(
         inputPath: String,
         plan: AudioProcessorPlan,
-    ): EditedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
-        // Ignore any video track if the input is e.g. an MP4 with both video and audio.
-        .setRemoveVideo(true)
-        .setEffects(Effects(plan.toProcessors(), emptyList()))
-        .build()
+        canPassthrough: Boolean,
+    ): EditedMediaItem {
+        // When we explicitly want re-encoding (not passthrough) but the plan is empty — i.e.
+        // source sample-rate/channels already match the target — Media3 would otherwise bitstream-
+        // copy the input track (including PCM WAV → MP4 unchanged), ignoring our encoder factory
+        // and requested bitrate. Inserting an always-active no-op processor forces the audio
+        // pipeline and our [setEncoderFactory] call to actually run. See
+        // [ForceTranscodeAudioProcessor] for the full rationale.
+        val baseProcessors = plan.toProcessors().ifEmpty {
+            if (canPassthrough) emptyList() else listOf(ForceTranscodeAudioProcessor())
+        }
+        val processors = baseProcessors + testExtraAudioProcessors
+        return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
+            // Ignore any video track if the input is e.g. an MP4 with both video and audio.
+            .setRemoveVideo(true)
+            .setEffects(Effects(processors, emptyList()))
+            .build()
+    }
 
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L

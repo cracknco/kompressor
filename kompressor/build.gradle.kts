@@ -21,10 +21,33 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
+        // Several transitive dependencies (AndroidX, Media3, Kotest) ship the same
+        // Apache 2.0 / LGPL license notice files. Without these excludes the
+        // `mergeAndroidDeviceTestJavaResource` task fails with DuplicateRelativeFileException
+        // on the APK packaging step for instrumentation tests.
+        packaging {
+            resources.excludes.addAll(
+                listOf(
+                    "META-INF/AL2.0",
+                    "META-INF/LGPL2.1",
+                    "META-INF/licenses/ASM",
+                    "META-INF/DEPENDENCIES",
+                    "META-INF/LICENSE*",
+                    "META-INF/NOTICE*",
+                    "META-INF/*.kotlin_module",
+                ),
+            )
+        }
+
         withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
             sourceSetTreeName = "test"
+        }.configure {
+            // JaCoCo instrumentation so `connectedAndroidDeviceTest` emits `.ec` coverage
+            // files under kompressor/build/outputs/code_coverage/. Kover picks these up
+            // automatically when `koverXmlReport` runs after the device test task.
+            enableCoverage = true
         }
 
         compilations.configureEach {
@@ -56,6 +79,11 @@ kotlin {
         }
 
         androidMain.dependencies {
+            // `kotlinx-coroutines-core` is inherited from commonMain but it does NOT provide
+            // the Handler-backed Dispatchers.Main on Android. Without this artifact, any
+            // `withContext(Dispatchers.Main)` (used by the Media3 Transformer integration)
+            // throws "Module with the Main dispatcher had failed to initialize" at runtime.
+            implementation(libs.kotlinx.coroutines.android)
             implementation(libs.androidx.exifinterface)
             implementation(libs.androidx.startup.runtime)
             implementation(libs.androidx.media3.transformer)

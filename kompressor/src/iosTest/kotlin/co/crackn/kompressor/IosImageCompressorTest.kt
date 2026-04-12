@@ -50,8 +50,11 @@ class IosImageCompressorTest {
         val compression = result.getOrThrow()
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
-        assertTrue(compression.compressionRatio < 1f)
         assertTrue(compression.durationMs >= 0)
+        assertTrue(
+            compression.compressionRatio < 1f,
+            "JPEG must compress PNG on continuous-tone fixture: ratio=${compression.compressionRatio}",
+        )
         val outputBytes = readBytes(outputPath)
         assertTrue(OutputValidators.isValidJpeg(outputBytes), "Output should be valid JPEG")
     }

@@ -27,7 +27,7 @@ class AudioProcessorChainFactoryTest {
     )
 
     @Test
-    fun `exact match returns empty plan so Media3 can passthrough`() {
+    fun exactMatchReturnsEmptyPlanSoMedia3CanPassthrough() {
         val plan = planAudioProcessors(
             inputSampleRate = 44_100,
             inputChannels = 2,
@@ -39,7 +39,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `different sample rate, same channels plans only Sonic`() {
+    fun differentSampleRateSameChannelsPlansOnlySonic() {
         val plan = planAudioProcessors(
             inputSampleRate = 48_000,
             inputChannels = 2,
@@ -50,7 +50,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `same sample rate, different channels plans only ChannelMixing`() {
+    fun sameSampleRateDifferentChannelsPlansOnlyChannelMixing() {
         val plan = planAudioProcessors(
             inputSampleRate = 44_100,
             inputChannels = 2,
@@ -61,7 +61,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `different sample rate and channels plans both`() {
+    fun differentSampleRateAndChannelsPlansBoth() {
         val plan = planAudioProcessors(
             inputSampleRate = 48_000,
             inputChannels = 2,
@@ -72,7 +72,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `null input sample rate forces Sonic in the plan`() {
+    fun nullInputSampleRateForcesSonicInThePlan() {
         val plan = planAudioProcessors(
             inputSampleRate = null,
             inputChannels = 2,
@@ -82,7 +82,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `null input channels forces ChannelMixing in the plan`() {
+    fun nullInputChannelsForcesChannelMixingInThePlan() {
         val plan = planAudioProcessors(
             inputSampleRate = 44_100,
             inputChannels = null,
@@ -92,7 +92,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `null input sample rate and channels forces both`() {
+    fun nullInputSampleRateAndChannelsForcesBoth() {
         val plan = planAudioProcessors(
             inputSampleRate = null,
             inputChannels = null,
@@ -103,7 +103,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `mono-to-mono same rate short-circuits to empty plan`() {
+    fun monotomonoSameRateShortcircuitsToEmptyPlan() {
         val plan = planAudioProcessors(
             inputSampleRate = 22_050,
             inputChannels = 1,
@@ -113,7 +113,7 @@ class AudioProcessorChainFactoryTest {
     }
 
     @Test
-    fun `mono input at different rate plans only Sonic when target is mono`() {
+    fun monoInputAtDifferentRatePlansOnlySonicWhenTargetIsMono() {
         val plan = planAudioProcessors(
             inputSampleRate = 48_000,
             inputChannels = 1,
