@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,10 +38,27 @@ fun VideoScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val errorMessage = stringResource(Res.string.error_compression_failed)
 
+    // Snackbar kept for compatibility (toast-style notifications)
     LaunchedEffect(state.error) {
         val error = state.error ?: return@LaunchedEffect
-        viewModel.clearError()
-        snackbarHostState.showSnackbar("$errorMessage: $error")
+        snackbarHostState.showSnackbar(
+            message = "$errorMessage: $error",
+            duration = androidx.compose.material3.SnackbarDuration.Long,
+        )
+    }
+
+    // Also show a blocking dialog so errors are impossible to miss.
+    state.error?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text(errorMessage) },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearError() }) {
+                    Text("OK")
+                }
+            },
+        )
     }
 
     Box(modifier = modifier.fillMaxSize()) {
