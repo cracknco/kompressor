@@ -44,7 +44,15 @@ import kotlinx.coroutines.withContext
  * Platform failures are translated into the typed [AudioCompressionError] hierarchy via
  * [toAudioCompressionError] so callers can `when`-branch on subtypes.
  */
-internal class AndroidAudioCompressor : AudioCompressor {
+internal class AndroidAudioCompressor(
+    /**
+     * Extra audio processors appended to the Effects chain **for testing only**. Production
+     * `createKompressor()` uses the default empty list. Device tests inject a slow / blocking
+     * processor here to make cancellation and timeout scenarios deterministic regardless of
+     * the encoder's wall-clock throughput.
+     */
+    private val testExtraAudioProcessors: List<androidx.media3.common.audio.AudioProcessor> = emptyList(),
+) : AudioCompressor {
 
     override val supportedInputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
@@ -72,6 +80,19 @@ internal class AndroidAudioCompressor : AudioCompressor {
 
         // Probe off-Main because MediaExtractor does blocking I/O.
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
+
+        // Reject configurations Media3's channel mixer cannot handle before kicking off an
+        // export. `ChannelMixingMatrix.createForConstantGain` only ships default coefficients
+        // for mono / stereo inputs in Media3 1.10; 5.1 / 7.1 sources throw mid-configure with a
+        // stack-trace-level error. Fail fast with a typed [UnsupportedConfiguration] so callers
+        // can `when`-branch and surface an actionable message.
+        probe?.channels?.let { sourceChannels ->
+            if (sourceChannels > MAX_SUPPORTED_SOURCE_CHANNELS) {
+                throw AudioCompressionError.UnsupportedConfiguration(
+                    "Input has $sourceChannels channels; only mono and stereo sources are supported",
+                )
+            }
+        }
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, probe, onProgress)
@@ -136,9 +157,10 @@ internal class AndroidAudioCompressor : AudioCompressor {
         // and requested bitrate. Inserting an always-active no-op processor forces the audio
         // pipeline and our [setEncoderFactory] call to actually run. See
         // [ForceTranscodeAudioProcessor] for the full rationale.
-        val processors = plan.toProcessors().ifEmpty {
+        val baseProcessors = plan.toProcessors().ifEmpty {
             if (canPassthrough) emptyList() else listOf(ForceTranscodeAudioProcessor())
         }
+        val processors = baseProcessors + testExtraAudioProcessors
         return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
             // Ignore any video track if the input is e.g. an MP4 with both video and audio.
             .setRemoveVideo(true)
@@ -149,6 +171,11 @@ internal class AndroidAudioCompressor : AudioCompressor {
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
         const val AUDIO_MIME_PREFIX = "audio/"
+
+        // Media3 1.10's `ChannelMixingMatrix.createForConstantGain` supports 1..2 input channels.
+        // Anything higher (5.1 / 7.1) cannot be handled by the built-in mixer and is rejected
+        // upfront in the compressor.
+        const val MAX_SUPPORTED_SOURCE_CHANNELS = 2
     }
 }
 

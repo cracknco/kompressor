@@ -24,6 +24,7 @@ import platform.AVFoundation.AVAssetReaderTrackOutput
 import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
+import platform.AVFAudio.AVAudioFile
 import platform.AVFAudio.AVEncoderBitRateKey
 import platform.AVFAudio.AVFormatIDKey
 import platform.AVFAudio.AVLinearPCMBitDepthKey
@@ -60,6 +61,12 @@ internal class IosAudioCompressor : AudioCompressor {
         onProgress(0f)
         val inputSize = nsFileSize(inputPath)
 
+        // Upfront configuration check. iOS's AVAssetReader/AVAssetWriter pipeline does not
+        // upmix a mono source into a stereo output — it silently drops the second channel
+        // request and writes mono, violating the caller's config. Rather than surprising
+        // callers, fail fast with a typed error they can `when`-branch on.
+        validateChannelConfiguration(inputPath, config)
+
         if (canUseExportSession(config)) {
             IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
         } else {
@@ -70,6 +77,31 @@ internal class IosAudioCompressor : AudioCompressor {
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Reject configurations iOS's audio pipeline cannot honour. Currently the only case is
+     * upmixing (source channel count < requested channel count) — iOS's `AVAssetReaderTrackOutput`
+     * with `AVNumberOfChannelsKey=2` does not duplicate a mono track into stereo.
+     *
+     * Probe failures are non-fatal: we don't want to block compression on an unreadable-by-probe
+     * file that the real pipeline may still handle. The underlying pipeline will surface a
+     * proper error if the file is truly unreadable.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun validateChannelConfiguration(inputPath: String, config: AudioCompressionConfig) {
+        val sourceChannels = try {
+            AVAudioFile(forReading = NSURL.fileURLWithPath(inputPath), error = null)
+                .processingFormat.channelCount.toInt()
+        } catch (_: Throwable) {
+            return
+        }
+        if (sourceChannels < config.channels.count) {
+            throw AudioCompressionError.UnsupportedConfiguration(
+                "iOS cannot upmix a $sourceChannels-channel source into " +
+                    "${config.channels.count}-channel output",
+            )
+        }
     }
 
     // AVAssetExportSession uses Apple's internal preset quality — it does NOT honour

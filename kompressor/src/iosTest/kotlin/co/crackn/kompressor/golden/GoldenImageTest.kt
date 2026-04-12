@@ -54,10 +54,12 @@ class GoldenImageTest {
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidJpeg(readBytes(outputPath)), "Output must be valid JPEG")
-        // `outputSize < inputSize` is not a universal JPEG invariant on synthetic fixtures:
-        // a 1000x1000 PNG of ~15k unique 8-px tiles palettes in a few dozen KB, while JPEG's
-        // per-block DCT headers sum to more. Valid format + preserved dimensions remain
-        // asserted; real-world compression is covered by `outputSizeScalesWithQuality`.
+        val compression = result.getOrThrow()
+        assertTrue(
+            compression.outputSize < compression.inputSize,
+            "JPEG must beat PNG on the continuous-tone fixture: " +
+                "output=${compression.outputSize}, input=${compression.inputSize}",
+        )
 
         val outputImage = UIImage(contentsOfFile = outputPath)
         val cgImage = outputImage.CGImage!!

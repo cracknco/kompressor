@@ -7,6 +7,7 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.SlowAudioProcessor
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_MS
 import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
@@ -309,43 +310,32 @@ class AndroidAudioCompressorTest {
 
     @Test
     fun cancellation_deletesPartialOutput() = runBlocking {
+        // Inject a [SlowAudioProcessor] into the Media3 Effects chain so the encoder
+        // deterministically takes longer than the cancel delay, regardless of device speed.
+        // Without this, fast hardware (Samsung A53, future devices) can finish the entire
+        // transcode before the cancel handshake lands, leaving the output file in place and
+        // making the cleanup assertion silently vacuous.
+        val slowCompressor = AndroidAudioCompressor(
+            testExtraAudioProcessors = listOf(SlowAudioProcessor(SLOW_PROCESSOR_DELAY_MS)),
+        )
         val input = createTestWavFile(CANCELLATION_INPUT_SECONDS, SAMPLE_RATE_44K, STEREO)
         val output = File(tempDir, "cancelled.m4a")
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        // Racing `onProgress > 0` then cancelling was fragile: the first progress event fires at
-        // device-dependent cadence and on fast hardware encoding finishes before any event is
-        // observed, making the cancel a no-op and the assertion vacuously true (or flakily
-        // false if a complete file lingers). Instead, cancel on a small fixed delay and branch
-        // on [Job.isCancelled] — that's race-free regardless of encoder throughput: if the body
-        // completed before cancel landed, isCancelled is false; if cancel interrupted the body,
-        // isCancelled is true.
         val job = scope.launch {
-            compressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
+            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
         }
 
-        // Briefly let compress enter its suspend machinery (probe → Media3.start → first writes)
-        // before cancelling. 200 ms is enough for Media3 to open the muxer and write a few
-        // samples on any device we support, but short enough that the cancel lands mid-export
-        // under realistic encoder throughput (even at ~100× real-time, a 30 s transcode runs
-        // ~300 ms, so 200 ms keeps the cancel in-flight).
+        // The SlowAudioProcessor guarantees the encoder can't finish in < 1 second, so a 200 ms
+        // delay reliably places the cancel mid-export on every device we care about.
         delay(CANCELLATION_START_DELAY_MS)
         job.cancel()
         withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
 
-        // Two outcomes are valid:
-        //   1. compress finished before the cancel was delivered (race on very fast hardware) —
-        //      the output is a valid, complete file and there is nothing for the partial-output
-        //      cleanup to do. `job.isCancelled` is false in this case.
-        //   2. compress was cancelled mid-export — `deletingOutputOnFailure` must have removed
-        //      the partially-written file before the coroutine unwound.
-        if (job.isCancelled) {
-            assertTrue(
-                !output.exists(),
-                "Cancelled export must delete its partial output, got ${output.length()} bytes",
-            )
-        } else {
-            assertTrue(output.exists(), "A cleanly-completed export must leave its output on disk")
-        }
+        assertTrue(job.isCancelled, "Cancel must have interrupted the export, not completed normally")
+        assertTrue(
+            !output.exists(),
+            "Cancelled export must delete its partial output, got ${output.length()} bytes",
+        )
     }
 
     @Test
@@ -401,11 +391,15 @@ class AndroidAudioCompressorTest {
     private companion object {
         const val MS_PER_SECOND = 1_000L
 
-        // Long enough that even a fast hardware encoder (~100× realtime) can't finish the full
-        // transcode inside [CANCELLATION_START_DELAY_MS]. 30 s PCM @ 44.1 kHz stereo = ~5 MB
-        // WAV; encode ≳ 300 ms on the fastest devices we've seen, comfortably outlasting the
-        // 200 ms delay.
-        const val CANCELLATION_INPUT_SECONDS = 30
+        // Input size matters less than the [SlowAudioProcessor] stall in
+        // `cancellation_deletesPartialOutput` — 5 s is ample to trigger several encoder cycles,
+        // and keeps WAV generation fast on the emulator.
+        const val CANCELLATION_INPUT_SECONDS = 5
+
+        // Delay per sample-buffer the injected [SlowAudioProcessor] stalls the audio pipeline.
+        // Media3 typically queues ~20 buffers/second at 44.1 kHz stereo, so 50 ms/buffer adds
+        // ~1 s wall time per second of audio — trivially outlasts the 200 ms cancel delay.
+        const val SLOW_PROCESSOR_DELAY_MS = 50L
         const val CANCELLATION_START_DELAY_MS = 200L
         const val CANCELLATION_TIMEOUT_MS = 15_000L
     }

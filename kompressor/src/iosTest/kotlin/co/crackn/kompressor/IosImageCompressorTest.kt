@@ -51,8 +51,10 @@ class IosImageCompressorTest {
         assertTrue(compression.outputSize > 0)
         assertTrue(compression.inputSize > 0)
         assertTrue(compression.durationMs >= 0)
-        // No `compressionRatio < 1` here — that's not a universal invariant on synthetic
-        // fixtures. See the matching note in GoldenImageTest.square1000_defaultConfig_*.
+        assertTrue(
+            compression.compressionRatio < 1f,
+            "JPEG must compress PNG on continuous-tone fixture: ratio=${compression.compressionRatio}",
+        )
         val outputBytes = readBytes(outputPath)
         assertTrue(OutputValidators.isValidJpeg(outputBytes), "Output should be valid JPEG")
     }

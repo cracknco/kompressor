@@ -4,6 +4,7 @@ package co.crackn.kompressor.property
 
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -55,14 +56,12 @@ class AudioCompressionPropertyTest {
         )
         checkAll(
             PropTestConfig(seed = SEED, iterations = ITERATIONS),
-            // Stay inside the range AVFoundation's AAC encoder honours end-to-end on the iOS
-            // simulator. Lower bitrates (≤64kbps) combined with mono + low sample rates cause
-            // AVAssetWriterInput to reject sample buffers (format descriptor mismatch), and
-            // 22.05kHz specifically is flaky for random bitrates — tests pinning a specific
-            // rate+channels+bitrate triplet (e.g. compressAudio_44kTo22k_voiceMessage) exercise
-            // the low-end configurations deterministically.
-            Arb.int(96_000..192_000),
-            Arb.element(44_100, 48_000),
+            // Exercise the full public [AudioCompressionConfig] range so regressions in iOS AAC
+            // handling at the bitrate/sample-rate extremes surface here rather than in user
+            // reports. Source WAV is 44.1 kHz stereo; mono target is a valid down-mix iOS
+            // honours, stereo → stereo passes straight through.
+            Arb.int(32_000..256_000),
+            Arb.element(22_050, 32_000, 44_100, 48_000),
             Arb.element(AudioChannels.MONO, AudioChannels.STEREO),
         ) { bitrate, sampleRate, channels ->
             val config = AudioCompressionConfig(
@@ -77,13 +76,25 @@ class AudioCompressionPropertyTest {
 
             val result = compressor.compress(inputPath, outputPath, config)
 
-            assertTrue(result.isSuccess, "Compression failed for config $config: ${result.exceptionOrNull()}")
-            val compression = result.getOrThrow()
-            assertTrue(compression.outputSize > 0, "Output size should be > 0")
-            assertTrue(compression.durationMs >= 0, "Duration should be >= 0")
-
-            val outputBytes = readBytes(outputPath)
-            assertTrue(OutputValidators.isValidM4a(outputBytes), "Output should be valid M4A")
+            // Either the compressor succeeds and produces a valid M4A, or it rejects the
+            // configuration with a typed `UnsupportedConfiguration` — both are well-defined
+            // library outcomes. Any other failure mode (opaque `Exception`, crash, silent
+            // wrong-format output) is a regression worth catching.
+            val error = result.exceptionOrNull()
+            if (result.isSuccess) {
+                val compression = result.getOrThrow()
+                assertTrue(compression.outputSize > 0, "Output size should be > 0 for $config")
+                assertTrue(compression.durationMs >= 0, "Duration should be >= 0 for $config")
+                assertTrue(
+                    OutputValidators.isValidM4a(readBytes(outputPath)),
+                    "Output should be valid M4A for $config",
+                )
+            } else {
+                assertTrue(
+                    error is AudioCompressionError.UnsupportedConfiguration,
+                    "Compression failed for $config with unexpected error: $error",
+                )
+            }
 
             NSFileManager.defaultManager.removeItemAtPath(inputPath, null)
             NSFileManager.defaultManager.removeItemAtPath(outputPath, null)

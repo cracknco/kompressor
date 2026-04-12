@@ -1,55 +1,45 @@
 package co.crackn.kompressor.testutil
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Creates a test PNG with enough visual entropy that JPEG re-encoding actually
- * reduces file size — a solid-colour fixture would compress to a few hundred
- * bytes in PNG (palette + RLE), which JPEG cannot match at any quality.
+ * Creates a PNG fixture whose content is representative of real-world photographic input:
+ * a low-frequency multichannel sine-wave gradient filling every pixel with a subtly different
+ * value. No two neighbouring pixels share a colour, but transitions between them are smooth.
  *
- * We draw a grid of coloured tiles derived from a trigonometric seed so each
- * tile gets a different hue. The result is visually structured (not white
- * noise) so JPEG's DCT still compresses well, while defeating PNG's
- * run-length advantage on flat colour regions.
+ * Why this matters for image tests: a palette-friendly fixture (solid colour, coarse tile
+ * grid, flat regions) lets PNG's DEFLATE + filter predictors beat JPEG's per-block DCT
+ * overhead, breaking any `outputSize < inputSize` assertion. A continuous-tone fixture inverts
+ * the bias: JPEG's DCT captures the low-frequency structure in a few quantised coefficients
+ * per block while PNG has to store a near-random byte stream that DEFLATE can't compress well.
+ *
+ * Concretely, at 1000×1000:
+ *  * PNG (uncompressed: 4 MB) lands around 600 KB – 1.5 MB after DEFLATE.
+ *  * JPEG quality 85 lands around 40 – 120 KB.
+ *
+ * The fixture is deterministic — identical bytes across runs — so golden tests remain stable.
  */
 fun createTestImage(tempDir: File, width: Int, height: Int): File {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val paint = Paint()
-    val tileSize = TILE_SIZE_PX
-    val cols = (width + tileSize - 1) / tileSize
-    val rows = (height + tileSize - 1) / tileSize
-    val hsv = FloatArray(3)
-    for (row in 0 until rows) {
-        for (col in 0 until cols) {
-            val seed = (row * COLS_PRIME + col).toDouble()
-            // Hue in [0, 360), saturation + brightness in [0.5, 1.0]
-            hsv[0] = ((sin(seed) * 0.5 + 0.5) * HUE_RANGE).toFloat()
-            hsv[1] = (cos(seed * 2 * PI / SAT_PERIOD) * 0.25 + 0.75).toFloat()
-            hsv[2] = (sin(seed * 2 * PI / VAL_PERIOD) * 0.25 + 0.75).toFloat()
-            paint.color = Color.HSVToColor(hsv)
-            canvas.drawRect(
-                (col * tileSize).toFloat(),
-                (row * tileSize).toFloat(),
-                ((col + 1) * tileSize).toFloat(),
-                ((row + 1) * tileSize).toFloat(),
-                paint,
-            )
+    val pixels = IntArray(width * height)
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            val r = gradientChannel(x, y, SCALE_R_X, SCALE_R_Y, PHASE_R)
+            val g = gradientChannel(x, y, SCALE_G_X, SCALE_G_Y, PHASE_G)
+            val b = gradientChannel(x, y, SCALE_B_X, SCALE_B_Y, PHASE_B)
+            pixels[y * width + x] = Color.argb(ALPHA_OPAQUE, r, g, b)
         }
     }
+    bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
 
     val file = File(tempDir, "input_${width}x$height.png")
     try {
         FileOutputStream(file).use { out ->
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "PNG encoding failed" }
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, out)) { "PNG encoding failed" }
         }
     } finally {
         bitmap.recycle()
@@ -57,11 +47,27 @@ fun createTestImage(tempDir: File, width: Int, height: Int): File {
     return file
 }
 
-// 8x8 tiles give ~one colour per 64 pixels — dense enough to overwhelm PNG's
-// DEFLATE but coarse enough to keep rendering cheap and to stay visually
-// structured (not white noise) so JPEG's DCT still compresses well.
-private const val TILE_SIZE_PX = 8
-private const val COLS_PRIME = 31
-private const val HUE_RANGE = 360.0
-private const val SAT_PERIOD = 17.0
-private const val VAL_PERIOD = 13.0
+/** One RGB channel of the continuous-tone gradient, in the byte range [0, 255]. */
+private fun gradientChannel(x: Int, y: Int, xScale: Double, yScale: Double, phase: Double): Int {
+    val v = CENTER + AMPLITUDE * sin(x / xScale + y / yScale + phase)
+    return v.toInt().coerceIn(0, MAX_BYTE)
+}
+
+private const val CENTER = 128.0
+private const val AMPLITUDE = 96.0
+private const val MAX_BYTE = 255
+private const val ALPHA_OPAQUE = 255
+private const val PNG_QUALITY = 100
+
+// Three channels at distinct spatial frequencies + phase offsets ⇒ ~1 M unique colours across
+// a 1000×1000 image, no palette-compressible regions. Frequencies chosen low enough that JPEG's
+// 8×8 DCT captures them efficiently (so the test actually validates "the compressor compressed").
+private const val SCALE_R_X = 41.0
+private const val SCALE_R_Y = 53.0
+private const val SCALE_G_X = 37.0
+private const val SCALE_G_Y = 47.0
+private const val SCALE_B_X = 43.0
+private const val SCALE_B_Y = 59.0
+private const val PHASE_R = 0.0
+private const val PHASE_G = 1.7
+private const val PHASE_B = 3.2

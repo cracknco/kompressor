@@ -5,6 +5,7 @@ package co.crackn.kompressor
 import kotlinx.cinterop.ExperimentalForeignApi
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.testutil.TestConstants.MONO
@@ -97,6 +98,29 @@ class IosAudioCompressorTest {
 
         assertEquals(MONO, readAudioMetadata(outputMono).channels, "Output should be mono when configured")
         assertEquals(STEREO, readAudioMetadata(outputStereo).channels, "Output should be stereo when configured")
+    }
+
+    @Test
+    fun compressAudio_monoToStereo_rejectsWithTypedError() = runTest {
+        // iOS's AVAssetReader/AVAssetWriter pipeline doesn't upmix mono → stereo. Rather than
+        // silently producing a mono output that violates the caller's config, the compressor
+        // rejects the combination with a typed [AudioCompressionError.UnsupportedConfiguration]
+        // so callers can `when`-branch on it (e.g. fall back to requesting mono output).
+        val inputPath = createTestWavFile(1, SAMPLE_RATE_44K, MONO)
+        val outputPath = testDir + "mono_to_stereo.m4a"
+
+        val result = compressor.compress(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            config = AudioCompressionConfig(channels = AudioChannels.STEREO),
+        )
+
+        assertTrue(result.isFailure, "Mono→stereo must fail fast with a typed error")
+        val err = result.exceptionOrNull()
+        assertTrue(
+            err is AudioCompressionError.UnsupportedConfiguration,
+            "Expected UnsupportedConfiguration, got ${err?.let { it::class.simpleName }}: ${err?.message}",
+        )
     }
 
     @Test
