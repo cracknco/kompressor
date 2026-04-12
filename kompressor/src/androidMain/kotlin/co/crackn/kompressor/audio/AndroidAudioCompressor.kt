@@ -16,8 +16,11 @@ import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
+import co.crackn.kompressor.toMediaItemUri
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -32,22 +35,21 @@ import kotlinx.coroutines.withContext
  * muxer plumbing for free. Input formats supported include MP3, AAC, M4A, FLAC, OGG/Opus, WAV,
  * AMR, ADTS — anything Media3's default extractors can open.
  *
- * Fast path: when the probed input is AAC at the requested sample rate / channels / bitrate,
- * we deliberately omit the encoder factory and any audio processors — Media3 then activates a
- * bitstream-copy passthrough and finishes in milliseconds.
+ * Fast path: when the probed input is already AAC at roughly the requested sample rate, channels,
+ * and bitrate (within ±20%), we omit the encoder factory and any audio processors so Media3
+ * activates a bitstream-copy passthrough and finishes in milliseconds.
  *
  * Platform failures are translated into the typed [AudioCompressionError] hierarchy via
- * [toAudioCompressionError] so callers can `when`-branch on subtypes (e.g.
- * [AudioCompressionError.UnsupportedSourceFormat] for an obscure codec).
+ * [toAudioCompressionError] so callers can `when`-branch on subtypes.
  */
 internal class AndroidAudioCompressor : AudioCompressor {
 
     override val supportedInputFormats: Set<String> by lazy {
-        collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = "audio/")
+        collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
     }
 
     override val supportedOutputFormats: Set<String> by lazy {
-        collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = "audio/")
+        collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = AUDIO_MIME_PREFIX)
     }
 
     override suspend fun compress(
@@ -60,7 +62,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
 
         val startNanos = System.nanoTime()
         onProgress(0f)
-        val inputSize = File(inputPath).length()
+        val inputSize = resolveMediaInputSize(inputPath)
 
         // Probe off-Main because MediaExtractor does blocking I/O.
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
@@ -94,7 +96,11 @@ internal class AndroidAudioCompressor : AudioCompressor {
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
-            val description = withContext(Dispatchers.IO) { describeAudioSource(inputPath) }
+            // Prefer the probe (populated on the happy path) for the error description — it's
+            // already in memory and richer than what MediaMetadataRetriever returns. Fall back
+            // to MMR only when the probe itself couldn't read the file.
+            val description = probe?.describe()
+                ?: withContext(Dispatchers.IO) { describeAudioSource(inputPath) }
             throw e.toAudioCompressionError(description)
         }
     }
@@ -114,21 +120,15 @@ internal class AndroidAudioCompressor : AudioCompressor {
     private fun buildEditedMediaItem(
         inputPath: String,
         plan: AudioProcessorPlan,
-    ): EditedMediaItem {
-        val uri = if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
-            inputPath
-        } else {
-            "file://$inputPath"
-        }
-        return EditedMediaItem.Builder(MediaItem.fromUri(uri))
-            // Ignore any video track if the input is e.g. an MP4 with both video and audio.
-            .setRemoveVideo(true)
-            .setEffects(Effects(plan.toProcessors(), emptyList()))
-            .build()
-    }
+    ): EditedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
+        // Ignore any video track if the input is e.g. an MP4 with both video and audio.
+        .setRemoveVideo(true)
+        .setEffects(Effects(plan.toProcessors(), emptyList()))
+        .build()
 
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
+        const val AUDIO_MIME_PREFIX = "audio/"
     }
 }
 
@@ -142,15 +142,33 @@ internal data class InputAudioFormat(
     val sampleRate: Int?,
     val channels: Int?,
     val bitrate: Int?,
-)
+) {
+    /** Format this probe as a short human-readable description for error messages. */
+    fun describe(): String? = buildString {
+        mime?.let { append(it) }
+        if (sampleRate != null) {
+            if (isNotEmpty()) append(' ')
+            append(sampleRate).append("Hz")
+        }
+        if (channels != null) {
+            if (isNotEmpty()) append(' ')
+            append(channels).append("ch")
+        }
+        if (bitrate != null) {
+            if (isNotEmpty()) append(' ')
+            append(bitrate).append(" bps")
+        }
+    }.ifBlank { null }
+}
 
 /**
  * Inspect the input file with a short-lived [MediaExtractor] to find the first audio track and
  * its (sample rate, channel count, bitrate). Runs on [Dispatchers.IO] from the caller.
  * Returns `null` if the file has no readable audio track — Media3 will surface a proper error
- * later.
+ * later. Cancellation propagates; other failures become `null` (best-effort probe).
  */
-private fun probeInputFormat(inputPath: String): InputAudioFormat? = runCatching {
+@Suppress("TooGenericExceptionCaught")
+private fun probeInputFormat(inputPath: String): InputAudioFormat? = try {
     val extractor = MediaExtractor().apply { setDataSource(inputPath) }
     try {
         (0 until extractor.trackCount)
@@ -161,7 +179,11 @@ private fun probeInputFormat(inputPath: String): InputAudioFormat? = runCatching
     } finally {
         extractor.release()
     }
-}.getOrNull()
+} catch (ce: CancellationException) {
+    throw ce
+} catch (_: Throwable) {
+    null
+}
 
 private fun MediaFormat.toInputAudioFormat(): InputAudioFormat = InputAudioFormat(
     mime = getString(MediaFormat.KEY_MIME),
@@ -174,19 +196,30 @@ private fun MediaFormat.intOrNull(key: String): Int? =
     if (containsKey(key)) getInteger(key).takeIf { it > 0 } else null
 
 /**
- * Is the source bitrate close enough to the target that re-encoding would only throw quality
- * away? We allow passthrough when the source is within 80% of the requested bitrate (typical
- * AAC encoder jitter) or when the source bitrate is unknown.
+ * Should we bitstream-passthrough the input AAC instead of re-encoding?
+ *
+ * We require the source bitrate to be **approximately equal** to the target — within ±20% on
+ * both sides. The lower bound avoids masquerading a low-quality source as fulfilling a higher
+ * target bitrate; the upper bound avoids passing through a source that is significantly larger
+ * than the user asked for (which would defeat the purpose of "compress").
+ *
+ * Returns `true` when the source bitrate is unknown — Media3 is the authority in that case.
  */
-private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean =
-    this == null || this >= (targetBitrate * PASSTHROUGH_BITRATE_TOLERANCE).toInt()
+private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean {
+    if (this == null) return true
+    val lower = (targetBitrate * (1f - PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
+    val upper = (targetBitrate * (1f + PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
+    return this in lower..upper
+}
 
 /**
- * Build a short human-readable description of the source (codec, sample rate, channel count)
- * to embed in error messages. Best-effort — silently returns null if the retriever can't open
- * the file.
+ * Build a short human-readable description of the source using [MediaMetadataRetriever].
+ * Invoked only on the error path and only when [probeInputFormat] returned `null` (so the
+ * cheap in-memory probe wasn't available). Best-effort — returns null on any failure other
+ * than cancellation.
  */
-private fun describeAudioSource(inputPath: String): String? = runCatching {
+@Suppress("TooGenericExceptionCaught")
+private fun describeAudioSource(inputPath: String): String? = try {
     val mmr = MediaMetadataRetriever()
     try {
         mmr.setDataSource(inputPath)
@@ -202,6 +235,10 @@ private fun describeAudioSource(inputPath: String): String? = runCatching {
     } finally {
         mmr.release()
     }
-}.getOrNull()
+} catch (ce: CancellationException) {
+    throw ce
+} catch (_: Throwable) {
+    null
+}
 
-private const val PASSTHROUGH_BITRATE_TOLERANCE = 0.8f
+private const val PASSTHROUGH_BITRATE_TOLERANCE = 0.2f

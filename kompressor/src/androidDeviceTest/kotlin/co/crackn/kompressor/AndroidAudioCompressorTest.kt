@@ -27,7 +27,6 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -308,18 +307,23 @@ class AndroidAudioCompressorTest {
 
     @Test
     fun cancellation_deletesPartialOutput() = runBlocking {
-        val input = createTestWavFile(10, SAMPLE_RATE_44K, STEREO)
+        val input = createTestWavFile(CANCELLATION_INPUT_SECONDS, SAMPLE_RATE_44K, STEREO)
         val output = File(tempDir, "cancelled.m4a")
         val scope = CoroutineScope(Dispatchers.Default + Job())
+        val progressSeen = kotlinx.coroutines.CompletableDeferred<Unit>()
         val job = scope.launch {
             compressor.compress(
                 inputPath = input.absolutePath,
                 outputPath = output.absolutePath,
-                onProgress = { /* let a few progress events flow before cancelling */ },
+                onProgress = { p ->
+                    // Wait until the transformer has actually started producing output before we
+                    // cancel, otherwise the output file may never have existed and the assertion
+                    // passes vacuously.
+                    if (p > 0f && !progressSeen.isCompleted) progressSeen.complete(Unit)
+                },
             )
         }
-        // Give the Transformer time to start and write header bytes.
-        delay(500)
+        progressSeen.await()
         job.cancel()
         job.join()
 
@@ -378,5 +382,9 @@ class AndroidAudioCompressorTest {
 
     private companion object {
         const val MS_PER_SECOND = 1_000L
+
+        // Long enough that the transformer always reports at least one progress event before
+        // the test cancels, even on a slow CI emulator.
+        const val CANCELLATION_INPUT_SECONDS = 10
     }
 }

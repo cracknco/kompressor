@@ -15,7 +15,9 @@ import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
+import co.crackn.kompressor.toMediaItemUri
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,7 +55,7 @@ internal class AndroidVideoCompressor : VideoCompressor {
     ): Result<CompressionResult> = suspendRunCatching {
         val startNanos = System.nanoTime()
         onProgress(0f)
-        val inputSize = resolveInputSize(inputPath)
+        val inputSize = resolveMediaInputSize(inputPath)
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, onProgress)
@@ -63,28 +65,6 @@ internal class AndroidVideoCompressor : VideoCompressor {
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
         CompressionResult(inputSize, outputSize, durationMs)
-    }
-
-    /**
-     * Input size for `file://`, `content://`, or raw filesystem paths. `File(path).length()`
-     * returns 0 for URIs, which would poison [CompressionResult.compressionRatio].
-     */
-    private fun resolveInputSize(inputPath: String): Long {
-        if (inputPath.startsWith("content://")) {
-            val uri = android.net.Uri.parse(inputPath)
-            return runCatching {
-                KompressorContext.appContext.contentResolver
-                    .openFileDescriptor(uri, "r")
-                    ?.use { it.statSize.coerceAtLeast(0L) }
-                    ?: 0L
-            }.getOrDefault(0L)
-        }
-        val path = if (inputPath.startsWith("file://")) {
-            android.net.Uri.parse(inputPath).path ?: inputPath.removePrefix("file://")
-        } else {
-            inputPath
-        }
-        return runCatching { File(path).length() }.getOrDefault(0L)
     }
 
     private suspend fun runTransformer(
@@ -125,15 +105,10 @@ internal class AndroidVideoCompressor : VideoCompressor {
     }
 
     private fun buildEditedMediaItem(inputPath: String, maxResolution: MaxResolution): EditedMediaItem {
-        val uri = if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
-            inputPath
-        } else {
-            "file://$inputPath"
-        }
         val videoEffects = buildList {
             maxResolution.toPresentationOrNull()?.let(::add)
         }
-        return EditedMediaItem.Builder(MediaItem.fromUri(uri))
+        return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
             .setEffects(Effects(emptyList(), videoEffects))
             .build()
     }
