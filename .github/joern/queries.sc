@@ -216,7 +216,12 @@
     }
   }
 
-  // ── Q6: Bare runCatching (should be suspendRunCatching) ─────
+  // ── Q6: Bare runCatching that actually swallows CancellationException ─
+  // The original rule flagged ANY runCatching, which produced a flood of false
+  // positives on pure-sync helpers (file I/O, MediaFormat getters, resource
+  // release in finally blocks). The real concern is a runCatching block that
+  // *contains a suspend call* — that's where CancellationException can be
+  // trapped. Narrow the rule to that case.
   if (ruleEnabled("bare-runcatching")) {
     val bareRunCatching = cpg.call
       .name("runCatching")
@@ -225,15 +230,40 @@
       .l
 
     for (call <- bareRunCatching) {
-      finding(
-        "bare-runcatching", "error",
-        "Use suspendRunCatching instead of runCatching to preserve structured concurrency (CancellationException)",
-        fileOf(call), lineOf(call), call.method.name,
-      )
+      // The lambda passed to runCatching is exposed either as a MethodRef to a
+      // synthetic lambda method (most common with Joern's Kotlin plugin) or,
+      // on older plugin versions, inlined as a Block. Collect calls from both.
+      val bodyCalls = (
+        call.argument.isMethodRef.referencedMethod.ast.isCall.l ++
+        call.argument.isBlock.ast.isCall.l
+      ).distinct
+
+      // In compiled Kotlin, suspend call sites have a Continuation parameter
+      // in their signature. That's the unambiguous marker of "this call can
+      // throw CancellationException".
+      val containsSuspendCall = bodyCalls.exists { c =>
+        val fn = c.methodFullName
+        fn.contains("kotlin.coroutines.Continuation") ||
+          fn.contains("kotlin/coroutines/Continuation")
+      }
+
+      if (containsSuspendCall) {
+        finding(
+          "bare-runcatching", "error",
+          "Use suspendRunCatching instead of runCatching to preserve structured concurrency (CancellationException)",
+          fileOf(call), lineOf(call), call.method.name,
+        )
+      }
     }
   }
 
   // ── Q7: Incomplete continuation handlers ────────────────────
+  // The original heuristic fell through to `cont.astParent` when the argument
+  // wasn't a Block — but for the common lambda form
+  // `suspendCancellableCoroutine { cont -> ... }` the argument is a MethodRef
+  // and astParent doesn't include the lambda body. Walk both forms, and also
+  // include nested object literals (Transformer.Listener etc.) whose methods
+  // carry the actual resume/resumeWithException calls.
   if (ruleEnabled("continuation-incomplete")) {
     val continuations = cpg.call
       .name("suspendCancellableCoroutine")
@@ -241,11 +271,25 @@
 
     for (cont <- continuations) {
       val method = cont.method
-      // Check within the continuation's lambda block, not the entire method
-      val contBlock = cont.argument.isBlock.headOption.getOrElse(cont.astParent)
-      val hasResume = contBlock.ast.isCall.name("resume").nonEmpty
-      val hasResumeWithException = contBlock.ast.isCall.name("resumeWithException").nonEmpty
-      val hasInvokeOnCancellation = contBlock.ast.isCall.name("invokeOnCancellation").nonEmpty
+
+      // Scope = the lambda body (preferred) OR the block argument (fallback).
+      // Start from the MethodRef-referenced lambda method's AST, then expand
+      // to include methods of any nested TypeDecl (anonymous-object listeners).
+      val lambdaAst: List[AstNode] =
+        cont.argument.isMethodRef.referencedMethod.ast.l ++
+          cont.argument.isBlock.ast.l
+      val nestedMethodAst: List[AstNode] =
+        lambdaAst.collect { case td: TypeDecl => td }.flatMap(_.method.ast.l)
+      // Final fallback: if the plugin flattens lambdas unexpectedly, scan the
+      // enclosing method's full AST (coarse, but prevents false positives).
+      val scope: List[AstNode] = (lambdaAst ++ nestedMethodAst) match {
+        case Nil => method.ast.l
+        case xs => xs
+      }
+      val scopeCalls = scope.collect { case c: Call => c }
+      val hasResume = scopeCalls.exists(_.name == "resume")
+      val hasResumeWithException = scopeCalls.exists(_.name == "resumeWithException")
+      val hasInvokeOnCancellation = scopeCalls.exists(_.name == "invokeOnCancellation")
 
       if (!hasResume || !hasResumeWithException || !hasInvokeOnCancellation) {
         val missing = List(
