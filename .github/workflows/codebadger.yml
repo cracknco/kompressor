@@ -38,11 +38,16 @@ jobs:
           path: joern-cli
           key: joern-cli-${{ steps.joern-version.outputs.version }}
 
+      # joern-install.sh with no `--version` flag defaults to downloading the "latest"
+      # release archive, ignoring which release tag the install-script itself came from.
+      # Pass `--version=` explicitly so the version pin is actually honoured.
       - name: Install Joern
         if: steps.joern-cache.outputs.cache-hit != 'true'
+        env:
+          JOERN_VERSION: ${{ steps.joern-version.outputs.version }}
         run: |
-          curl -fsSL "https://github.com/joernio/joern/releases/download/v${{ steps.joern-version.outputs.version }}/joern-install.sh" \
-            | bash -s -- --install-dir=.
+          curl -fsSL "https://github.com/joernio/joern/releases/download/v${JOERN_VERSION}/joern-install.sh" \
+            | bash -s -- --install-dir=. "--version=v${JOERN_VERSION}"
 
       - name: Add Joern to PATH
         run: echo "$PWD/joern-cli" >> "$GITHUB_PATH"
