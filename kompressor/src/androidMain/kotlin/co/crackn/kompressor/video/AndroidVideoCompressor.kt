@@ -8,6 +8,7 @@ import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.InAppMp4Muxer
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import co.crackn.kompressor.CompressionResult
@@ -109,6 +110,12 @@ internal class AndroidVideoCompressor : VideoCompressor {
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(encoderFactory)
+            // Drop Media3's default 400 KB `moov` pre-reservation so short clips don't end up
+            // dominated by `free`-box padding. See the matching helper in AndroidAudioCompressor
+            // (`buildTightMp4MuxerFactory`) for the full rationale. Without this, a 1 s 1280×720
+            // clip at 400 kbps and one at 2 Mbps both land around 400 KB, defeating any
+            // size-vs-bitrate assertion.
+            .setMuxerFactory(InAppMp4Muxer.Factory().setFreeSpaceAfterFileTypeBoxBytes(1))
             .build()
     }
 

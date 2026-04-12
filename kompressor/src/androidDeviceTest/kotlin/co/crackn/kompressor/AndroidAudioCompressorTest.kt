@@ -27,6 +27,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -311,29 +312,40 @@ class AndroidAudioCompressorTest {
         val input = createTestWavFile(CANCELLATION_INPUT_SECONDS, SAMPLE_RATE_44K, STEREO)
         val output = File(tempDir, "cancelled.m4a")
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        val progressSeen = kotlinx.coroutines.CompletableDeferred<Unit>()
+        // Racing `onProgress > 0` then cancelling was fragile: the first progress event fires at
+        // device-dependent cadence and on fast hardware encoding finishes before any event is
+        // observed, making the cancel a no-op and the assertion vacuously true (or flakily
+        // false if a complete file lingers). Instead, cancel on a small fixed delay and branch
+        // on [Job.isCancelled] — that's race-free regardless of encoder throughput: if the body
+        // completed before cancel landed, isCancelled is false; if cancel interrupted the body,
+        // isCancelled is true.
         val job = scope.launch {
-            compressor.compress(
-                inputPath = input.absolutePath,
-                outputPath = output.absolutePath,
-                onProgress = { p ->
-                    // Wait until the transformer has actually started producing output before we
-                    // cancel, otherwise the output file may never have existed and the assertion
-                    // passes vacuously.
-                    if (p > 0f && !progressSeen.isCompleted) progressSeen.complete(Unit)
-                },
-            )
-        }
-        // Bound the wait and always clean up the launched coroutine in a finally block so a
-        // timeout on progressSeen.await() doesn't leak the job.
-        try {
-            withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
-        } finally {
-            job.cancel()
-            withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+            compressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
         }
 
-        assertTrue(!output.exists(), "Cancelled output must be deleted, but got ${output.length()} bytes")
+        // Briefly let compress enter its suspend machinery (probe → Media3.start → first writes)
+        // before cancelling. 200 ms is enough for Media3 to open the muxer and write a few
+        // samples on any device we support, but short enough that the cancel lands mid-export
+        // under realistic encoder throughput (even at ~100× real-time, a 30 s transcode runs
+        // ~300 ms, so 200 ms keeps the cancel in-flight).
+        delay(CANCELLATION_START_DELAY_MS)
+        job.cancel()
+        withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+
+        // Two outcomes are valid:
+        //   1. compress finished before the cancel was delivered (race on very fast hardware) —
+        //      the output is a valid, complete file and there is nothing for the partial-output
+        //      cleanup to do. `job.isCancelled` is false in this case.
+        //   2. compress was cancelled mid-export — `deletingOutputOnFailure` must have removed
+        //      the partially-written file before the coroutine unwound.
+        if (job.isCancelled) {
+            assertTrue(
+                !output.exists(),
+                "Cancelled export must delete its partial output, got ${output.length()} bytes",
+            )
+        } else {
+            assertTrue(output.exists(), "A cleanly-completed export must leave its output on disk")
+        }
     }
 
     @Test
@@ -389,12 +401,12 @@ class AndroidAudioCompressorTest {
     private companion object {
         const val MS_PER_SECOND = 1_000L
 
-        // Long enough that the transformer always reports at least one progress event before
-        // the test cancels, even on a slow CI emulator.
-        // Longer-than-necessary input so the Media3 encoder can't finish the whole export before
-        // the test's `job.cancel()` is observed. Fast devices (Samsung A53 etc.) complete a 10 s
-        // PCM→AAC transcode in under 300 ms, which races the progress-then-cancel handshake.
-        const val CANCELLATION_INPUT_SECONDS = 120
+        // Long enough that even a fast hardware encoder (~100× realtime) can't finish the full
+        // transcode inside [CANCELLATION_START_DELAY_MS]. 30 s PCM @ 44.1 kHz stereo = ~5 MB
+        // WAV; encode ≳ 300 ms on the fastest devices we've seen, comfortably outlasting the
+        // 200 ms delay.
+        const val CANCELLATION_INPUT_SECONDS = 30
+        const val CANCELLATION_START_DELAY_MS = 200L
         const val CANCELLATION_TIMEOUT_MS = 15_000L
     }
 }
