@@ -111,7 +111,7 @@ jobs:
   # FTL free tier covers ~1 physical device-hour/day. Our suite runs in
   # ~5-7 min, so ~8-12 PRs/day are free; overage is ~$1/device-hour.
   android-device-tests-ftl:
-    name: Android device tests (Firebase Test Lab)
+    name: Android device tests (Firebase Test Lab — Pixel 6 API 33)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -160,7 +160,11 @@ jobs:
       # leading to `403 storage.objects.create denied` on upload. An explicit
       # bucket with `storage.objectAdmin` granted to the admin-SDK SA sidesteps
       # that entirely.
-      - name: Run on Firebase Test Lab (Pixel 5 API 33)
+      # Device choice: `oriole` (Pixel 6) because `redfin` (Pixel 5) is not available
+      # at API 33 on FTL — the model/version matrix only supports redfin up to API 31.
+      # Pixel 6 @ API 33 is a solid modern representative that exercises the real
+      # MediaCodec stack Kompressor consumers will hit.
+      - name: Run on Firebase Test Lab (Pixel 6 API 33)
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
@@ -169,7 +173,7 @@ jobs:
             --project kompressor-library \
             --app "${{ steps.apk.outputs.path }}" \
             --test "${{ steps.apk.outputs.path }}" \
-            --device model=redfin,version=33,locale=en,orientation=portrait \
+            --device model=oriole,version=33,locale=en,orientation=portrait \
             --timeout 15m \
             --no-record-video \
             --no-performance-metrics \
