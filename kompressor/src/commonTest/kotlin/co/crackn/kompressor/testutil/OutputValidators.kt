@@ -30,15 +30,16 @@ object OutputValidators {
     }
 
     /**
-     * MP4 container: scan for `ftyp` box plus a `moov` or `mdat` box to confirm
-     * the file is a plausible MP4 video container (not just an audio-only M4A).
+     * MP4 container: scan for `ftyp` + `moov` boxes plus a `vide` handler marker
+     * to confirm the file is a plausible MP4 video container (not just audio-only).
      */
     fun isValidMp4(bytes: ByteArray): Boolean {
         if (bytes.size < MIN_MP4_SIZE) return false
         val hasFtyp = scanForBox(bytes, 'f', 't', 'y', 'p')
-        val hasMoovOrMdat = scanForBox(bytes, 'm', 'o', 'o', 'v') ||
-            scanForBox(bytes, 'm', 'd', 'a', 't')
-        return hasFtyp && hasMoovOrMdat
+        val hasMoov = scanForBox(bytes, 'm', 'o', 'o', 'v')
+        // 'vide' is the video handler type written in trak/mdia/hdlr boxes
+        val hasVideoHandler = scanForBox(bytes, 'v', 'i', 'd', 'e')
+        return hasFtyp && hasMoov && hasVideoHandler
     }
 
     private fun scanForBox(bytes: ByteArray, c0: Char, c1: Char, c2: Char, c3: Char): Boolean {

@@ -6,7 +6,8 @@ import kotlin.math.roundToInt
  * Computes target video dimensions from a [MaxResolution] constraint.
  *
  * Rules:
- * - [MaxResolution.Original] preserves the source resolution unchanged.
+ * - [MaxResolution.Original] preserves source scale (no upscaling) but still rounds
+ *   odd width/height up to the nearest even number (required by H.264).
  * - [MaxResolution.Custom] scales proportionally so the shortest edge matches
  *   [MaxResolution.Custom.maxShortEdge], unless the source is already smaller
  *   (no upscaling).
@@ -34,14 +35,21 @@ internal object ResolutionCalculator {
     private fun scaleToFit(sourceWidth: Int, sourceHeight: Int, maxShortEdge: Int): Pair<Int, Int> {
         val shortEdge = minOf(sourceWidth, sourceHeight)
         if (shortEdge <= maxShortEdge) {
-            return roundToEven(sourceWidth) to roundToEven(sourceHeight)
+            return roundDownToEven(sourceWidth) to roundDownToEven(sourceHeight)
         }
         val scale = maxShortEdge.toFloat() / shortEdge
-        val targetWidth = roundToEven((sourceWidth * scale).roundToInt())
-        val targetHeight = roundToEven((sourceHeight * scale).roundToInt())
+        val targetWidth = roundDownToEven((sourceWidth * scale).roundToInt())
+        val targetHeight = roundDownToEven((sourceHeight * scale).roundToInt())
         return targetWidth to targetHeight
     }
 
     private fun roundToEven(value: Int): Int =
         if (value % 2 == 0) value else value + 1
+
+    private fun roundDownToEven(value: Int): Int =
+        when {
+            value <= 2 -> 2
+            value % 2 == 0 -> value
+            else -> value - 1
+        }
 }

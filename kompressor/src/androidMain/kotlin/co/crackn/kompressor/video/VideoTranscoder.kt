@@ -11,6 +11,7 @@ import co.crackn.kompressor.PROGRESS_SETUP
 import co.crackn.kompressor.REMUX_BUFFER_SIZE
 import co.crackn.kompressor.reportMediaCodecProgress
 import co.crackn.kompressor.safeRelease
+import co.crackn.kompressor.safeInt
 import co.crackn.kompressor.safeLong
 import co.crackn.kompressor.safeStopAndRelease
 import java.nio.ByteBuffer
@@ -42,12 +43,13 @@ internal class VideoTranscoder(
             val audioFormat = if (audioIdx >= 0) extractor.getTrackFormat(audioIdx) else null
             val totalDurationUs = videoFormat.safeLong(MediaFormat.KEY_DURATION)
             val (targetW, targetH) = calculateTargetDimensions(videoFormat)
+            val rotationDegrees = videoFormat.safeInt(MediaFormat.KEY_ROTATION)
 
             onProgress(PROGRESS_SETUP)
             currentCoroutineContext().ensureActive()
 
             transcodeWithResources(
-                extractor, videoIdx, audioFormat, targetW, targetH, totalDurationUs, onProgress,
+                extractor, videoIdx, audioFormat, targetW, targetH, totalDurationUs, rotationDegrees, onProgress,
             )
         } finally {
             extractor.release()
@@ -62,6 +64,7 @@ internal class VideoTranscoder(
         targetW: Int,
         targetH: Int,
         totalDurationUs: Long,
+        rotationDegrees: Int,
         onProgress: suspend (Float) -> Unit,
     ) {
         val encoderFormat = buildEncoderFormat(targetW, targetH)
@@ -73,7 +76,7 @@ internal class VideoTranscoder(
                 encoder.start()
                 transcodeWithCodecs(
                     extractor, encoder, inputSurface, videoIdx,
-                    audioFormat, totalDurationUs, onProgress,
+                    audioFormat, totalDurationUs, rotationDegrees, onProgress,
                 )
             } finally {
                 inputSurface.release()
@@ -91,6 +94,7 @@ internal class VideoTranscoder(
         videoIdx: Int,
         audioFormat: MediaFormat?,
         totalDurationUs: Long,
+        rotationDegrees: Int,
         onProgress: suspend (Float) -> Unit,
     ) {
         val decoder = createDecoder(extractor.getTrackFormat(videoIdx), inputSurface)
@@ -99,7 +103,7 @@ internal class VideoTranscoder(
             try {
                 runPipeline(
                     extractor, decoder, encoder, muxer,
-                    videoIdx, audioFormat, totalDurationUs, onProgress,
+                    videoIdx, audioFormat, totalDurationUs, rotationDegrees, onProgress,
                 )
             } finally {
                 muxer.safeStopAndRelease()
@@ -118,10 +122,11 @@ internal class VideoTranscoder(
         videoIdx: Int,
         audioFormat: MediaFormat?,
         totalDurationUs: Long,
+        rotationDegrees: Int,
         onProgress: suspend (Float) -> Unit,
     ) {
         extractor.selectTrack(videoIdx)
-        val loop = VideoTranscodeLoop(extractor, decoder, encoder, muxer, audioFormat)
+        val loop = VideoTranscodeLoop(extractor, decoder, encoder, muxer, audioFormat, rotationDegrees)
         loop.run(totalDurationUs, onProgress)
 
         // Second pass: remux audio track from the original file
@@ -195,6 +200,7 @@ private class VideoTranscodeLoop(
     private val encoder: MediaCodec,
     private val muxer: MediaMuxer,
     audioFormat: MediaFormat?,
+    private val rotationDegrees: Int = 0,
 ) {
     private val decoderInfo = MediaCodec.BufferInfo()
     private val encoderInfo = MediaCodec.BufferInfo()
@@ -276,7 +282,13 @@ private class VideoTranscodeLoop(
 
     private fun startMuxer() {
         muxerVideoTrack = muxer.addTrack(encoder.outputFormat)
-        pendingAudioFormat?.let { muxerAudioTrack = muxer.addTrack(it) }
+        pendingAudioFormat?.let { fmt ->
+            val mime = fmt.getString(MediaFormat.KEY_MIME) ?: ""
+            if (mime in MP4_SUPPORTED_AUDIO_MIMES) {
+                muxerAudioTrack = muxer.addTrack(fmt)
+            }
+        }
+        if (rotationDegrees != 0) muxer.setOrientationHint(rotationDegrees)
         muxer.start()
         muxerStarted = true
     }
@@ -296,3 +308,4 @@ private const val H264_MIME = "video/avc"
 private const val VIDEO_PREFIX = "video/"
 private const val AUDIO_PREFIX = "audio/"
 private const val MAX_IDLE_DRAINS = 1_000
+private val MP4_SUPPORTED_AUDIO_MIMES = setOf("audio/mp4a-latm", "audio/3gpp/amr-nb", "audio/3gpp/amr-wb")

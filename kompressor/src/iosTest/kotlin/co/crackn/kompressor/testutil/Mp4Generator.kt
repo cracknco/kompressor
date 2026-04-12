@@ -27,6 +27,7 @@ import platform.CoreVideo.CVPixelBufferRef
 import platform.CoreVideo.CVPixelBufferRelease
 import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
 import platform.CoreVideo.kCVPixelFormatType_32ARGB
+import co.crackn.kompressor.checkWriterCompleted
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.posix.memset
@@ -50,6 +51,12 @@ object Mp4Generator {
         frameCount: Int = DEFAULT_FRAME_COUNT,
         fps: Int = DEFAULT_FPS,
     ): String {
+        require(outputPath.isNotBlank()) { "outputPath must not be blank" }
+        require(width > 0) { "width must be > 0" }
+        require(height > 0) { "height must be > 0" }
+        require(frameCount >= 0) { "frameCount must be >= 0" }
+        require(fps > 0) { "fps must be > 0" }
+
         NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
 
         val url = NSURL.fileURLWithPath(outputPath)
@@ -76,8 +83,13 @@ object Mp4Generator {
         writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = fps))
 
         for (frame in 0 until frameCount) {
+            var waited = 0.0
             while (!input.readyForMoreMediaData) {
+                check(waited < MAX_READY_WAIT_SEC) {
+                    "Timed out waiting for readyForMoreMediaData: ${writer.error}"
+                }
                 platform.Foundation.NSThread.sleepForTimeInterval(READY_POLL_SEC)
+                waited += READY_POLL_SEC
             }
             val pixelBuffer = createGreyPixelBuffer(width, height)
                 ?: error("CVPixelBufferCreate failed for ${width}x$height")
@@ -93,6 +105,7 @@ object Mp4Generator {
 
         input.markAsFinished()
         writer.finishWriting()
+        checkWriterCompleted(writer)
 
         return outputPath
     }
@@ -128,4 +141,5 @@ object Mp4Generator {
     private const val DEFAULT_FPS = 30
     private const val GREY_VALUE = 128
     private const val READY_POLL_SEC = 0.01
+    private const val MAX_READY_WAIT_SEC = 5.0
 }

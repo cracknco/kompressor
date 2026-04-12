@@ -27,6 +27,11 @@ object Mp4Generator {
         frameCount: Int = DEFAULT_FRAME_COUNT,
         fps: Int = DEFAULT_FPS,
     ): File {
+        require(width > 0) { "width must be > 0" }
+        require(height > 0) { "height must be > 0" }
+        require(frameCount >= 0) { "frameCount must be >= 0" }
+        require(fps > 0) { "fps must be > 0" }
+
         val format = MediaFormat.createVideoFormat(H264_MIME, width, height).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
@@ -76,9 +81,10 @@ object Mp4Generator {
                     val inputBuf = encoder.getInputBuffer(inputIdx) ?: error("No input buffer")
                     if (framesSubmitted < frameCount) {
                         inputBuf.clear()
-                        inputBuf.put(yuvData, 0, minOf(yuvData.size, inputBuf.capacity()))
+                        val bytesToQueue = minOf(yuvData.size, inputBuf.capacity())
+                        inputBuf.put(yuvData, 0, bytesToQueue)
                         val pts = framesSubmitted.toLong() * US_PER_SEC / fps
-                        encoder.queueInputBuffer(inputIdx, 0, yuvSize, pts, 0)
+                        encoder.queueInputBuffer(inputIdx, 0, bytesToQueue, pts, 0)
                     } else {
                         encoder.queueInputBuffer(
                             inputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM,
