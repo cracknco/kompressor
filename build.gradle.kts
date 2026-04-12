@@ -33,6 +33,8 @@ kover {
                     "co.crackn.kompressor.Media3ExportRunnerKt",
                     "co.crackn.kompressor.Media3ExportRunnerKt\$*",
                     "co.crackn.kompressor.audio.InputAudioFormat",
+                    "co.crackn.kompressor.audio.AudioProcessorPlan",
+                    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.AndroidKompressorKt",
                     "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",

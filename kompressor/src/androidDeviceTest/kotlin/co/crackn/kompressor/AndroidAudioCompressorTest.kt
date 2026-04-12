@@ -324,11 +324,14 @@ class AndroidAudioCompressorTest {
                 },
             )
         }
-        // Bound the wait: if the transformer never emits progress (e.g. export fails before the
-        // first callback), fail the test instead of blocking CI indefinitely.
-        withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
-        job.cancel()
-        withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+        // Bound the wait and always clean up the launched coroutine in a finally block so a
+        // timeout on progressSeen.await() doesn't leak the job.
+        try {
+            withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
+        } finally {
+            job.cancel()
+            withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
+        }
 
         assertTrue(!output.exists(), "Cancelled output must be deleted, but got ${output.length()} bytes")
     }
