@@ -97,7 +97,7 @@ internal class AndroidAudioCompressor : AudioCompressor {
                     probe?.mime == MimeTypes.AUDIO_AAC &&
                     probe.bitrate.qualifiesForPassthrough(config.bitrate)
                 val transformer = buildTransformer(context, config, canPassthrough)
-                val item = buildEditedMediaItem(inputPath, plan)
+                val item = buildEditedMediaItem(inputPath, plan, canPassthrough)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -125,11 +125,23 @@ internal class AndroidAudioCompressor : AudioCompressor {
     private fun buildEditedMediaItem(
         inputPath: String,
         plan: AudioProcessorPlan,
-    ): EditedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
-        // Ignore any video track if the input is e.g. an MP4 with both video and audio.
-        .setRemoveVideo(true)
-        .setEffects(Effects(plan.toProcessors(), emptyList()))
-        .build()
+        canPassthrough: Boolean,
+    ): EditedMediaItem {
+        // When we explicitly want re-encoding (not passthrough) but the plan is empty — i.e.
+        // source sample-rate/channels already match the target — Media3 would otherwise bitstream-
+        // copy the input track (including PCM WAV → MP4 unchanged), ignoring our encoder factory
+        // and requested bitrate. Inserting an always-active no-op processor forces the audio
+        // pipeline and our [setEncoderFactory] call to actually run. See
+        // [ForceTranscodeAudioProcessor] for the full rationale.
+        val processors = plan.toProcessors().ifEmpty {
+            if (canPassthrough) emptyList() else listOf(ForceTranscodeAudioProcessor())
+        }
+        return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
+            // Ignore any video track if the input is e.g. an MP4 with both video and audio.
+            .setRemoveVideo(true)
+            .setEffects(Effects(processors, emptyList()))
+            .build()
+    }
 
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
