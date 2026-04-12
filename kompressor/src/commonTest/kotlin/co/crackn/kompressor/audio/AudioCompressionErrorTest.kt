@@ -17,19 +17,34 @@ class AudioCompressionErrorTest {
     }
 
     @Test
+    fun unsupportedConfigurationCarriesDetailsAndCause() {
+        val cause = RuntimeException("cannot upmix")
+        val error = AudioCompressionError.UnsupportedConfiguration(
+            "iOS cannot upmix a 1-channel source into 2-channel output",
+            cause,
+        )
+        error.details shouldBe "iOS cannot upmix a 1-channel source into 2-channel output"
+        error.cause shouldBe cause
+        checkNotNull(error.message) shouldContain "Unsupported configuration"
+        checkNotNull(error.message) shouldContain "upmix"
+    }
+
+    @Test
     fun subtypesAreDistinguishableViaWhen() {
         val errors = listOf(
             AudioCompressionError.UnsupportedSourceFormat("a"),
             AudioCompressionError.DecodingFailed("b"),
             AudioCompressionError.EncodingFailed("c"),
             AudioCompressionError.IoFailed("d"),
-            AudioCompressionError.Unknown("e"),
+            AudioCompressionError.UnsupportedConfiguration("e"),
+            AudioCompressionError.Unknown("f"),
         )
         errors[0].shouldBeInstanceOf<AudioCompressionError.UnsupportedSourceFormat>()
         errors[1].shouldBeInstanceOf<AudioCompressionError.DecodingFailed>()
         errors[2].shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
         errors[3].shouldBeInstanceOf<AudioCompressionError.IoFailed>()
-        errors[4].shouldBeInstanceOf<AudioCompressionError.Unknown>()
+        errors[4].shouldBeInstanceOf<AudioCompressionError.UnsupportedConfiguration>()
+        errors[5].shouldBeInstanceOf<AudioCompressionError.Unknown>()
     }
 
     @Test
@@ -38,6 +53,7 @@ class AudioCompressionErrorTest {
         checkNotNull(AudioCompressionError.DecodingFailed("x").message) shouldContain "Decoding"
         checkNotNull(AudioCompressionError.EncodingFailed("x").message) shouldContain "Encoding"
         checkNotNull(AudioCompressionError.IoFailed("x").message) shouldContain "IO"
+        checkNotNull(AudioCompressionError.UnsupportedConfiguration("x").message) shouldContain "Unsupported configuration"
         checkNotNull(AudioCompressionError.Unknown("x").message) shouldContain "Compression failed"
     }
 }

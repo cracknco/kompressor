@@ -61,11 +61,11 @@ internal class IosAudioCompressor : AudioCompressor {
         onProgress(0f)
         val inputSize = nsFileSize(inputPath)
 
-        // Upfront configuration check. iOS's AVAssetReader/AVAssetWriter pipeline does not
-        // upmix a mono source into a stereo output — it silently drops the second channel
-        // request and writes mono, violating the caller's config. Rather than surprising
-        // callers, fail fast with a typed error they can `when`-branch on.
+        // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
+        // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
+        // sample buffer` from deep in the pipeline.
         validateChannelConfiguration(inputPath, config)
+        validateBitrateForSampleRateAndChannels(config)
 
         if (canUseExportSession(config)) {
             IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
@@ -104,6 +104,41 @@ internal class IosAudioCompressor : AudioCompressor {
         }
     }
 
+    /**
+     * iOS's AAC-LC encoder (`AudioToolbox`'s `AACEncoder`, wired through `AVAssetWriterInput`)
+     * rejects bitrates above a per-sample-rate / per-channel ceiling. Crossing the ceiling
+     * surfaces as an opaque `AVAssetWriterInput.appendSampleBuffer` failure mid-export. Rather
+     * than let callers chase that, we reject the configuration upfront with a typed
+     * [AudioCompressionError.UnsupportedConfiguration].
+     *
+     * The per-channel caps below were determined empirically by binary-searching the property
+     * test (see `AudioCompressionPropertyTest`). The table mirrors Apple's published AAC-LC
+     * ranges in the AudioToolbox documentation:
+     *
+     * | sample rate     | max kbps / channel |
+     * |-----------------|-------------------:|
+     * | ≤ 24 kHz        |                 64 |
+     * | ≤ 32 kHz        |                 96 |
+     * | ≤ 44.1 kHz      |                160 |
+     * | > 44.1 kHz      |                192 |
+     */
+    private fun validateBitrateForSampleRateAndChannels(config: AudioCompressionConfig) {
+        val maxPerChannel = when {
+            config.sampleRate <= AAC_LOW_RATE_HZ -> AAC_MAX_KBPS_LOW_RATE
+            config.sampleRate <= AAC_MID_RATE_HZ -> AAC_MAX_KBPS_MID_RATE
+            config.sampleRate <= AAC_HIGH_RATE_HZ -> AAC_MAX_KBPS_HIGH_RATE
+            else -> AAC_MAX_KBPS_VERY_HIGH_RATE
+        }
+        val maxBitrate = maxPerChannel * KBPS_TO_BPS * config.channels.count
+        if (config.bitrate > maxBitrate) {
+            throw AudioCompressionError.UnsupportedConfiguration(
+                "iOS AAC encoder does not support ${config.bitrate} bps at " +
+                    "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
+                    "max supported is $maxBitrate bps",
+            )
+        }
+    }
+
     // AVAssetExportSession uses Apple's internal preset quality — it does NOT honour
     // the exact bitrate/sampleRate/channels from AudioCompressionConfig. We only use it
     // when the caller passes the default config (no custom expectations to violate).
@@ -112,6 +147,14 @@ internal class IosAudioCompressor : AudioCompressor {
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
+        const val KBPS_TO_BPS = 1_000
+        const val AAC_LOW_RATE_HZ = 24_000
+        const val AAC_MID_RATE_HZ = 32_000
+        const val AAC_HIGH_RATE_HZ = 44_100
+        const val AAC_MAX_KBPS_LOW_RATE = 64
+        const val AAC_MAX_KBPS_MID_RATE = 96
+        const val AAC_MAX_KBPS_HIGH_RATE = 160
+        const val AAC_MAX_KBPS_VERY_HIGH_RATE = 192
     }
 }
 
