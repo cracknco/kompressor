@@ -55,12 +55,6 @@ private fun probeIosSource(inputPath: String): SourceMediaInfo {
     val (width, height) = videoTrack?.naturalSize?.useContents { width.toInt() to height.toInt() }
         ?: (null to null)
     val durationMs = (CMTimeGetSeconds(asset.duration) * MILLIS_PER_SEC).toLong().takeIf { it > 0 }
-    // We leave videoCodec/audioCodec null on iOS: we can't reliably extract the
-    // exact codec MIME from AVAssetTrack without a cinterop binding for
-    // CMFormatDescriptionGetMediaSubType. Passing null here makes canCompress
-    // skip the per-codec decoder check (AVFoundation on iOS 15+ decodes all the
-    // formats we care about: H.264, HEVC Main, HEVC Main 10, AAC, Opus) rather
-    // than returning a false-negative "Unsupported" verdict.
     // We leave codec MIMEs null on iOS (no stable K/N cinterop for
     // CMFormatDescriptionGetMediaSubType), which makes canCompress skip
     // per-codec checks. AVFoundation itself is the ultimate gate — the real

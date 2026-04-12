@@ -347,8 +347,13 @@ private class IosVideoExportPipeline(
 
         coroutineScope {
             val progressJob = launch {
+                var lastReported = 0f
                 while (isActive) {
-                    onProgress(session.progress)
+                    val progress = session.progress
+                    if (progress - lastReported >= PROGRESS_REPORT_THRESHOLD) {
+                        onProgress(progress)
+                        lastReported = progress
+                    }
                     delay(PROGRESS_POLL_INTERVAL_MS)
                 }
             }
@@ -362,5 +367,6 @@ private class IosVideoExportPipeline(
 
     private companion object {
         const val PROGRESS_POLL_INTERVAL_MS = 100L
+        const val PROGRESS_REPORT_THRESHOLD = 0.01f
     }
 }

@@ -32,7 +32,8 @@ class CapabilitiesViewModel(
     val state: StateFlow<CapabilitiesState> = _state.asStateFlow()
 
     init {
-        viewModelScope.launch(Dispatchers.Default) {
+        // queryDeviceCapabilities does binder IPC / file reads on Android — use IO, not Default.
+        viewModelScope.launch(Dispatchers.IO) {
             val caps = queryDeviceCapabilities()
             _state.update {
                 it.copy(
@@ -58,7 +59,12 @@ class CapabilitiesViewModel(
             )
         }
         viewModelScope.launch(Dispatchers.IO) {
-            val cached = createCachedCopy(file)
+            val cached = runCatching { createCachedCopy(file) }.getOrElse { err ->
+                _state.update {
+                    it.copy(probeError = err.message ?: "Could not open file", isProbing = false)
+                }
+                return@launch
+            }
             try {
                 kompressor.probe(cached.path).fold(
                     onSuccess = { info ->

@@ -68,13 +68,23 @@ internal fun classifyExportErrorCode(
     else -> when (errorCode / THOUSAND) {
         IO_BAND -> VideoCompressionError.IoFailed(detail, cause)
         DECODING_BAND -> VideoCompressionError.DecodingFailed(detail, cause)
-        ENCODING_BAND, MUXING_BAND -> VideoCompressionError.EncodingFailed(detail, cause)
+        ENCODING_BAND,
+        VIDEO_FRAME_PROCESSING_BAND,
+        AUDIO_PROCESSING_BAND,
+        MUXING_BAND,
+        -> VideoCompressionError.EncodingFailed(detail, cause)
         else -> VideoCompressionError.Unknown(detail, cause)
     }
 }
 
+// Error-code bands defined in androidx.media3.common.PlaybackException /
+// androidx.media3.transformer.ExportException: 1xxx misc, 2xxx IO, 3xxx
+// decoding, 4xxx encoding, 5xxx video frame processing, 6xxx audio
+// processing, 7xxx muxing.
 private const val THOUSAND = 1000
-private const val IO_BAND = 1
+private const val IO_BAND = 2
 private const val DECODING_BAND = 3
 private const val ENCODING_BAND = 4
-private const val MUXING_BAND = 5
+private const val VIDEO_FRAME_PROCESSING_BAND = 5
+private const val AUDIO_PROCESSING_BAND = 6
+private const val MUXING_BAND = 7

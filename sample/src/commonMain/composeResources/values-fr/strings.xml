@@ -12,6 +12,7 @@
     <string name="select_image_description">Choisissez une image de votre galerie à compresser</string>
     <string name="compress">Compresser</string>
     <string name="try_another">Essayer une autre</string>
+    <string name="ok">OK</string>
     <string name="compressing">Compression…</string>
     <string name="compressing_percent">%1$s</string>
 

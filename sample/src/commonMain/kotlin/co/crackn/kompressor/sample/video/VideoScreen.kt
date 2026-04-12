@@ -24,6 +24,7 @@ import kompressor.sample.generated.resources.error_video_decoding_failed
 import kompressor.sample.generated.resources.error_video_encoding_failed
 import kompressor.sample.generated.resources.error_video_io_failed
 import kompressor.sample.generated.resources.error_video_unsupported_format
+import kompressor.sample.generated.resources.ok
 import kompressor.sample.generated.resources.try_another
 import org.jetbrains.compose.resources.stringResource
 
@@ -52,7 +53,7 @@ fun VideoScreen(
             title = { Text(errorTitle) },
             text = { Text(localized) },
             confirmButton = {
-                TextButton(onClick = viewModel::clearError) { Text("OK") }
+                TextButton(onClick = viewModel::clearError) { Text(stringResource(Res.string.ok)) }
             },
         )
     }

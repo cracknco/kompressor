@@ -63,7 +63,13 @@ internal class AndroidVideoCompressor : VideoCompressor {
         onProgress(0f)
         val inputSize = File(inputPath).length()
 
-        runTransformer(inputPath, outputPath, config, onProgress)
+        try {
+            runTransformer(inputPath, outputPath, config, onProgress)
+        } catch (t: Throwable) {
+            // Partial output from a cancelled or failed export must not leak to the caller.
+            runCatching { File(outputPath).delete() }
+            throw t
+        }
 
         onProgress(1f)
         val outputSize = File(outputPath).length()
@@ -76,14 +82,18 @@ internal class AndroidVideoCompressor : VideoCompressor {
         outputPath: String,
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
-    ) = withContext(Dispatchers.Main) {
-        val context = KompressorContext.appContext
-        val transformer = buildTransformer(context, config)
-        val item = buildEditedMediaItem(inputPath, config.maxResolution)
+    ) {
         try {
-            awaitExport(transformer, item, outputPath, onProgress)
+            withContext(Dispatchers.Main) {
+                val context = KompressorContext.appContext
+                val transformer = buildTransformer(context, config)
+                val item = buildEditedMediaItem(inputPath, config.maxResolution)
+                awaitExport(transformer, item, outputPath, onProgress)
+            }
         } catch (e: ExportException) {
-            throw e.toVideoCompressionError(describeSource(inputPath))
+            // describeSource does blocking I/O via MediaMetadataRetriever — keep it off Main.
+            val description = withContext(Dispatchers.IO) { describeSource(inputPath) }
+            throw e.toVideoCompressionError(description)
         }
     }
 
@@ -181,9 +191,9 @@ private suspend fun awaitExport(
     val progressJob = launchProgressPoller(transformer, onProgress)
     try {
         suspendCancellableCoroutine<Unit> { continuation ->
-            continuation.invokeOnCancellation { transformer.cancel() }
-            transformer.addListener(object : Transformer.Listener {
+            val listener = object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
+                    transformer.removeListener(this)
                     continuation.resume(Unit)
                 }
 
@@ -192,9 +202,15 @@ private suspend fun awaitExport(
                     result: ExportResult,
                     exception: ExportException,
                 ) {
+                    transformer.removeListener(this)
                     continuation.resumeWithException(exception)
                 }
-            })
+            }
+            continuation.invokeOnCancellation {
+                transformer.removeListener(listener)
+                transformer.cancel()
+            }
+            transformer.addListener(listener)
             transformer.start(item, outputPath)
         }
     } finally {

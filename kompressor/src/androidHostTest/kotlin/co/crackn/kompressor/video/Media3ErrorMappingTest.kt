@@ -43,15 +43,22 @@ class Media3ErrorMappingTest {
     }
 
     @Test
-    fun `Unknown 2xxx error falls through to Unknown`() {
-        classifyExportErrorCode(2001, "d", null)
+    fun `Misc 1xxx error falls through to Unknown`() {
+        classifyExportErrorCode(1999, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.Unknown>()
     }
 
     @Test
-    fun `IO 1xxx band maps to IoFailed via fallback`() {
-        // Even if the specific constant isn't in our list, the 1xxx band still classifies as IO.
-        classifyExportErrorCode(1999, "d", null)
+    fun `IO 2xxx band maps to IoFailed via fallback`() {
+        // ERROR_CODE_IO_FILE_NOT_FOUND (2005) etc — the 2xxx band classifies as IO.
+        classifyExportErrorCode(2005, "d", null)
             .shouldBeInstanceOf<VideoCompressionError.IoFailed>()
+    }
+
+    @Test
+    fun `Muxing 7xxx band maps to EncodingFailed via fallback`() {
+        // ERROR_CODE_MUXING_TIMEOUT (7002) — the 7xxx band classifies as encoding.
+        classifyExportErrorCode(7002, "d", null)
+            .shouldBeInstanceOf<VideoCompressionError.EncodingFailed>()
     }
 }
