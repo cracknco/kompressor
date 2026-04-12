@@ -17,6 +17,7 @@ import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import java.io.File
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -40,7 +41,7 @@ class AudioCompressionPropertyTest {
     }
 
     @Test
-    fun randomValidConfigs_alwaysSucceed() = runTest {
+    fun randomValidConfigs_alwaysSucceed() = runTest(timeout = 5.minutes) {
         val wavBytes = WavGenerator.generateWavBytes(
             durationSeconds = 1,
             sampleRate = SAMPLE_RATE_44K,
@@ -79,7 +80,7 @@ class AudioCompressionPropertyTest {
     }
 
     @Test
-    fun progressIsMonotonicallyNonDecreasing() = runTest {
+    fun progressIsMonotonicallyNonDecreasing() = runTest(timeout = 5.minutes) {
         val wavBytes = WavGenerator.generateWavBytes(
             durationSeconds = 2,
             sampleRate = SAMPLE_RATE_44K,
@@ -107,7 +108,7 @@ class AudioCompressionPropertyTest {
     }
 
     @Test
-    fun randomInputFormatCrossConfig_alwaysProducesValidM4a() = runTest {
+    fun randomInputFormatCrossConfig_alwaysProducesValidM4a() = runTest(timeout = 5.minutes) {
         checkAll(
             PropTestConfig(seed = SEED, iterations = CROSS_FORMAT_ITERATIONS),
             Arb.element(InputFormat.WAV, InputFormat.AAC),

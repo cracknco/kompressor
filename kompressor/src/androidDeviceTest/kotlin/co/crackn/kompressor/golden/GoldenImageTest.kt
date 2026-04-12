@@ -43,9 +43,10 @@ class GoldenImageTest {
         val result = compressor.compress(input.absolutePath, output.absolutePath)
 
         assertTrue(result.isSuccess)
-        val compression = result.getOrThrow()
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
-        assertTrue(compression.outputSize < compression.inputSize, "JPEG should compress PNG input")
+        // NOTE: we don't assert "JPEG < PNG" here — PNG of a flat-colour synthetic fixture
+        // (two solid rectangles) compresses via RLE + palette to a few hundred bytes, which
+        // JPEG cannot match. Valid format + preserved dimensions are the useful invariants.
 
         // Verify dimensions unchanged (no resize config)
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
