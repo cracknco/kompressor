@@ -43,8 +43,12 @@ internal class AndroidVideoCompressor : VideoCompressor {
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = "video/")
     }
 
+    // This implementation always emits H.264 (see [buildTransformer] hard-coding
+    // `MimeTypes.VIDEO_H264`). Intersect with the device's advertised encoders so we don't
+    // promise HEVC / VP9 / AV1 outputs this compressor can't actually produce.
     override val supportedOutputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = "video/")
+            .intersect(setOf(MimeTypes.VIDEO_H264))
     }
 
     override suspend fun compress(

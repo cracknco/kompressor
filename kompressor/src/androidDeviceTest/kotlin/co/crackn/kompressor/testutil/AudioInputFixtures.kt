@@ -99,8 +99,11 @@ object AudioInputFixtures {
 
         var srcOffset = 0
         val bytesPerFrame = channels * BYTES_PER_SAMPLE
-        val usPerFrame = 1_000_000L / sampleRate
-        var framesWritten = 0L
+        // PTS tracked via fractional accumulation: ptsUs += (frames * 1_000_000) / sampleRate,
+        // with the integer-division remainder carried forward so 44.1 kHz doesn't drift
+        // (1_000_000 / 44_100 = 22 µs truncates — >1% error accumulates in seconds).
+        var ptsUs = 0L
+        var remainderNumerator = 0L
         var inputDone = false
 
         try {
@@ -110,20 +113,25 @@ object AudioInputFixtures {
                     if (idx >= 0) {
                         val buf = encoder.getInputBuffer(idx) ?: error("encoder input null")
                         val remaining = pcm.size - srcOffset
-                        if (remaining <= 0) {
+                        if (remaining < bytesPerFrame) {
+                            // Treat a sub-frame tail as end-of-stream rather than copying a
+                            // half-frame — MediaCodec expects whole PCM frames.
                             encoder.queueInputBuffer(
-                                idx, 0, 0, framesWritten * usPerFrame,
+                                idx, 0, 0, ptsUs,
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM,
                             )
                             inputDone = true
                         } else {
-                            val toCopy = minOf(buf.capacity(), remaining)
+                            // Align toCopy down to a whole number of frames.
+                            var toCopy = minOf(buf.capacity(), remaining)
+                            toCopy -= toCopy % bytesPerFrame
                             buf.put(pcm, srcOffset, toCopy)
-                            encoder.queueInputBuffer(
-                                idx, 0, toCopy, framesWritten * usPerFrame, 0,
-                            )
+                            encoder.queueInputBuffer(idx, 0, toCopy, ptsUs, 0)
                             srcOffset += toCopy
-                            framesWritten += (toCopy / bytesPerFrame).toLong()
+                            val frames = (toCopy / bytesPerFrame).toLong()
+                            val deltaNum = frames * 1_000_000L + remainderNumerator
+                            ptsUs += deltaNum / sampleRate
+                            remainderNumerator = deltaNum % sampleRate
                         }
                     }
                 }

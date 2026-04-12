@@ -68,8 +68,16 @@ internal suspend fun awaitMedia3Export(
                     transformer.cancel()
                 }
             }
-            transformer.addListener(listener)
-            transformer.start(item, outputPath)
+            try {
+                transformer.addListener(listener)
+                transformer.start(item, outputPath)
+            } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
+                // Synchronous failures from addListener/start would otherwise leak the listener.
+                // We're already on the Main looper (caller wraps this in withContext(Main)), so
+                // removeListener is safe to call directly.
+                transformer.removeListener(listener)
+                if (continuation.isActive) continuation.resumeWithException(t)
+            }
         }
     } finally {
         progressJob.cancel()
@@ -146,7 +154,10 @@ internal fun toMediaItemUri(inputPath: String): String =
     if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
         inputPath
     } else {
-        "file://$inputPath"
+        // Use Uri.fromFile so reserved characters in the path (spaces, #, ?, %, etc.) get
+        // properly percent-encoded — raw "file://$path" would break Media3's URI parser on
+        // paths containing any of those.
+        Uri.fromFile(File(inputPath)).toString()
     }
 
 private val mainHandler = Handler(Looper.getMainLooper())

@@ -48,8 +48,12 @@ internal class AndroidAudioCompressor : AudioCompressor {
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
     }
 
+    // This implementation only emits AAC (see the `require(config.codec == AudioCodec.AAC)` below
+    // and [buildTransformer] hard-coding `MimeTypes.AUDIO_AAC`). Intersect with the device's
+    // advertised encoders so we don't promise a MIME the device can't actually produce.
     override val supportedOutputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = AUDIO_MIME_PREFIX)
+            .intersect(setOf(MimeTypes.AUDIO_AAC))
     }
 
     override suspend fun compress(
@@ -203,10 +207,12 @@ private fun MediaFormat.intOrNull(key: String): Int? =
  * target bitrate; the upper bound avoids passing through a source that is significantly larger
  * than the user asked for (which would defeat the purpose of "compress").
  *
- * Returns `true` when the source bitrate is unknown — Media3 is the authority in that case.
+ * Returns `false` when the source bitrate is unknown: without a bitrate to compare against we
+ * cannot guarantee the source satisfies the requested target, so we force a full re-encode rather
+ * than risk passthrough-ing an unknown (possibly much higher) bitrate.
  */
 private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean {
-    if (this == null) return true
+    if (this == null) return false
     val lower = (targetBitrate * (1f - PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
     val upper = (targetBitrate * (1f + PASSTHROUGH_BITRATE_TOLERANCE)).toInt()
     return this in lower..upper

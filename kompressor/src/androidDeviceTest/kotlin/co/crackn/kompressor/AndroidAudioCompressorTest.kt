@@ -30,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -323,9 +324,11 @@ class AndroidAudioCompressorTest {
                 },
             )
         }
-        progressSeen.await()
+        // Bound the wait: if the transformer never emits progress (e.g. export fails before the
+        // first callback), fail the test instead of blocking CI indefinitely.
+        withTimeout(CANCELLATION_TIMEOUT_MS) { progressSeen.await() }
         job.cancel()
-        job.join()
+        withTimeout(CANCELLATION_TIMEOUT_MS) { job.join() }
 
         assertTrue(!output.exists(), "Cancelled output must be deleted, but got ${output.length()} bytes")
     }
@@ -386,5 +389,6 @@ class AndroidAudioCompressorTest {
         // Long enough that the transformer always reports at least one progress event before
         // the test cancels, even on a slow CI emulator.
         const val CANCELLATION_INPUT_SECONDS = 10
+        const val CANCELLATION_TIMEOUT_MS = 15_000L
     }
 }

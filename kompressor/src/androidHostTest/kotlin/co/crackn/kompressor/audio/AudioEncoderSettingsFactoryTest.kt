@@ -1,7 +1,6 @@
 package co.crackn.kompressor.audio
 
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import kotlin.test.Test
 
 /**
@@ -14,7 +13,6 @@ class AudioEncoderSettingsFactoryTest {
     @Test
     fun `settings carry the configured bitrate`() {
         val settings = buildAudioEncoderSettings(AudioCompressionConfig(bitrate = 96_000))
-        settings shouldNotBe null
         settings.bitrate shouldBe 96_000
     }
 

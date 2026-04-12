@@ -7,8 +7,12 @@ import java.io.File
  * deletes the file at [outputPath] before rethrowing.
  *
  * Transcoding pipelines (video or audio) write to [outputPath] incrementally — a mid-export failure
- * or cancellation leaves a partial, corrupt file on disk. This guard makes the failure path atomic
- * from the caller's perspective: either the file exists and is valid, or it does not exist.
+ * or cancellation leaves a partial, corrupt file on disk. This guard best-effort cleans up that
+ * partial file before rethrowing so callers are unlikely to observe corrupt output.
+ *
+ * Note: cleanup is best-effort — if [File.delete] itself fails (e.g. filesystem error) the
+ * deletion failure is silently swallowed and the partial file may remain on disk. Callers who
+ * need a strict "output absent on failure" invariant must verify via [File.exists] themselves.
  */
 @Suppress("TooGenericExceptionCaught")
 internal inline fun <T> deletingOutputOnFailure(outputPath: String, block: () -> T): T =

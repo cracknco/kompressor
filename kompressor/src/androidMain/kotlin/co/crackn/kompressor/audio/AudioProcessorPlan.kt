@@ -35,15 +35,19 @@ internal data class AudioProcessorPlan(
             add(
                 ChannelMixingAudioProcessor().apply {
                     // Register matrices for every input-channel count Media3's default audio
-                    // decoders can produce. The processor picks the right matrix at configure
-                    // time from the actual input AudioFormat, so we don't need to know the
-                    // input channel count up-front.
-                    putChannelMixingMatrix(
-                        ChannelMixingMatrix.createForConstantGain(MONO, spec.outputChannelCount),
-                    )
-                    putChannelMixingMatrix(
-                        ChannelMixingMatrix.createForConstantGain(STEREO, spec.outputChannelCount),
-                    )
+                    // decoders can produce (1..8 covers MONO through 7.1 surround). The
+                    // processor picks the right matrix at configure time from the actual input
+                    // AudioFormat, so we don't need to know the input channel count up-front.
+                    // Only registering MONO/STEREO would fail configure() on multichannel inputs
+                    // like 5.1 AAC.
+                    for (inputChannels in 1..MAX_INPUT_CHANNELS) {
+                        putChannelMixingMatrix(
+                            ChannelMixingMatrix.createForConstantGain(
+                                inputChannels,
+                                spec.outputChannelCount,
+                            ),
+                        )
+                    }
                 },
             )
         }
@@ -88,5 +92,4 @@ internal fun planAudioProcessors(
     )
 }
 
-private const val MONO = 1
-private const val STEREO = 2
+private const val MAX_INPUT_CHANNELS = 8
