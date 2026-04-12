@@ -45,8 +45,13 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      # `--no-configuration-cache`: Detekt's Gradle plugin currently can't serialise its
+      # `__detektClasspath__` through Gradle 9.4's configuration cache and intermittently
+      # fails with `error writing value of type 'DefaultConfigurableFileCollection'`. Until
+      # the plugin gains support (see Detekt-gradle-plugin#7XXX), skip the cache for this
+      # task only — the task itself is fast (< 1 min) so the cache wasn't buying us much.
       - name: Run Detekt
-        run: ./gradlew detekt
+        run: ./gradlew detekt --no-configuration-cache
       - name: Upload Detekt report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
