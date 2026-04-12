@@ -21,8 +21,6 @@ import platform.AVFoundation.preferredTransform
 import platform.AVFoundation.tracksWithMediaType
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSURL
-import kotlin.math.atan2
-import kotlin.math.roundToInt
 
 internal class IosKompressor : Kompressor {
     override val image: ImageCompressor by lazy { IosImageCompressor() }
@@ -73,12 +71,7 @@ private fun probeIosSource(inputPath: String): SourceMediaInfo {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun readRotation(track: AVAssetTrack): Int = track.preferredTransform.useContents {
-    val radians = atan2(b, a)
-    val degrees = (radians * DEGREES_PER_RADIAN).roundToInt()
-    ((degrees % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE
-}
+private fun readRotation(track: AVAssetTrack): Int =
+    track.preferredTransform.useContents { computeRotationDegrees(a, b) }
 
 private const val MILLIS_PER_SEC = 1000.0
-private const val DEGREES_PER_RADIAN = 180.0 / kotlin.math.PI
-private const val FULL_CIRCLE = 360

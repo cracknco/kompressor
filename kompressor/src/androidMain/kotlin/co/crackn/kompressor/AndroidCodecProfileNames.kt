@@ -1,0 +1,82 @@
+@file:Suppress("TooManyFunctions")
+
+package co.crackn.kompressor
+
+import android.media.MediaCodecInfo.CodecProfileLevel
+import android.media.MediaFormat
+
+/**
+ * Pure int→string / int→boolean mapping helpers for Android's
+ * [CodecProfileLevel] constants, extracted so they're host-testable.
+ *
+ * These operate on the symbolic profile values reported by [MediaCodecList]
+ * via [CodecProfileLevel]. The parallel probe-side helpers in
+ * [AndroidProbeProfileNames] work on raw ints pulled from [MediaFormat]
+ * which may differ on some OEMs.
+ */
+
+/** Humanises [CodecProfileLevel] for [mime]. Returns an empty string when unknown so callers can filter it out. */
+internal fun humanProfileName(mime: String, profile: Int): String = when (mime) {
+    MediaFormat.MIMETYPE_VIDEO_AVC -> avcProfileName(profile)
+    MediaFormat.MIMETYPE_VIDEO_HEVC -> hevcProfileName(profile)
+    MediaFormat.MIMETYPE_VIDEO_VP9 -> vp9ProfileName(profile)
+    MediaFormat.MIMETYPE_VIDEO_AV1 -> av1ProfileName(profile)
+    else -> ""
+}
+
+internal fun avcProfileName(profile: Int): String = when (profile) {
+    CodecProfileLevel.AVCProfileBaseline -> "Baseline"
+    CodecProfileLevel.AVCProfileMain -> "Main"
+    CodecProfileLevel.AVCProfileExtended -> "Extended"
+    CodecProfileLevel.AVCProfileHigh -> "High"
+    CodecProfileLevel.AVCProfileHigh10 -> "High 10"
+    CodecProfileLevel.AVCProfileHigh422 -> "High 4:2:2"
+    CodecProfileLevel.AVCProfileHigh444 -> "High 4:4:4"
+    CodecProfileLevel.AVCProfileConstrainedBaseline -> "Constrained Baseline"
+    CodecProfileLevel.AVCProfileConstrainedHigh -> "Constrained High"
+    else -> ""
+}
+
+internal fun hevcProfileName(profile: Int): String = when (profile) {
+    CodecProfileLevel.HEVCProfileMain -> "Main"
+    CodecProfileLevel.HEVCProfileMain10 -> "Main 10"
+    CodecProfileLevel.HEVCProfileMainStill -> "Main Still"
+    CodecProfileLevel.HEVCProfileMain10HDR10 -> "Main 10 HDR10"
+    CodecProfileLevel.HEVCProfileMain10HDR10Plus -> "Main 10 HDR10+"
+    else -> ""
+}
+
+internal fun vp9ProfileName(profile: Int): String = when (profile) {
+    CodecProfileLevel.VP9Profile0 -> "Profile 0"
+    CodecProfileLevel.VP9Profile1 -> "Profile 1"
+    CodecProfileLevel.VP9Profile2 -> "Profile 2 (10-bit)"
+    CodecProfileLevel.VP9Profile3 -> "Profile 3 (10-bit 4:4:4)"
+    CodecProfileLevel.VP9Profile2HDR -> "Profile 2 HDR"
+    CodecProfileLevel.VP9Profile3HDR -> "Profile 3 HDR"
+    CodecProfileLevel.VP9Profile2HDR10Plus -> "Profile 2 HDR10+"
+    CodecProfileLevel.VP9Profile3HDR10Plus -> "Profile 3 HDR10+"
+    else -> ""
+}
+
+internal fun av1ProfileName(profile: Int): String = when (profile) {
+    CodecProfileLevel.AV1ProfileMain8 -> "Main 8-bit"
+    CodecProfileLevel.AV1ProfileMain10 -> "Main 10-bit"
+    CodecProfileLevel.AV1ProfileMain10HDR10 -> "Main 10 HDR10"
+    CodecProfileLevel.AV1ProfileMain10HDR10Plus -> "Main 10 HDR10+"
+    else -> ""
+}
+
+internal fun isTenBitProfile(mime: String, profile: Int): Boolean = when (mime) {
+    MediaFormat.MIMETYPE_VIDEO_HEVC -> profile == CodecProfileLevel.HEVCProfileMain10 ||
+        profile == CodecProfileLevel.HEVCProfileMain10HDR10 ||
+        profile == CodecProfileLevel.HEVCProfileMain10HDR10Plus
+    MediaFormat.MIMETYPE_VIDEO_AVC -> profile == CodecProfileLevel.AVCProfileHigh10
+    MediaFormat.MIMETYPE_VIDEO_VP9 -> profile == CodecProfileLevel.VP9Profile2 ||
+        profile == CodecProfileLevel.VP9Profile3 ||
+        profile == CodecProfileLevel.VP9Profile2HDR ||
+        profile == CodecProfileLevel.VP9Profile3HDR
+    MediaFormat.MIMETYPE_VIDEO_AV1 -> profile == CodecProfileLevel.AV1ProfileMain10 ||
+        profile == CodecProfileLevel.AV1ProfileMain10HDR10 ||
+        profile == CodecProfileLevel.AV1ProfileMain10HDR10Plus
+    else -> false
+}

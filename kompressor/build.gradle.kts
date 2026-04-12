@@ -82,14 +82,16 @@ kover {
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
                     "co.crackn.kompressor.audio.TranscodeLoop",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
+                    // Device/simulator-only platform glue. Pure logic extracted from
+                    // these has been moved to separate files that ARE covered.
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.AndroidKompressorKt",
                     "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
+                    "co.crackn.kompressor.MediaCodecUtilsKt",
                     "co.crackn.kompressor.IosKompressor",
                     "co.crackn.kompressor.IosKompressorKt",
                     "co.crackn.kompressor.IosDeviceCapabilitiesKt",
                     "co.crackn.kompressor.IosFileUtils*",
-                    "co.crackn.kompressor.MediaCodecUtilsKt",
                     "co.crackn.kompressor.KompressorInitializer",
                     "co.crackn.kompressor.KompressorContext",
                 )
