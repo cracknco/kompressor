@@ -43,8 +43,8 @@ kover {
                     "co.crackn.kompressor.IosKompressorKt",
                     "co.crackn.kompressor.IosDeviceCapabilitiesKt",
                     "co.crackn.kompressor.IosFileUtils*",
-                    "co.crackn.kompressor.KompressorInitializer",
-                    "co.crackn.kompressor.KompressorContext",
+                    // KompressorInitializer / KompressorContext are now host-tested by
+                    // KompressorInitializerTest under androidHostTest.
                     "co.crackn.kompressor.sample.*",
                 )
             }

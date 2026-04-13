@@ -71,20 +71,41 @@ internal class IosVideoCompressor : VideoCompressor {
     ): Result<CompressionResult> = suspendRunCatching {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
-        val inputSize = nsFileSize(inputPath)
-
-        deletingOutputOnFailure(outputPath) {
+        val inputSize = sizeOrTypedError(inputPath)
+        runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
             } else {
                 IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
             }
         }
-
         onProgress(1f)
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun sizeOrTypedError(path: String): Long =
+        try {
+            nsFileSize(path)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            throw mapToVideoError(t)
+        }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private suspend inline fun runPipelineWithTypedErrors(outputPath: String, block: () -> Unit) {
+        try {
+            deletingOutputOnFailure(outputPath) { block() }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: VideoCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToVideoError(t)
+        }
     }
 
     private fun canUseExportSession(config: VideoCompressionConfig): Boolean =
@@ -222,11 +243,15 @@ private class IosVideoTranscodePipeline(
     )
 
     private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
-        check(reader.startReading()) {
-            "AVAssetReader failed to start: ${reader.error?.localizedDescription}"
+        if (!reader.startReading()) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed to start")
+            error("AVAssetReader failed to start: unknown")
         }
-        check(writer.startWriting()) {
-            "AVAssetWriter failed to start: ${writer.error?.localizedDescription}"
+        if (!writer.startWriting()) {
+            val err = writer.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetWriter failed to start")
+            error("AVAssetWriter failed to start: unknown")
         }
         writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
     }
@@ -321,8 +346,10 @@ private class IosVideoTranscodePipeline(
     ) {
         videoInput.markAsFinished()
         audioInput?.markAsFinished()
-        check(reader.status != AVAssetReaderStatusFailed) {
-            "AVAssetReader failed: ${reader.error?.localizedDescription}"
+        if (reader.status == AVAssetReaderStatusFailed) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed")
+            error("AVAssetReader failed: unknown")
         }
         awaitWriterFinish(writer)
         checkWriterCompleted(writer)

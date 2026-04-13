@@ -115,8 +115,10 @@ kover {
                 // Always-excluded platform glue — device or simulator only, no equivalent pure
                 // logic available host-side. These exist irrespective of merged vs host-only mode.
                 classes(
-                    "co.crackn.kompressor.KompressorInitializer",
-                    "co.crackn.kompressor.KompressorContext",
+                    // KompressorInitializer + KompressorContext are exercised by
+                    // KompressorInitializerTest under androidHostTest (uninitialized failure
+                    // path + create/dependencies happy path), so they no longer need a blanket
+                    // exclude — host coverage now reaches them.
                     "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
                     "co.crackn.kompressor.MediaCodecUtilsKt",
                     "co.crackn.kompressor.IosDeviceCapabilitiesKt",

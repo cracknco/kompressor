@@ -24,8 +24,12 @@ internal suspend fun awaitWriterReady(
 ) {
     var waited = 0L
     while (!input.readyForMoreMediaData) {
-        check(writer.status != AVAssetWriterStatusFailed) {
-            "AVAssetWriter failed while waiting: ${writer.error?.localizedDescription ?: "unknown"}"
+        if (writer.status == AVAssetWriterStatusFailed) {
+            val err = writer.error
+            if (err != null) {
+                throw AVNSErrorException(err, "AVAssetWriter failed while waiting")
+            }
+            error("AVAssetWriter failed while waiting: unknown")
         }
         check(waited < WRITER_READY_TIMEOUT_MS) {
             "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
@@ -49,10 +53,13 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
             if (writer.status == AVAssetWriterStatusCompleted) {
                 continuation.resume(Unit)
             } else {
-                val msg = writer.error?.localizedDescription ?: "unknown"
-                continuation.resumeWithException(
-                    IllegalStateException("AVAssetWriter failed: $msg"),
-                )
+                val err = writer.error
+                val ex = if (err != null) {
+                    AVNSErrorException(err, "AVAssetWriter failed")
+                } else {
+                    IllegalStateException("AVAssetWriter failed: unknown")
+                }
+                continuation.resumeWithException(ex)
             }
         }
     }
@@ -61,8 +68,12 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
 /** Checks that [writer] completed successfully, throwing otherwise. */
 @OptIn(ExperimentalForeignApi::class)
 internal fun checkWriterCompleted(writer: AVAssetWriter) {
-    check(writer.status == AVAssetWriterStatusCompleted) {
-        "AVAssetWriter not completed: ${writer.error?.localizedDescription}"
+    if (writer.status != AVAssetWriterStatusCompleted) {
+        val err = writer.error
+        if (err != null) {
+            throw AVNSErrorException(err, "AVAssetWriter not completed")
+        }
+        error("AVAssetWriter not completed: unknown")
     }
 }
 
@@ -80,12 +91,8 @@ internal suspend fun awaitExportSession(session: platform.AVFoundation.AVAssetEx
                 platform.AVFoundation.AVAssetExportSessionStatusCompleted -> {
                     continuation.resume(Unit)
                 }
-                platform.AVFoundation.AVAssetExportSessionStatusFailed -> {
-                    val msg = session.error?.localizedDescription ?: "unknown"
-                    continuation.resumeWithException(
-                        IllegalStateException("Export failed: $msg"),
-                    )
-                }
+                platform.AVFoundation.AVAssetExportSessionStatusFailed ->
+                    continuation.resumeWithException(exportFailureException(session))
                 platform.AVFoundation.AVAssetExportSessionStatusCancelled -> {
                     continuation.resumeWithException(
                         CancellationException("Export cancelled"),
@@ -99,6 +106,14 @@ internal suspend fun awaitExportSession(session: platform.AVFoundation.AVAssetEx
             }
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun exportFailureException(
+    session: platform.AVFoundation.AVAssetExportSession,
+): Throwable {
+    val err = session.error ?: return IllegalStateException("Export failed: unknown")
+    return AVNSErrorException(err, "Export failed")
 }
 
 internal const val WRITER_POLL_INTERVAL_MS = 10L
