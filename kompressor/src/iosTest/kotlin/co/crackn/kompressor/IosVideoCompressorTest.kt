@@ -4,8 +4,9 @@ package co.crackn.kompressor
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import co.crackn.kompressor.testutil.Mp4Generator
-import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.readBytes
+import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
@@ -113,6 +114,20 @@ class IosVideoCompressorTest {
     fun compressVideo_fileNotFound_returnsFailure() = runTest {
         val result = compressor.compress("/nonexistent/video.mp4", testDir + "out.mp4")
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun compressVideo_malformedInput_gracefulError() = runTest {
+        // Mirror of the Android test: garbage bytes written to an `.mp4` path must produce a
+        // clean `Result.failure`, not a crash. Exercises the error-wrapping path in
+        // `IosVideoCompressor` when `AVURLAsset` / `AVAssetReader` cannot open the input.
+        val garbagePath = testDir + "garbage_video.mp4"
+        writeBytes(garbagePath, ByteArray(256) { 0xFF.toByte() })
+        val outputPath = testDir + "out_from_garbage.mp4"
+
+        val result = compressor.compress(garbagePath, outputPath)
+
+        assertTrue(result.isFailure, "Malformed MP4 must fail cleanly, not crash")
     }
 
     @Test

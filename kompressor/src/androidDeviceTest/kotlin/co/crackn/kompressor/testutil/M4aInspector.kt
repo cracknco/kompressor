@@ -28,6 +28,9 @@ fun readAudioTrackInfo(file: File): AudioTrackInfo {
 fun hasVideoTrack(file: File): Boolean =
     findFirstTrackByMimePrefix(file, VIDEO_PREFIX) != null
 
+fun hasAudioTrack(file: File): Boolean =
+    findFirstTrackByMimePrefix(file, AUDIO_PREFIX) != null
+
 /** Read the container-level bitrate via MediaMetadataRetriever. Returns null if not reported. */
 fun readContainerBitrate(file: File): Int? {
     val mmr = MediaMetadataRetriever()
