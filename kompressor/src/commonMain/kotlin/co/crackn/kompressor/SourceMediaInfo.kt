@@ -3,6 +3,10 @@ package co.crackn.kompressor
 /**
  * Describes the media tracks inside a source file. Fields are nullable because
  * not every field is available for every container / codec / platform probe API.
+ *
+ * [audioTrackCount] reflects the total number of audio tracks detected in the source container.
+ * Callers can use it to decide whether to surface a multi-track picker before invoking audio
+ * compression with a non-default [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex].
  */
 public data class SourceMediaInfo(
     /** Container MIME (e.g. `video/mp4`, `video/x-matroska`). */
@@ -35,6 +39,13 @@ public data class SourceMediaInfo(
     public val audioSampleRate: Int? = null,
     /** Audio channel count (1 = mono, 2 = stereo). */
     public val audioChannels: Int? = null,
+    /**
+     * Number of audio tracks detected in the source container. `0` when the source has no audio
+     * track (or the probe couldn't enumerate tracks). Callers pass an index in `[0, audioTrackCount)`
+     * as [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] to choose which track
+     * to compress.
+     */
+    public val audioTrackCount: Int = 0,
     /**
      * Platform-level readability hint — true/false when the platform can
      * authoritatively say whether this file can be decoded. iOS populates this

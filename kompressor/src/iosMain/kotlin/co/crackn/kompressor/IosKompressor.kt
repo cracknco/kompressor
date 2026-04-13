@@ -50,6 +50,7 @@ public actual fun createKompressor(): Kompressor = IosKompressor()
 private fun probeIosSource(inputPath: String): SourceMediaInfo {
     val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
     val videoTrack = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
+    val audioTracks = asset.tracksWithMediaType(AVMediaTypeAudio)
     val (width, height) = videoTrack?.naturalSize?.useContents { width.toInt() to height.toInt() }
         ?: (null to null)
     val durationMs = (CMTimeGetSeconds(asset.duration) * MILLIS_PER_SEC).toLong().takeIf { it > 0 }
@@ -67,6 +68,7 @@ private fun probeIosSource(inputPath: String): SourceMediaInfo {
         bitrate = videoTrack?.estimatedDataRate?.toInt(),
         durationMs = durationMs,
         audioCodec = null,
+        audioTrackCount = audioTracks.size,
     )
 }
 

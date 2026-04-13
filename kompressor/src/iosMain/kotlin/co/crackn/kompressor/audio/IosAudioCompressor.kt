@@ -64,6 +64,10 @@ internal class IosAudioCompressor : AudioCompressor {
         // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
         // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
         // sample buffer` from deep in the pipeline.
+        // Bounds-check the audio track selection first so out-of-range indices produce the
+        // documented typed error rather than being masked by downstream channel/bitrate checks
+        // that implicitly target track 0.
+        validateAudioTrackIndex(inputPath, config.audioTrackIndex)
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
         runPipelineWithTypedErrors(outputPath) {
@@ -101,6 +105,28 @@ internal class IosAudioCompressor : AudioCompressor {
             throw typed
         } catch (t: Throwable) {
             throw mapToAudioError(t)
+        }
+    }
+
+    /**
+     * Bounds-check [audioTrackIndex] against the source's audio track count so callers get a
+     * typed [AudioCompressionError.UnsupportedSourceFormat] rather than racing an opaque
+     * `AVAssetReader` / `AVAssetExportSession` failure. Probe failures are treated as "track 0
+     * is fine" — the real pipeline will surface an error later if the file is genuinely
+     * unreadable.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun validateAudioTrackIndex(inputPath: String, audioTrackIndex: Int) {
+        val count = try {
+            AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+                .tracksWithMediaType(AVMediaTypeAudio).size
+        } catch (_: Throwable) {
+            return
+        }
+        if (audioTrackIndex >= count) {
+            throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex $audioTrackIndex out of bounds for $count audio track(s)",
+            )
         }
     }
 
@@ -226,6 +252,7 @@ private class IosPipeline(
     config: AudioCompressionConfig,
 ) {
     private val channelCount = config.channels.count
+    private val audioTrackIndex = config.audioTrackIndex
 
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
@@ -250,9 +277,11 @@ private class IosPipeline(
 
     @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
-        val audioTrack = asset.tracksWithMediaType(AVMediaTypeAudio)
-            .firstOrNull() as? AVAssetTrack
-            ?: throw IllegalArgumentException("No audio track found in input file")
+        val audioTracks = asset.tracksWithMediaType(AVMediaTypeAudio)
+        val audioTrack = audioTracks.getOrNull(audioTrackIndex) as? AVAssetTrack
+            ?: throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex $audioTrackIndex out of bounds for ${audioTracks.size} audio track(s)",
+            )
 
         val totalDurationSec = CMTimeGetSeconds(asset.duration)
         onProgress(PROGRESS_SETUP)
