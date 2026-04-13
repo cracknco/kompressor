@@ -2,15 +2,19 @@
 
 package co.crackn.kompressor.testutil
 
+import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
+import platform.CoreGraphics.CGAffineTransform
+import platform.CoreGraphics.CGAffineTransformMakeRotation
 import platform.CoreVideo.CVPixelBufferRefVar
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
 import platform.AVFoundation.AVAssetWriterInputPixelBufferAdaptor
+import platform.AVFoundation.setTransform
 import platform.AVFoundation.AVFileTypeMPEG4
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVVideoCodecH264
@@ -49,6 +53,7 @@ object Mp4Generator {
         height: Int = DEFAULT_HEIGHT,
         frameCount: Int = DEFAULT_FRAME_COUNT,
         fps: Int = DEFAULT_FPS,
+        rotationDegrees: Int = 0,
     ): String {
         NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
 
@@ -66,6 +71,7 @@ object Mp4Generator {
             outputSettings = videoSettings,
         )
         input.expectsMediaDataInRealTime = false
+        input.setTransform(rotationTransform(rotationDegrees))
         val adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput = input,
             sourcePixelBufferAttributes = null,
@@ -113,6 +119,14 @@ object Mp4Generator {
         return outputPath
     }
 
+    // Identity corresponds to 0°; CGAffineTransformMakeRotation(0.0) yields an
+    // identity-equivalent matrix without needing CGAffineTransformIdentity (which
+    // is awkward to bridge as a CValue through Kotlin/Native cinterop).
+    private fun rotationTransform(degrees: Int): CValue<CGAffineTransform> {
+        val normalised = ((degrees % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE
+        return CGAffineTransformMakeRotation(normalised * kotlin.math.PI / HALF_CIRCLE)
+    }
+
     private fun createGreyPixelBuffer(width: Int, height: Int): CVPixelBufferRef? = memScoped {
         val pixelBufferOut = alloc<CVPixelBufferRefVar>()
         CVPixelBufferCreate(
@@ -144,4 +158,6 @@ object Mp4Generator {
     private const val DEFAULT_FPS = 30
     private const val GREY_VALUE = 128
     private const val READY_POLL_SEC = 0.01
+    private const val FULL_CIRCLE = 360
+    private const val HALF_CIRCLE = 180.0
 }
