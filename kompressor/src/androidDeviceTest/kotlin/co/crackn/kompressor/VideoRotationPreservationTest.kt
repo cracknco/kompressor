@@ -59,6 +59,24 @@ class VideoRotationPreservationTest {
         assertDisplayedOrientationPreserved(rotation = 270)
     }
 
+    /**
+     * Pin the fixture generator's rotation-normalisation invariant: a negative angle
+     * `((deg % 360) + 360) % 360`s into its positive equivalent. We assert on the fixture
+     * itself rather than the full pipeline — the compressor behaviour for 270 is already
+     * covered by [rotation270_displayedOrientationPreserved].
+     */
+    @Test
+    fun rotationNegative90_fixtureNormalisesTo270() {
+        val file = Mp4Generator.generateMp4(
+            output = File(tempDir, "input-neg90.mp4"),
+            width = INPUT_WIDTH,
+            height = INPUT_HEIGHT,
+            frameCount = INPUT_FRAME_COUNT,
+            rotationDegrees = -90,
+        )
+        assertEquals(270, readDisplayedDimensions(file).rotation)
+    }
+
     private suspend fun assertDisplayedOrientationPreserved(rotation: Int) {
         val input = Mp4Generator.generateMp4(
             output = File(tempDir, "input-$rotation.mp4"),

@@ -24,7 +24,6 @@ import platform.AVFoundation.AVAssetReaderTrackOutput
 import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
-import platform.AVFoundation.setTransform
 import platform.AVFoundation.AVFileTypeMPEG4
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.AVFoundation.AVMediaTypeVideo
@@ -39,6 +38,7 @@ import platform.AVFoundation.AVVideoMaxKeyFrameIntervalKey
 import platform.AVFoundation.AVVideoWidthKey
 import platform.AVFoundation.naturalSize
 import platform.AVFoundation.preferredTransform
+import platform.AVFoundation.setTransform
 import platform.AVFoundation.tracksWithMediaType
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreFoundation.CFRelease

@@ -5,13 +5,14 @@ import co.crackn.kompressor.CompressionResult
 /**
  * Compresses video files.
  *
- * **Rotation:** source orientation is preserved. On Android, Media3 `Transformer`
- * applies the source track's rotation inside the video-frame-processor pipeline
- * so the encoded content is visually upright (the output has no rotation tag and
- * physical dimensions match the displayed orientation). On iOS, `AVAssetExportSession`
- * copies `preferredTransform` natively, and the custom `AVAssetWriter` path forwards
- * the source track's `preferredTransform` onto the writer input so portrait recordings
- * stay portrait.
+ * **Rotation:** source orientation is preserved — a portrait recording stays portrait, a
+ * landscape recording stays landscape. The encoding strategy differs per platform: Android's
+ * Media3 `Transformer` applies the source rotation inside its frame-processor, which may
+ * bake the rotation into the pixels and zero the tag or keep the tag intact (players render
+ * both identically). On iOS, `AVAssetExportSession` copies `preferredTransform` natively,
+ * and the custom `AVAssetWriter` path forwards `preferredTransform` onto the writer input.
+ * Callers should assert on *displayed* dimensions rather than the raw tag when writing
+ * orientation-sensitive tests.
  */
 public interface VideoCompressor {
 

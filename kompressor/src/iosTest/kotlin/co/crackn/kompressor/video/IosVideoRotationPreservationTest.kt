@@ -49,21 +49,51 @@ class IosVideoRotationPreservationTest {
         NSFileManager.defaultManager.removeItemAtPath(testDir, null)
     }
 
-    @Test
-    fun exportSessionPath_preservesAllRotations() = runTest {
-        // Default config drives the AVAssetExportSession fast path.
-        listOf(0, 90, 180, 270).forEach { rotation ->
-            assertRotationPreservedViaDefaultConfig(rotation)
-        }
-    }
+    // One @Test per rotation per pipeline so CI surfaces the exact angle that regressed
+    // instead of masking subsequent failures behind the first one.
 
     @Test
-    fun transcodePath_preservesAllRotations() = runTest {
-        // A custom bitrate forces the AVAssetWriter path — this is the path where
-        // we had to explicitly forward preferredTransform onto the writer input.
-        listOf(0, 90, 180, 270).forEach { rotation ->
-            assertRotationPreservedViaCustomConfig(rotation)
-        }
+    fun exportSessionPath_rotation0_preserved() = runTest { assertRotationPreservedViaDefaultConfig(0) }
+
+    @Test
+    fun exportSessionPath_rotation90_preserved() = runTest { assertRotationPreservedViaDefaultConfig(90) }
+
+    @Test
+    fun exportSessionPath_rotation180_preserved() = runTest { assertRotationPreservedViaDefaultConfig(180) }
+
+    @Test
+    fun exportSessionPath_rotation270_preserved() = runTest { assertRotationPreservedViaDefaultConfig(270) }
+
+    // The transcode path is the one we had to explicitly patch: a custom bitrate knocks us
+    // off the AVAssetExportSession fast path onto AVAssetWriter, which is where
+    // preferredTransform now gets forwarded.
+    @Test
+    fun transcodePath_rotation0_preserved() = runTest { assertRotationPreservedViaCustomConfig(0) }
+
+    @Test
+    fun transcodePath_rotation90_preserved() = runTest { assertRotationPreservedViaCustomConfig(90) }
+
+    @Test
+    fun transcodePath_rotation180_preserved() = runTest { assertRotationPreservedViaCustomConfig(180) }
+
+    @Test
+    fun transcodePath_rotation270_preserved() = runTest { assertRotationPreservedViaCustomConfig(270) }
+
+    /**
+     * Pin the fixture generator's rotation-normalisation: a negative angle must map to its
+     * positive equivalent. Asserted on the fixture, not the full pipeline — the compressor
+     * behaviour for 270° is already covered above.
+     */
+    @Test
+    fun rotationNegative90_fixtureNormalisesTo270() {
+        val file = Mp4Generator.generateMp4(
+            outputPath = testDir + "input-neg90.mp4",
+            width = INPUT_WIDTH,
+            height = INPUT_HEIGHT,
+            frameCount = INPUT_FRAME_COUNT,
+            rotationDegrees = -90,
+        )
+        assertEquals(270, readTrackRotation(file))
     }
 
     private suspend fun assertRotationPreservedViaDefaultConfig(rotation: Int) {

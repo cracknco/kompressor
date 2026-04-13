@@ -14,13 +14,13 @@ import platform.CoreVideo.CVPixelBufferRefVar
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
 import platform.AVFoundation.AVAssetWriterInputPixelBufferAdaptor
-import platform.AVFoundation.setTransform
 import platform.AVFoundation.AVFileTypeMPEG4
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVVideoCodecH264
 import platform.AVFoundation.AVVideoCodecKey
 import platform.AVFoundation.AVVideoHeightKey
 import platform.AVFoundation.AVVideoWidthKey
+import platform.AVFoundation.setTransform
 import platform.CoreMedia.CMTimeMake
 import platform.CoreVideo.CVPixelBufferCreate
 import platform.CoreVideo.CVPixelBufferGetBaseAddress
@@ -71,7 +71,14 @@ object Mp4Generator {
             outputSettings = videoSettings,
         )
         input.expectsMediaDataInRealTime = false
-        input.setTransform(rotationTransform(rotationDegrees))
+        // Only tag a transform when we actually want one: a 0° source must produce an output
+        // with no explicit rotation matrix, so downstream `readTrackRotation` distinguishes
+        // "0° because we said so" from "0° because we forgot to set it". Mirrors the Android
+        // fixture's `if (normalisedRotation != 0) muxer.setOrientationHint(...)` branch.
+        val normalisedRotation = ((rotationDegrees % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE
+        if (normalisedRotation != 0) {
+            input.setTransform(rotationTransform(normalisedRotation))
+        }
         val adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput = input,
             sourcePixelBufferAttributes = null,
@@ -119,13 +126,10 @@ object Mp4Generator {
         return outputPath
     }
 
-    // Identity corresponds to 0°; CGAffineTransformMakeRotation(0.0) yields an
-    // identity-equivalent matrix without needing CGAffineTransformIdentity (which
-    // is awkward to bridge as a CValue through Kotlin/Native cinterop).
-    private fun rotationTransform(degrees: Int): CValue<CGAffineTransform> {
-        val normalised = ((degrees % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE
-        return CGAffineTransformMakeRotation(normalised * kotlin.math.PI / HALF_CIRCLE)
-    }
+    // Caller has already normalised [degrees] into [0, 360). Kept as a tiny helper so the
+    // radian conversion stays out of the main control flow.
+    private fun rotationTransform(degrees: Int): CValue<CGAffineTransform> =
+        CGAffineTransformMakeRotation(degrees * kotlin.math.PI / HALF_CIRCLE)
 
     private fun createGreyPixelBuffer(width: Int, height: Int): CVPixelBufferRef? = memScoped {
         val pixelBufferOut = alloc<CVPixelBufferRefVar>()
