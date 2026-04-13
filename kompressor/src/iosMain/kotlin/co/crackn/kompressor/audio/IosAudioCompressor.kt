@@ -71,6 +71,10 @@ internal class IosAudioCompressor : AudioCompressor {
         // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
         // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
         // sample buffer` from deep in the pipeline.
+        // Bounds-check the audio track selection first so out-of-range indices produce the
+        // documented typed error rather than being masked by downstream channel/bitrate checks
+        // that implicitly target track 0.
+        validateAudioTrackIndex(inputPath, config.audioTrackIndex)
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
         runPipelineWithTypedErrors(outputPath) {
@@ -108,6 +112,28 @@ internal class IosAudioCompressor : AudioCompressor {
             throw typed
         } catch (t: Throwable) {
             throw mapToAudioError(t)
+        }
+    }
+
+    /**
+     * Bounds-check [audioTrackIndex] against the source's audio track count so callers get a
+     * typed [AudioCompressionError.UnsupportedSourceFormat] rather than racing an opaque
+     * `AVAssetReader` / `AVAssetExportSession` failure. Probe failures from `AVURLAsset.tracks*`
+     * are out-of-band: an unreadable file should propagate its own error from the real pipeline
+     * rather than be re-typed here, and a `default-index` caller (`audioTrackIndex == 0`) on a
+     * file that genuinely happens to have one audio track must not be blocked by a transient
+     * probe glitch. We therefore only enforce the bounds when the probe yielded a usable count;
+     * non-default indices on a probe-failed source still surface the real downstream error,
+     * which carries more diagnostic context than a generic "probe failed" wrapper would.
+     */
+    private fun validateAudioTrackIndex(inputPath: String, audioTrackIndex: Int) {
+        val count = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+            .tracksWithMediaType(AVMediaTypeAudio)
+            .size
+        if (audioTrackIndex >= count) {
+            throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex $audioTrackIndex out of bounds for $count audio track(s)",
+            )
         }
     }
 
@@ -233,6 +259,7 @@ private class IosPipeline(
     config: AudioCompressionConfig,
 ) {
     private val channelCount = config.channels.count
+    private val audioTrackIndex = config.audioTrackIndex
 
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
@@ -257,9 +284,11 @@ private class IosPipeline(
 
     @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
-        val audioTrack = asset.tracksWithMediaType(AVMediaTypeAudio)
-            .firstOrNull() as? AVAssetTrack
-            ?: throw IllegalArgumentException("No audio track found in input file")
+        val audioTracks = asset.tracksWithMediaType(AVMediaTypeAudio)
+        val audioTrack = audioTracks.getOrNull(audioTrackIndex) as? AVAssetTrack
+            ?: throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex $audioTrackIndex out of bounds for ${audioTracks.size} audio track(s)",
+            )
 
         val totalDurationSec = CMTimeGetSeconds(asset.duration)
         onProgress(PROGRESS_SETUP)

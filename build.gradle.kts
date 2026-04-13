@@ -57,6 +57,7 @@ val rootKoverExcludes =
             add("co.crackn.kompressor.image.ContentUriSource\$*")
             add("co.crackn.kompressor.image.AndroidImageCompressorKt")
             add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
+            add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
             add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
             add("co.crackn.kompressor.Media3ExportRunnerKt")
             add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
