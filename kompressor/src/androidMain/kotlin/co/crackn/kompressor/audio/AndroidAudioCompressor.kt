@@ -77,17 +77,14 @@ internal class AndroidAudioCompressor(
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
 
-        // Probe off-Main because MediaExtractor does blocking I/O. Honour the configured
-        // audioTrackIndex so passthrough/fast-path logic and error diagnostics reflect the
-        // track we'll actually feed into Media3.
-        val probe = withContext(Dispatchers.IO) {
-            probeInputFormat(inputPath, config.audioTrackIndex)
+        // Single-pass probe off-Main: one MediaExtractor open returns both the selected track's
+        // format AND the total audio-track count. Splitting the two cost us ~2× moov-atom parse
+        // on every compress() call.
+        val probeResult = withContext(Dispatchers.IO) {
+            probeAudioInput(inputPath, config.audioTrackIndex)
         }
-
-        // Bounds-check the audio track selection up front so callers get a typed error instead
-        // of racing Media3's "no audio track" ExportException. We probe audioTrackCount even on
-        // the default (index 0) path so requests against audio-less inputs fail fast.
-        val trackCount = withContext(Dispatchers.IO) { countAudioTracks(inputPath) }
+        val probe = probeResult.format
+        val trackCount = probeResult.audioTrackCount
         if (config.audioTrackIndex >= trackCount) {
             throw AudioCompressionError.UnsupportedSourceFormat(
                 "audioTrackIndex ${config.audioTrackIndex} out of bounds for $trackCount audio track(s)",
@@ -247,22 +244,31 @@ internal data class InputAudioFormat(
 }
 
 /**
- * Inspect the input file with a short-lived [MediaExtractor] to find the [audioTrackIndex]-th
- * audio track (zero-based) and its (sample rate, channel count, bitrate). Runs on
- * [Dispatchers.IO] from the caller. Returns `null` if the file has no readable audio track at
- * that index — the explicit bounds check in `compress()` then surfaces a typed error.
- * Cancellation propagates; other failures become `null` (best-effort probe).
+ * Carrier for the result of a single [MediaExtractor] pass over the input: both the selected
+ * track's [InputAudioFormat] (or `null` if the index doesn't resolve) and the total audio-track
+ * count (`0` on probe failure). Lets `compress()` do one I/O hit instead of opening the
+ * extractor twice in a row.
+ */
+internal data class AudioProbeResult(val format: InputAudioFormat?, val audioTrackCount: Int)
+
+/**
+ * Single-pass probe: opens one [MediaExtractor], reports both the selected track's format AND
+ * the audio-track count of the container. Runs on [Dispatchers.IO] from the caller. Cancellation
+ * propagates; other failures collapse to `AudioProbeResult(null, 0)` (best-effort) so the
+ * explicit bounds check in `compress()` can then surface a typed error.
  */
 @Suppress("TooGenericExceptionCaught")
-private fun probeInputFormat(inputPath: String, audioTrackIndex: Int): InputAudioFormat? = try {
+internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProbeResult = try {
     openAudioExtractor(inputPath).use { extractor ->
-        findAudioTrackIndexInContainer(extractor, audioTrackIndex)
+        val count = extractor.countAudioTracks()
+        val format = findAudioTrackIndexInContainer(extractor, audioTrackIndex)
             ?.let { extractor.getTrackFormat(it).toInputAudioFormat() }
+        AudioProbeResult(format, count)
     }
 } catch (ce: CancellationException) {
     throw ce
 } catch (_: Throwable) {
-    null
+    AudioProbeResult(null, 0)
 }
 
 private fun MediaFormat.toInputAudioFormat(): InputAudioFormat = InputAudioFormat(

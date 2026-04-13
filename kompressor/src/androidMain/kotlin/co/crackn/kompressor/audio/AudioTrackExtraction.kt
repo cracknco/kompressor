@@ -26,16 +26,17 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun countAudioTracks(inputPath: String): Int = try {
-    openAudioExtractor(inputPath).use { extractor ->
-        (0 until extractor.trackCount).count { i ->
-            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-        }
-    }
+    openAudioExtractor(inputPath).use { extractor -> extractor.countAudioTracks() }
 } catch (ce: CancellationException) {
     throw ce
 } catch (_: Throwable) {
     0
 }
+
+internal fun MediaExtractor.countAudioTracks(): Int =
+    (0 until trackCount).count { i ->
+        getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+    }
 
 /**
  * Extract the [audioTrackIndex]-th audio track from [inputPath] into a freshly-created MP4
