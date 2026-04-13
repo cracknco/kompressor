@@ -85,20 +85,21 @@ internal class AndroidImageCompressor : ImageCompressor {
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
-    // Why: Bitmap ownership is the caller's responsibility (Android Bitmaps are GC-managed;
-    // explicit recycle is no-op since API 28+ and harmful on pre-28 if the caller still holds
-    // the reference). The throw exits this function but the caller's `try { … }` still owns the
-    // bitmap reference — Joern flags it as a leak because the reference doesn't close in a
-    // `finally` block, but that's the wrong model for GC-managed objects.
     private fun writeBitmapAsJpeg(bitmap: Bitmap, outputPath: String, quality: Int) {
-        FileOutputStream(outputPath).use { stream ->
-            val success = bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
-            if (!success) {
-                // codebadger:suppress(resource-leak) See Why: comment above.
-                throw ImageCompressionError.EncodingFailed(
-                    "Bitmap.compress(JPEG, quality=$quality) returned false for: $outputPath",
-                )
-            }
+        // Capture the compress result inside `use { }` so the stream is closed before we throw.
+        // Throwing inside the use-block works too but leaves the throw-point visibly inside the
+        // open-stream frame, which static analysers (CodeBadger/Joern) flag as a potential leak
+        // of sibling resources (e.g. the caller-owned Bitmap). Returning the boolean and then
+        // throwing after close moves the error path to a point where the I/O resource is
+        // provably released — the ownership contract for the Bitmap itself lives with the
+        // caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
+        val success = FileOutputStream(outputPath).use { stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+        }
+        if (!success) {
+            throw ImageCompressionError.EncodingFailed(
+                "Bitmap.compress(JPEG, quality=$quality) returned false for: $outputPath",
+            )
         }
     }
 
