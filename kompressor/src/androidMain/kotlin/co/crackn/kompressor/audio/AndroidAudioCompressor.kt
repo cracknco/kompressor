@@ -21,7 +21,7 @@ import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
 import java.io.File
-import java.io.IOException
+import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,29 +79,11 @@ internal class AndroidAudioCompressor(
         val inputSize = resolveMediaInputSize(inputPath)
 
         rejectNonFileOutputPath(outputPath)
-
-        // Single-pass probe off-Main: one MediaExtractor open returns both the selected track's
-        // format AND the total audio-track count. Splitting the two cost us ~2× moov-atom parse
-        // on every compress() call.
-        val probeResult = withContext(Dispatchers.IO) {
-            probeAudioInput(inputPath, config.audioTrackIndex)
-        }
-        val probe = probeResult.format
-        val trackCount = probeResult.audioTrackCount
-        if (config.audioTrackIndex >= trackCount) {
-            throw AudioCompressionError.UnsupportedSourceFormat(
-                "audioTrackIndex ${config.audioTrackIndex} out of bounds for $trackCount audio track(s)",
-            )
-        }
-
-        // Reject configurations Media3's channel mixer cannot handle before kicking off an
-        // export. Check is extracted to `checkSupportedInputChannelCount` so the rule is
-        // covered by host tests without needing a real 5.1 / 7.1 fixture.
-        checkSupportedInputChannelCount(probe?.channels)
+        val probeResult = probeAndValidateInput(inputPath, config)
 
         deletingOutputOnFailure(outputPath) {
             runTransformerWithTrackSelection(
-                inputPath, outputPath, config, probe, trackCount, onProgress,
+                inputPath, outputPath, config, probeResult.format, probeResult.audioTrackCount, onProgress,
             )
         }
 
@@ -212,6 +194,30 @@ internal class AndroidAudioCompressor(
     }
 
     /**
+     * Pre-flight: single-pass probe off-Main (one MediaExtractor open returns both the selected
+     * track's format AND the audio-track count — splitting the two cost us ~2× moov-atom parse
+     * per call), then enforce the track-index bounds and channel-count envelope. Extracted from
+     * [compress] so the main body stays within detekt's `LongMethod` threshold and the rules
+     * are individually readable.
+     */
+    private suspend fun probeAndValidateInput(
+        inputPath: String,
+        config: AudioCompressionConfig,
+    ): AudioProbeResult {
+        val probeResult = withContext(Dispatchers.IO) {
+            probeAudioInput(inputPath, config.audioTrackIndex)
+        }
+        if (config.audioTrackIndex >= probeResult.audioTrackCount) {
+            throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex ${config.audioTrackIndex} out of bounds for " +
+                    "${probeResult.audioTrackCount} audio track(s)",
+            )
+        }
+        checkSupportedInputChannelCount(probeResult.format?.channels)
+        return probeResult
+    }
+
+    /**
      * Reject pre-existing non-file output paths (directories, sockets, fifos) up front. Media3
      * 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing entry
      * before opening its muxer `FileOutputStream`, which silently wipes a caller-owned empty
@@ -273,16 +279,17 @@ internal data class AudioProbeResult(val format: InputAudioFormat?, val audioTra
  * Single-pass probe: opens one [MediaExtractor], reports both the selected track's format AND
  * the audio-track count of the container. Runs on [Dispatchers.IO] from the caller.
  *
- * Failure taxonomy:
+ * Failure taxonomy (chosen to keep the three test contracts distinct):
  * - [CancellationException] propagates so structured concurrency stays intact.
- * - [IOException] / [SecurityException] surface a typed [AudioCompressionError.IoFailed], so the
- *   caller can distinguish "I couldn't read the source at all" from "the source exposes zero
- *   audio tracks". Earlier revisions swallowed these to a `(null, 0)` sentinel, which silently
- *   turned permission/IO errors into `UnsupportedSourceFormat` — CodeRabbit flagged this.
- * - Any other `Throwable` (malformed container, unexpected runtime condition) still collapses to
- *   `AudioProbeResult(null, 0)` so the explicit bounds check in `compress()` surfaces a typed
- *   `UnsupportedSourceFormat`. The `@Suppress("TooGenericExceptionCaught")` is kept for that
- *   last-resort catch.
+ * - [FileNotFoundException] / [SecurityException] surface a typed [AudioCompressionError.IoFailed]
+ *   so callers can distinguish "I couldn't read the source at all" from "the source exposes zero
+ *   audio tracks".
+ * - All other failures — including plain [java.io.IOException] from a malformed container, which
+ *   MediaExtractor throws as "Failed to instantiate extractor" — collapse to `(null, 0)` so the
+ *   explicit bounds check in `compress()` surfaces `UnsupportedSourceFormat`. We split
+ *   `FileNotFoundException` from plain `IOException` deliberately: the former is a file-level
+ *   fault, the latter a format-level one, and `AudioInputRobustnessTest.randomBytes_*` depends
+ *   on the latter ending up as `UnsupportedSourceFormat`.
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProbeResult = try {
@@ -294,13 +301,10 @@ internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProb
     }
 } catch (ce: CancellationException) {
     throw ce
-} catch (e: IOException) {
-    throw AudioCompressionError.IoFailed("Failed to probe audio input: $inputPath", e)
+} catch (e: FileNotFoundException) {
+    throw AudioCompressionError.IoFailed("Audio input not found: $inputPath", e)
 } catch (e: SecurityException) {
-    throw AudioCompressionError.IoFailed(
-        "Permission denied probing audio input: $inputPath",
-        e,
-    )
+    throw AudioCompressionError.IoFailed("Permission denied probing audio input: $inputPath", e)
 } catch (_: Throwable) {
     AudioProbeResult(null, 0)
 }
