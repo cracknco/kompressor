@@ -176,7 +176,9 @@ public final class co/crackn/kompressor/Supportability$Unsupported : co/crackn/k
 }
 
 public final class co/crackn/kompressor/audio/AudioChannels : java/lang/Enum {
+	public static final field FIVE_POINT_ONE Lco/crackn/kompressor/audio/AudioChannels;
 	public static final field MONO Lco/crackn/kompressor/audio/AudioChannels;
+	public static final field SEVEN_POINT_ONE Lco/crackn/kompressor/audio/AudioChannels;
 	public static final field STEREO Lco/crackn/kompressor/audio/AudioChannels;
 	public final fun getCount ()I
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
@@ -283,6 +285,41 @@ public final class co/crackn/kompressor/image/ImageCompressionConfig {
 	public final fun getQuality ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class co/crackn/kompressor/image/ImageCompressionError : java/lang/RuntimeException {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$DecodingFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$EncodingFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$IoFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$Unknown : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
 }
 
 public abstract interface class co/crackn/kompressor/image/ImageCompressor {

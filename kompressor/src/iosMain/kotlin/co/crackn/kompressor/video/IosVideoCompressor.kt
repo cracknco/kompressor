@@ -69,6 +69,10 @@ internal class IosVideoCompressor : VideoCompressor {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
         val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error so
+        // callers see the same `UnsupportedSourceFormat` subtype as the Android side, rather
+        // than a generic `IllegalArgumentException` from deep in the pipeline.
+        validateHasVideoTrack(inputPath)
         runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
@@ -109,6 +113,28 @@ internal class IosVideoCompressor : VideoCompressor {
 
     private fun canUseExportSession(config: VideoCompressionConfig): Boolean =
         config == VideoCompressionConfig()
+
+    /**
+     * Reject audio-only inputs upfront with a typed [VideoCompressionError.UnsupportedSourceFormat].
+     * Uses the same `tracksWithMediaType` check the pipelines use internally; failing here means
+     * callers see a clean typed error instead of racing a generic `IllegalArgumentException`
+     * from deep in `execute()`.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun validateHasVideoTrack(inputPath: String) {
+        val hasVideo = try {
+            AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+                .tracksWithMediaType(AVMediaTypeVideo).isNotEmpty()
+        } catch (_: Throwable) {
+            // Treat probe failures as "unknown" — the real pipeline will surface its own error.
+            return
+        }
+        if (!hasVideo) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "Input has no video track (only audio): $inputPath",
+            )
+        }
+    }
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
