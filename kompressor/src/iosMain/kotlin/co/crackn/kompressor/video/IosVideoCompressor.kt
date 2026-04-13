@@ -30,12 +30,21 @@ import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVURLAsset
 import platform.AVFoundation.AVVideoAverageBitRateKey
 import platform.AVFoundation.AVVideoCodecH264
+import platform.AVFoundation.AVVideoCodecHEVC
 import platform.AVFoundation.AVVideoCodecKey
+import platform.AVFoundation.AVVideoColorPrimariesKey
+import platform.AVFoundation.AVVideoColorPrimaries_ITU_R_2020
+import platform.AVFoundation.AVVideoColorPropertiesKey
 import platform.AVFoundation.AVVideoCompressionPropertiesKey
 import platform.AVFoundation.AVVideoExpectedSourceFrameRateKey
 import platform.AVFoundation.AVVideoHeightKey
 import platform.AVFoundation.AVVideoMaxKeyFrameIntervalKey
+import platform.AVFoundation.AVVideoProfileLevelKey
+import platform.AVFoundation.AVVideoTransferFunctionKey
+import platform.AVFoundation.AVVideoTransferFunction_SMPTE_ST_2084_PQ
 import platform.AVFoundation.AVVideoWidthKey
+import platform.AVFoundation.AVVideoYCbCrMatrixKey
+import platform.AVFoundation.AVVideoYCbCrMatrix_ITU_R_2020
 import platform.AVFoundation.naturalSize
 import platform.AVFoundation.preferredTransform
 import platform.AVFoundation.setTransform
@@ -45,18 +54,17 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
+import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.Foundation.NSURL
+import platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
 
 // Baseline input/output MIME coverage for AVFoundation on iOS 15+. VideoToolbox
 // can decode additional formats on newer chipsets (ProRes, VP9), but H.264 +
 // HEVC (including 10-bit on A10 Fusion and later) are the guaranteed matrix.
 private val IOS_SUPPORTED_INPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
 
-// Only H.264 is actually wired in buildVideoSettings today. Expand this when
-// VideoCodec gains an HEVC variant AND buildVideoSettings handles it — keeping
-// the advertised set in sync with the implementation avoids misleading callers
-// that inspect supportedOutputFormats before calling compress().
-private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc")
+// H.264 + HEVC are both wired in buildVideoSettings. HEVC is required for HDR10 output.
+private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
 
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
@@ -78,6 +86,13 @@ internal class IosVideoCompressor : VideoCompressor {
         // callers see the same `UnsupportedSourceFormat` subtype as the Android side, rather
         // than a generic `IllegalArgumentException` from deep in the pipeline.
         validateHasVideoTrack(inputPath)
+        // Pre-flight HDR10: mirrors Android's `requireHdr10Hevc`. AVFoundation on A9/iOS 15
+        // accepts the settings dictionary but crashes mid-pipeline with an uncatchable
+        // NSException; asking `canApplyOutputSettings` first turns that into a typed
+        // `UnsupportedSourceFormat` before the writer is ever started.
+        if (config.dynamicRange == DynamicRange.HDR10) {
+            requireHdr10HevcCapability(config.codec)
+        }
         runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
@@ -141,8 +156,55 @@ internal class IosVideoCompressor : VideoCompressor {
         }
     }
 
+    /**
+     * Throw a typed [VideoCompressionError.UnsupportedSourceFormat] when the runtime can't honour
+     * HDR10 output. `AVAssetWriter.canApplyOutputSettings` is AVFoundation's documented probe:
+     * it returns `false` when the device (e.g. A9 on iOS 15) lacks the hardware Main10 encoder
+     * that the BT.2020+PQ settings dictionary requires, so the failure surfaces here instead of
+     * crashing `AVAssetWriterInput.init` with an Obj-C exception we cannot catch.
+     *
+     * The probe writes to a throwaway path under `NSTemporaryDirectory()` and never calls
+     * `startWriting`, so no bytes are produced on disk.
+     */
+    private fun requireHdr10HevcCapability(codec: VideoCodec) {
+        val tmpUrl = NSURL.fileURLWithPath(
+            platform.Foundation.NSTemporaryDirectory() + "kompressor-hdr10-probe-" +
+                platform.Foundation.NSUUID().UUIDString + ".mp4",
+        )
+        val writer = AVAssetWriter.assetWriterWithURL(tmpUrl, fileType = AVFileTypeMPEG4, error = null)
+        val supported = writer?.canApplyOutputSettings(
+            HDR10_PROBE_SETTINGS,
+            forMediaType = AVMediaTypeVideo,
+        ) ?: false
+        if (!supported) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "HEVC Main10 HDR10 encoder unavailable on this device " +
+                    "(requested DynamicRange.HDR10 with codec=$codec)",
+            )
+        }
+    }
+
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
+
+        // Settings matrix the runtime pre-flight uses to probe HDR10 support via
+        // `AVAssetWriter.canApplyOutputSettings`. 16×16 keeps the dictionary minimal — the
+        // dimensions are irrelevant to the capability check, only the codec/color/profile keys
+        // drive the answer.
+        private const val HDR10_PROBE_DIM = 16
+        private val HDR10_PROBE_SETTINGS: Map<Any?, Any?> = mapOf(
+            AVVideoCodecKey to AVVideoCodecHEVC,
+            AVVideoWidthKey to HDR10_PROBE_DIM,
+            AVVideoHeightKey to HDR10_PROBE_DIM,
+            AVVideoColorPropertiesKey to mapOf(
+                AVVideoColorPrimariesKey to AVVideoColorPrimaries_ITU_R_2020,
+                AVVideoTransferFunctionKey to AVVideoTransferFunction_SMPTE_ST_2084_PQ,
+                AVVideoYCbCrMatrixKey to AVVideoYCbCrMatrix_ITU_R_2020,
+            ),
+            AVVideoCompressionPropertiesKey to mapOf(
+                AVVideoProfileLevelKey to kVTProfileLevel_HEVC_Main10_AutoLevel,
+            ),
+        )
     }
 }
 
@@ -212,7 +274,7 @@ private class IosVideoTranscodePipeline(
         // literal because the CFStringRef constant does not bridge to NSDictionary
         // keys in Kotlin/Native.
         val videoOutputSettings: Map<Any?, *> = mapOf(
-            PIXEL_FORMAT_KEY to platform.CoreVideo.kCVPixelFormatType_32BGRA,
+            PIXEL_FORMAT_KEY to kCVPixelFormatType_32BGRA,
         )
         val videoOutput = AVAssetReaderTrackOutput(
             track = videoTrack,
@@ -266,19 +328,33 @@ private class IosVideoTranscodePipeline(
         return Triple(writer, videoInput, audioInput)
     }
 
-    private fun buildVideoSettings(width: Int, height: Int): Map<Any?, *> = mapOf(
-        // Dispatched via `when` so the compiler forces this to stay in sync when
-        // the VideoCodec enum grows a new variant (e.g. HEVC).
-        AVVideoCodecKey to when (config.codec) {
-            co.crackn.kompressor.video.VideoCodec.H264 -> AVVideoCodecH264
-        },
-        AVVideoWidthKey to width,
-        AVVideoHeightKey to height,
-        AVVideoCompressionPropertiesKey to mapOf(
-            AVVideoAverageBitRateKey to config.videoBitrate,
-            AVVideoMaxKeyFrameIntervalKey to config.keyFrameInterval * config.maxFrameRate,
-            AVVideoExpectedSourceFrameRateKey to config.maxFrameRate,
-        ),
+    private fun buildVideoSettings(width: Int, height: Int): Map<Any?, *> {
+        val compressionProps = baseCompressionProps()
+        val baseSettings = mutableMapOf<Any?, Any?>(
+            AVVideoCodecKey to codecKeyFor(config.codec),
+            AVVideoWidthKey to width,
+            AVVideoHeightKey to height,
+        )
+        if (config.dynamicRange == DynamicRange.HDR10) {
+            compressionProps[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main10_AutoLevel
+            baseSettings[AVVideoColorPropertiesKey] = HDR10_COLOR_PROPERTIES
+        }
+        baseSettings[AVVideoCompressionPropertiesKey] = compressionProps
+        return baseSettings
+    }
+
+    // AVVideoCodec{H264,HEVC} are typed as `String?` in K/N's AVFoundation bridge despite being
+    // non-null CFString constants in the SDK. `requireNotNull` surfaces a typed error if the
+    // bridge ever drops them (e.g. SDK strip) rather than a raw NPE.
+    private fun codecKeyFor(codec: VideoCodec): String = when (codec) {
+        VideoCodec.H264 -> requireNotNull(AVVideoCodecH264) { "AVVideoCodecH264 unavailable in current K/N bridge" }
+        VideoCodec.HEVC -> requireNotNull(AVVideoCodecHEVC) { "AVVideoCodecHEVC unavailable in current K/N bridge" }
+    }
+
+    private fun baseCompressionProps(): MutableMap<Any?, Any?> = mutableMapOf(
+        AVVideoAverageBitRateKey to config.videoBitrate,
+        AVVideoMaxKeyFrameIntervalKey to config.keyFrameInterval * config.maxFrameRate,
+        AVVideoExpectedSourceFrameRateKey to config.maxFrameRate,
     )
 
     private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
@@ -400,6 +476,15 @@ private class IosVideoTranscodePipeline(
         const val PROGRESS_SETUP = 0.05f
         const val PROGRESS_TRANSCODE_RANGE = 0.90f
         const val PROGRESS_REPORT_THRESHOLD = 0.01f
+
+        // BT.2020 primaries + SMPTE ST 2084 (PQ) transfer + BT.2020 non-constant-luminance
+        // Y′CbCr matrix — the canonical HDR10 colour signature. Hoisted out of buildVideoSettings
+        // so the dictionary isn't re-allocated on every invocation.
+        private val HDR10_COLOR_PROPERTIES: Map<Any?, Any?> = mapOf(
+            AVVideoColorPrimariesKey to AVVideoColorPrimaries_ITU_R_2020,
+            AVVideoTransferFunctionKey to AVVideoTransferFunction_SMPTE_ST_2084_PQ,
+            AVVideoYCbCrMatrixKey to AVVideoYCbCrMatrix_ITU_R_2020,
+        )
     }
 }
 
