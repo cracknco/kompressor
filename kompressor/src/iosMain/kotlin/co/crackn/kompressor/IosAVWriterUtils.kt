@@ -25,11 +25,7 @@ internal suspend fun awaitWriterReady(
     var waited = 0L
     while (!input.readyForMoreMediaData) {
         if (writer.status == AVAssetWriterStatusFailed) {
-            val err = writer.error
-            if (err != null) {
-                throw AVNSErrorException(err, "AVAssetWriter failed while waiting")
-            }
-            error("AVAssetWriter failed while waiting: unknown")
+            throw writerFailureException(writer, "AVAssetWriter failed while waiting")
         }
         check(waited < WRITER_READY_TIMEOUT_MS) {
             "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
@@ -53,13 +49,9 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
             if (writer.status == AVAssetWriterStatusCompleted) {
                 continuation.resume(Unit)
             } else {
-                val err = writer.error
-                val ex = if (err != null) {
-                    AVNSErrorException(err, "AVAssetWriter failed")
-                } else {
-                    IllegalStateException("AVAssetWriter failed: unknown")
-                }
-                continuation.resumeWithException(ex)
+                continuation.resumeWithException(
+                    writerFailureException(writer, "AVAssetWriter failed"),
+                )
             }
         }
     }
@@ -69,12 +61,14 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
 @OptIn(ExperimentalForeignApi::class)
 internal fun checkWriterCompleted(writer: AVAssetWriter) {
     if (writer.status != AVAssetWriterStatusCompleted) {
-        val err = writer.error
-        if (err != null) {
-            throw AVNSErrorException(err, "AVAssetWriter not completed")
-        }
-        error("AVAssetWriter not completed: unknown")
+        throw writerFailureException(writer, "AVAssetWriter not completed")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun writerFailureException(writer: AVAssetWriter, message: String): Throwable {
+    val err = writer.error ?: return IllegalStateException("$message: unknown")
+    return AVNSErrorException(err, message)
 }
 
 /**

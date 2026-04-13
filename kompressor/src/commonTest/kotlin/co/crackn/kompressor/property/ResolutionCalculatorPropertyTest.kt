@@ -5,6 +5,7 @@ import co.crackn.kompressor.video.ResolutionCalculator
 import io.kotest.common.ExperimentalKotest
 import io.kotest.property.Arb
 import io.kotest.property.PropTestConfig
+import io.kotest.property.arbitrary.bind
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import kotlin.test.Test
@@ -87,14 +88,33 @@ class ResolutionCalculatorPropertyTest {
     fun sourceSmallerThanConstraint_returnsEvenRoundedSource() = runTest {
         // When the shortest source edge is already <= maxShortEdge, ResolutionCalculator must
         // return the source dimensions unchanged (modulo rounding to even). No upscaling.
-        checkAll(config, Arb.int(2..1000), Arb.int(2..1000), Arb.int(MIN_TARGET..MAX_TARGET)) { w, h, target ->
-            if (minOf(w, h) <= target) {
-                val (tw, th) = ResolutionCalculator.calculate(w, h, MaxResolution.Custom(target))
-                val expectedW = if (w % 2 == 0) w else w + 1
-                val expectedH = if (h % 2 == 0) h else h + 1
-                assertTrue(tw == expectedW, "Expected width=$expectedW for ${w}x$h target=$target, got $tw")
-                assertTrue(th == expectedH, "Expected height=$expectedH for ${w}x$h target=$target, got $th")
-            }
+        // Combined Arb guarantees minOf(w, h) <= target so every iteration asserts.
+        val triples = Arb.bind(
+            Arb.int(2..1000),
+            Arb.int(2..1000),
+            Arb.int(MIN_TARGET..MAX_TARGET),
+        ) { w, h, target ->
+            val bumped = maxOf(target, minOf(w, h))
+            Triple(w, h, bumped.coerceAtMost(MAX_TARGET))
+        }
+        checkAll(config, triples) { (w, h, target) ->
+            val (tw, th) = ResolutionCalculator.calculate(w, h, MaxResolution.Custom(target))
+            val expectedW = if (w % 2 == 0) w else w + 1
+            val expectedH = if (h % 2 == 0) h else h + 1
+            assertTrue(tw == expectedW, "Expected width=$expectedW for ${w}x$h target=$target, got $tw")
+            assertTrue(th == expectedH, "Expected height=$expectedH for ${w}x$h target=$target, got $th")
+        }
+    }
+
+    @Test
+    fun customTargetOne_producesEvenPositiveDims() = runTest {
+        // MaxResolution.Custom(1) is a legal (> 0) input that exercises the MIN_EVEN floor
+        // branch inside scaleToFit (maxShortEven clamped up from 0 to 2). Output must still
+        // be positive-even on both axes with no division-by-zero or zero-dimension shorts.
+        checkAll(config, Arb.int(2..8000), Arb.int(2..8000)) { w, h ->
+            val (tw, th) = ResolutionCalculator.calculate(w, h, MaxResolution.Custom(1))
+            assertTrue(tw >= 2 && th >= 2, "Custom(1) produced non-positive dims: ${tw}x$th for ${w}x$h")
+            assertTrue(tw % 2 == 0 && th % 2 == 0, "Custom(1) produced odd dims: ${tw}x$th for ${w}x$h")
         }
     }
 

@@ -85,12 +85,14 @@ internal class IosVideoCompressor : VideoCompressor {
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
     private fun sizeOrTypedError(path: String): Long =
         try {
             nsFileSize(path)
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
+        } catch (typed: VideoCompressionError) {
+            throw typed
         } catch (t: Throwable) {
             throw mapToVideoError(t)
         }
