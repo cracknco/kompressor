@@ -60,26 +60,55 @@ internal class IosAudioCompressor : AudioCompressor {
         require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
-        val inputSize = nsFileSize(inputPath)
-
+        val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error so callers see the
+        // same `IoFailed` subtype across platforms instead of the AVFoundation-specific
+        // `fileFormatNotRecognized` → `UnsupportedSourceFormat` mapping an empty file would
+        // otherwise trigger.
+        if (inputSize == 0L) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
         // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
         // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
         // sample buffer` from deep in the pipeline.
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
-
-        deletingOutputOnFailure(outputPath) {
+        runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
             } else {
                 IosPipeline(inputPath, outputPath, config).execute(onProgress)
             }
         }
-
         onProgress(1f)
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private fun sizeOrTypedError(path: String): Long =
+        try {
+            nsFileSize(path)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: AudioCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToAudioError(t)
+        }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private suspend inline fun runPipelineWithTypedErrors(outputPath: String, block: () -> Unit) {
+        try {
+            deletingOutputOnFailure(outputPath) { block() }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: AudioCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToAudioError(t)
+        }
     }
 
     /**
@@ -240,15 +269,8 @@ private class IosPipeline(
         val (writer, writerInput) = createWriter()
 
         try {
-            check(reader.startReading()) {
-                "AVAssetReader failed to start: ${reader.error?.localizedDescription}"
-            }
-            check(writer.startWriting()) {
-                "AVAssetWriter failed to start: ${writer.error?.localizedDescription}"
-            }
-            writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
+            startReaderWriter(reader, writer)
             onProgress(PROGRESS_READ_START)
-
             copySamples(readerOutput, writer, writerInput, totalDurationSec, onProgress)
             finishPipeline(reader, writer, writerInput)
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -258,14 +280,32 @@ private class IosPipeline(
         }
     }
 
+    private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
+        if (!reader.startReading()) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed to start")
+            error("AVAssetReader failed to start: unknown")
+        }
+        if (!writer.startWriting()) {
+            val err = writer.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetWriter failed to start")
+            error("AVAssetWriter failed to start: unknown")
+        }
+        writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
+    }
+
     private suspend fun finishPipeline(
         reader: AVAssetReader,
         writer: AVAssetWriter,
         writerInput: AVAssetWriterInput,
     ) {
         writerInput.markAsFinished()
-        check(reader.status != AVAssetReaderStatusFailed) {
-            "AVAssetReader failed: ${reader.error?.localizedDescription}"
+        if (reader.status == AVAssetReaderStatusFailed) {
+            val err = reader.error
+            if (err != null) {
+                throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed")
+            }
+            error("AVAssetReader failed: unknown")
         }
         awaitWriterFinish(writer)
         checkWriterCompleted(writer)

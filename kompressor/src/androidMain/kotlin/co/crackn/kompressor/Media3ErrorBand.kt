@@ -55,6 +55,11 @@ internal fun classifyMedia3ErrorBand(errorCode: Int): Media3ErrorBand = when (er
     -> Media3ErrorBand.Encoding
 
     else -> when (errorCode / THOUSAND) {
+        // 1xxx — Media3 emits ERROR_CODE_FAILED_RUNTIME_CHECK (1004) and the generic asset-
+        // loader codes (1000) here when the input bytes don't match any registered extractor.
+        // For our pipeline that always means "we cannot read the source format" — bucket as
+        // UnsupportedSource so callers see a typed error instead of `Unknown`.
+        ASSET_LOADER_BAND -> Media3ErrorBand.UnsupportedSource
         IO_BAND -> Media3ErrorBand.Io
         DECODING_BAND -> Media3ErrorBand.Decoding
         ENCODING_BAND,
@@ -67,6 +72,7 @@ internal fun classifyMedia3ErrorBand(errorCode: Int): Media3ErrorBand = when (er
 }
 
 private const val THOUSAND = 1000
+private const val ASSET_LOADER_BAND = 1
 private const val IO_BAND = 2
 private const val DECODING_BAND = 3
 private const val ENCODING_BAND = 4
