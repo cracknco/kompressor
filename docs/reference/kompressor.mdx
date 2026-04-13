@@ -58,7 +58,7 @@ Returns `Result.success(SourceMediaInfo)` on success, or `Result.failure(...)` o
 public fun canCompress(info: SourceMediaInfo): Supportability
 ```
 
-Returns an advisory verdict: can this device decode the source and encode the required output (H.264 for video, AAC for audio)?
+Returns an advisory verdict: can this device decode the source and encode the output format (H.264 for video, AAC for audio)?
 
 <ParamField path="info" type="SourceMediaInfo" required>
   The result of a prior call to `probe(...)`.

@@ -39,13 +39,28 @@ Every error carries:
 ## Audio error hierarchy
 
 ```kotlin
-public sealed class AudioCompressionError : Exception() {
-    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) : AudioCompressionError()
-    public class DecodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
-    public class EncodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
-    public class IoFailed(val details: String, cause: Throwable? = null)                : AudioCompressionError()
-    public class UnsupportedConfiguration(val details: String, cause: Throwable? = null): AudioCompressionError()
-    public class Unknown(val details: String, cause: Throwable? = null)                 : AudioCompressionError()
+public sealed class AudioCompressionError(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Unsupported source format: $details", cause)
+
+    public class DecodingFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Decoding failed: $details", cause)
+
+    public class EncodingFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Encoding failed: $details", cause)
+
+    public class IoFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("IO failed: $details", cause)
+
+    public class UnsupportedConfiguration(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Unsupported configuration: $details", cause)
+
+    public class Unknown(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Compression failed: $details", cause)
 }
 ```
 
@@ -61,12 +76,25 @@ public sealed class AudioCompressionError : Exception() {
 ## Video error hierarchy
 
 ```kotlin
-public sealed class VideoCompressionError : Exception() {
-    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) : VideoCompressionError()
-    public class DecodingFailed(val details: String, cause: Throwable? = null)          : VideoCompressionError()
-    public class EncodingFailed(val details: String, cause: Throwable? = null)          : VideoCompressionError()
-    public class IoFailed(val details: String, cause: Throwable? = null)                : VideoCompressionError()
-    public class Unknown(val details: String, cause: Throwable? = null)                 : VideoCompressionError()
+public sealed class VideoCompressionError(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Unsupported source format: $details", cause)
+
+    public class DecodingFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Decoding failed: $details", cause)
+
+    public class EncodingFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Encoding failed: $details", cause)
+
+    public class IoFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("IO failed: $details", cause)
+
+    public class Unknown(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Compression failed: $details", cause)
 }
 ```
 

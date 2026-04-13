@@ -451,22 +451,24 @@ sealed class Supportability {
 ### Error types
 
 ```kotlin
-sealed class AudioCompressionError : Exception() {
-    class UnsupportedSourceFormat(val details: String, cause: Throwable?) : AudioCompressionError
-    class DecodingFailed(val details: String, cause: Throwable?)          : AudioCompressionError
-    class EncodingFailed(val details: String, cause: Throwable?)          : AudioCompressionError
-    class IoFailed(val details: String, cause: Throwable?)                : AudioCompressionError
-    class UnsupportedConfiguration(val details: String, cause: Throwable?): AudioCompressionError
-    class Unknown(val details: String, cause: Throwable?)                 : AudioCompressionError
+sealed class AudioCompressionError(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+    class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Unsupported source format: $details", cause)
+    class DecodingFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Decoding failed: $details", cause)
+    class EncodingFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Encoding failed: $details", cause)
+    class IoFailed(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("IO failed: $details", cause)
+    class UnsupportedConfiguration(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Unsupported configuration: $details", cause)
+    class Unknown(val details: String, cause: Throwable? = null) :
+        AudioCompressionError("Compression failed: $details", cause)
 }
-
-sealed class VideoCompressionError : Exception() {
-    class UnsupportedSourceFormat(val details: String, cause: Throwable?) : VideoCompressionError
-    class DecodingFailed(val details: String, cause: Throwable?)          : VideoCompressionError
-    class EncodingFailed(val details: String, cause: Throwable?)          : VideoCompressionError
-    class IoFailed(val details: String, cause: Throwable?)                : VideoCompressionError
-    class Unknown(val details: String, cause: Throwable?)                 : VideoCompressionError
-}
+// VideoCompressionError mirrors this shape without UnsupportedConfiguration.
 ```
 
 ---
