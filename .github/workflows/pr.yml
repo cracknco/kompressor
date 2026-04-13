@@ -224,9 +224,12 @@ jobs:
     name: Merged coverage (host + device)
     runs-on: ubuntu-latest
     needs: [test, android-device-tests-ftl]
-    # Don't fail the CI if FTL itself failed for a transient reason (quota, network) — device
-    # coverage being missing is a lesser harm than blocking a merge on an unrelated infra issue.
-    if: always() && needs.test.result == 'success'
+    # Hard gate: requires both host tests AND FTL device tests to have succeeded. If FTL is
+    # quota-blocked or transiently failing the gate fails — by design. The user explicitly
+    # chose this trade-off ("no shortcut, going to prod") because a soft fallback would let
+    # coverage regressions slip through under FTL incidents. To unblock a release during a
+    # confirmed FTL outage, gate the PR via repository administrator override rather than
+    # weakening the workflow.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
@@ -240,19 +243,16 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
 
-      # `continue-on-error: true`: if FTL's upload step didn't run (quota hit, earlier
-       # failure, cancelled workflow), the artifact won't exist. Tolerate that so this job
-       # falls back to a host-only gate instead of blocking the merge on an infra hiccup.
+      # No `continue-on-error`: if the FTL upload step didn't run, this download fails, the
+      # job fails, and the merge is blocked. Honest signal beats a soft fallback that hides
+      # coverage regressions during infra incidents.
       - name: Download FTL device coverage
-        id: dl-ftl
-        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ftl-device-coverage
           path: ftl-coverage/
 
       - name: Place device .ec where Kover expects it
-        id: place-coverage
         run: |
           # Kover wires JaCoCo coverage for androidDeviceTest via the
           # `enableCoverage = true` flag on `withDeviceTestBuilder`. The build normally writes
@@ -262,30 +262,19 @@ jobs:
           # merged report on the next invocation.
           target_dir="kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest"
           mkdir -p "$target_dir"
-          if [ -f ftl-coverage/coverage.ec ]; then
-            cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
-            echo "Merged: $(ls -la $target_dir)"
-            echo "merged=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::No FTL coverage.ec — falling back to host-only gate."
-            echo "merged=false" >> "$GITHUB_OUTPUT"
+          if [ ! -f ftl-coverage/coverage.ec ]; then
+            echo "::error::FTL device coverage.ec missing — cannot enforce the merged 90% gate."
+            exit 1
           fi
+          cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
+          echo "Merged device coverage placed at $target_dir/connected-coverage.ec"
+          ls -la "$target_dir"
 
       - name: Run Kover merged report
-        run: ./gradlew :kompressor:koverXmlReport
+        run: ./gradlew -PkoverMergedGate=true :kompressor:koverXmlReport
 
-      # Only run the tighter `-PkoverMergedGate=true` gate (90 %) when we actually have
-      # device `.ec` merged — otherwise the flag trims exclusions without the coverage data
-      # that justifies trimming them, and the job fails at ~52 % instead of ~90 %. Falling
-      # back to the same host-only 85 % gate as the `test` job keeps the signal honest
-      # without false-failing on infra issues.
-      - name: Kover merged quality gate
-        run: |
-          if [ "${{ steps.place-coverage.outputs.merged }}" = "true" ]; then
-            ./gradlew -PkoverMergedGate=true :kompressor:koverVerify
-          else
-            ./gradlew :kompressor:koverVerify
-          fi
+      - name: Kover merged 90% gate (host + device)
+        run: ./gradlew -PkoverMergedGate=true :kompressor:koverVerify koverVerify
 
       - name: Upload merged Kover report
         if: always()
