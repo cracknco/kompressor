@@ -397,11 +397,11 @@ class AndroidAudioCompressorTest {
     }
 
     @Test
-    fun compressAudio_sixChannelSource_rejectedWithTypedError() = runTest {
-        // End-to-end gate for the 5.1 / 7.1 upfront-rejection path. WAV supports arbitrary
-        // channel counts, so we synthesise a 6-channel fixture, hand it to `compress()`, and
-        // verify the library refuses with `UnsupportedConfiguration` BEFORE Media3's mixer
-        // crashes on an unsupported constant-gain matrix.
+    fun compressAudio_sixChannelSource_downmixesToStereo() = runTest {
+        // End-to-end gate for the 5.1 → stereo downmix path now that surround support has
+        // landed. Pre-PR-59 this 6-channel input was rejected upfront; PR 59 wired Media3's
+        // constant-power 6→2 matrix through `supportedInputCountsForOutput`, so the same
+        // fixture must now compress successfully to a stereo M4A.
         val bytes = WavGenerator.generateWavBytes(
             durationSeconds = 1,
             sampleRate = SAMPLE_RATE_44K,
@@ -412,13 +412,8 @@ class AndroidAudioCompressorTest {
 
         val result = compressor.compress(input.absolutePath, output.absolutePath)
 
-        assertTrue(result.isFailure, "5.1 input must be rejected upfront, got: $result")
-        val err = result.exceptionOrNull()
-        assertTrue(
-            err is co.crackn.kompressor.audio.AudioCompressionError.UnsupportedConfiguration,
-            "Expected UnsupportedConfiguration, got ${err?.let { it::class.simpleName }}: $err",
-        )
-        assertTrue(!output.exists(), "No partial output should be created for rejected configs")
+        assertTrue(result.isSuccess, "5.1→stereo downmix must succeed, got: $result")
+        assertTrue(output.exists() && output.length() > 0, "Output M4A must be present and non-empty")
     }
 
     @Suppress("SameParameterValue")
