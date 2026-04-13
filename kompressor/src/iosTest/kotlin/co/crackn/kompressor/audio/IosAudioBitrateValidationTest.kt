@@ -72,4 +72,41 @@ class IosAudioBitrateValidationTest {
         // the most common real-world call site.
         checkSupportedIosBitrate(AudioCompressionConfig())
     }
+
+    // ── Minimum-bitrate floor boundary cases ─────────────────────
+    // Apple's AAC-LC encoder rejects bitrates below a per-sample-rate minimum with the same
+    // opaque "failed to append sample buffer" it uses for the max cap. These tests pin each
+    // floor.
+
+    @Test
+    fun stereoAt32kHz_belowMinFloor_rejected() {
+        // Min is 24 kbps/channel × 2 = 48 000; 42 986 was the shrunk failure from the iOS CI run.
+        val err = assertFails {
+            checkSupportedIosBitrate(AudioCompressionConfig(bitrate = 42_986, sampleRate = 32_000, channels = AudioChannels.STEREO))
+        }
+        assertTrue(err is AudioCompressionError.UnsupportedConfiguration, "Expected UnsupportedConfiguration, got $err")
+    }
+
+    @Test
+    fun stereoAt32kHz_atMinFloor_accepted() {
+        checkSupportedIosBitrate(AudioCompressionConfig(bitrate = 48_000, sampleRate = 32_000, channels = AudioChannels.STEREO))
+    }
+
+    @Test
+    fun monoAt22kHz_belowMinFloor_rejected() {
+        // Min is 16 kbps for 22 kHz mono; 8 kbps must fail.
+        val err = assertFails {
+            checkSupportedIosBitrate(AudioCompressionConfig(bitrate = 8_000, sampleRate = 22_050, channels = AudioChannels.MONO))
+        }
+        assertTrue(err is AudioCompressionError.UnsupportedConfiguration, "Expected UnsupportedConfiguration, got $err")
+    }
+
+    @Test
+    fun stereoAt44kHz_belowMinFloor_rejected() {
+        // Min is 32 kbps/channel × 2 = 64 000; 32 kbps stereo must fail.
+        val err = assertFails {
+            checkSupportedIosBitrate(AudioCompressionConfig(bitrate = 32_000, sampleRate = 44_100, channels = AudioChannels.STEREO))
+        }
+        assertTrue(err is AudioCompressionError.UnsupportedConfiguration, "Expected UnsupportedConfiguration, got $err")
+    }
 }

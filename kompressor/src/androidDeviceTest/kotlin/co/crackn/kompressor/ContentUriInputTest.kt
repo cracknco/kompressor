@@ -3,11 +3,13 @@ package co.crackn.kompressor
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.TestContentProvider
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import java.io.File
 import kotlin.test.assertTrue
@@ -28,6 +30,7 @@ class ContentUriInputTest {
     private lateinit var tempDir: File
     private val audioCompressor = AndroidAudioCompressor()
     private val videoCompressor = AndroidVideoCompressor()
+    private val imageCompressor = AndroidImageCompressor()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before
@@ -59,6 +62,33 @@ class ContentUriInputTest {
             "Audio compress from content:// URI must succeed: ${result.exceptionOrNull()}",
         )
         assertTrue(output.exists() && output.length() > 0, "Output file must exist and be non-empty")
+    }
+
+    @Test
+    fun image_compressFromContentUri_succeeds() = runTest {
+        // Third compressor covered end-to-end for content:// inputs. Exercises the
+        // `ContentUriSource` path in `AndroidImageCompressor` — four distinct operations
+        // (fd stat, ExifInterface(stream), decodeStream bounds, decodeStream bitmap) all
+        // going through `ContentResolver` instead of `java.io.File`.
+        val input = createTestImage(tempDir, 800, 600)
+        val output = File(tempDir, "image_out.jpg")
+        val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
+
+        val result = imageCompressor.compress(
+            inputPath = contentUri.toString(),
+            outputPath = output.absolutePath,
+        )
+
+        assertTrue(
+            result.isSuccess,
+            "Image compress from content:// URI must succeed: ${result.exceptionOrNull()}",
+        )
+        assertTrue(output.exists() && output.length() > 0, "Output file must exist and be non-empty")
+        // Verify dimensions survived end-to-end through the stream-based decode.
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(output.absolutePath, options)
+        kotlin.test.assertEquals(800, options.outWidth)
+        kotlin.test.assertEquals(600, options.outHeight)
     }
 
     @Test

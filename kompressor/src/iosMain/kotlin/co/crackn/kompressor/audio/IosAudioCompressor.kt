@@ -165,6 +165,24 @@ internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
                 "max supported is $maxBitrate bps",
         )
     }
+    // Apple's AAC-LC encoder also rejects bitrates below a per-sample-rate **minimum**.
+    // The surrounding failure mode is identical to the over-cap case ("failed to append
+    // sample buffer") so we fail fast with the same typed error. Minimums empirically
+    // determined from Apple AudioToolbox AAC-LC parameters and confirmed by property-test
+    // shrinks (32 kHz stereo @ 42 kbps fails; 32 kHz stereo @ 48 kbps succeeds).
+    val minPerChannel = when {
+        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
+        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
+        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
+    }
+    val minBitrate = minPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    if (config.bitrate < minBitrate) {
+        throw AudioCompressionError.UnsupportedConfiguration(
+            "iOS AAC encoder does not support ${config.bitrate} bps at " +
+                "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
+                "minimum supported is $minBitrate bps",
+        )
+    }
 }
 
 private const val IOS_KBPS_TO_BPS = 1_000
@@ -175,6 +193,9 @@ private const val IOS_AAC_MAX_KBPS_LOW_RATE = 64
 private const val IOS_AAC_MAX_KBPS_MID_RATE = 96
 private const val IOS_AAC_MAX_KBPS_HIGH_RATE = 160
 private const val IOS_AAC_MAX_KBPS_VERY_HIGH_RATE = 192
+private const val IOS_AAC_MIN_KBPS_LOW_RATE = 16
+private const val IOS_AAC_MIN_KBPS_MID_RATE = 24
+private const val IOS_AAC_MIN_KBPS_HIGH_RATE = 32
 
 @OptIn(ExperimentalForeignApi::class)
 private class IosPipeline(

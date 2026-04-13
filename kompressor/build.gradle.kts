@@ -99,63 +99,60 @@ kotlin {
     }
 }
 
-// TODO(kover-merge): Item 8 of the post-PR #45 audit — bump the `minValue` gate from 85 → 90
-//  once the FTL `.ec` device-coverage file is merged into the Kover report. The FTL job
-//  already uploads `ftl-device-coverage` as a GitHub Actions artifact (see pr.yml).
-//
-//  Concrete next steps to wire up the merge:
-//   1. In the `Tests & coverage (host)` job, download the `ftl-device-coverage` artifact
-//      *after* the FTL job completes (needs `needs: android-device-tests-ftl` OR a dedicated
-//      `merged-coverage` job depending on both).
-//   2. Drop the artifact into `kompressor/build/outputs/code_coverage/androidDeviceTest/` so
-//      Kover picks it up automatically alongside host coverage.
-//   3. Trim the exclusions below — classes like `AndroidAudioCompressorKt`, `Media3ExportRunnerKt`,
-//      `AudioProcessorPlan` become measurable once device coverage is in the report.
-//   4. Raise `minValue` to 90. If that's not achievable on the first run, leave it at 85 and
-//      open a follow-up to close specific gaps one by one.
+// Kover has two gate modes:
+//   * Default (host-only): excludes every class that can only run on a device or simulator
+//     because `testAndroidHostTest` alone can't exercise them. 85 % is the bar for this mode.
+//   * Merged (host + FTL device `.ec`): triggered by `-PkoverMergedGate=true`, trims the
+//     excludes for device-testable classes (Android*/Ios* compressors, `Media3ExportRunner`,
+//     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
+//     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
+//     before invoking `koverXmlReport`, so those classes show up in the merged report.
+val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
 kover {
     reports {
         filters {
             excludes {
-                // Platform implementations that require device/simulator tests (not host JVM)
+                // Always-excluded platform glue — device or simulator only, no equivalent pure
+                // logic available host-side. These exist irrespective of merged vs host-only mode.
                 classes(
-                    "co.crackn.kompressor.*.Android*",
-                    "co.crackn.kompressor.*.Ios*",
-                    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-                    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
-                    // Shared Media3 → coroutines glue. The Transformer listener + progress
-                    // poller can only be exercised on an emulator/device where Media3 has a
-                    // real codec stack to drive. Wildcard also excludes the inner lambda
-                    // classes the Kotlin compiler generates for the listener / progress job.
-                    "co.crackn.kompressor.Media3ExportRunnerKt",
-                    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
-                    // Runtime-only probe data class populated from MediaExtractor (device).
-                    "co.crackn.kompressor.audio.InputAudioFormat",
-                    // The plan *selection* logic (`planAudioProcessors`) is in the same file
-                    // and covered by host tests; the data class itself plus `toProcessors`
-                    // instantiates Media3 audio processors that pull in `android.util.SparseArray`
-                    // and can only run on a device.
-                    "co.crackn.kompressor.audio.AudioProcessorPlan",
-                    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
-                    // Device/simulator-only platform glue. Pure logic extracted from
-                    // these has been moved to separate files that ARE covered.
-                    "co.crackn.kompressor.AndroidKompressor",
-                    "co.crackn.kompressor.AndroidKompressorKt",
-                    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.MediaCodecUtilsKt",
-                    "co.crackn.kompressor.IosKompressor",
-                    "co.crackn.kompressor.IosKompressorKt",
-                    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.IosFileUtils*",
                     "co.crackn.kompressor.KompressorInitializer",
                     "co.crackn.kompressor.KompressorContext",
+                    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
+                    "co.crackn.kompressor.MediaCodecUtilsKt",
+                    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
+                    "co.crackn.kompressor.IosFileUtils*",
+                    "co.crackn.kompressor.IosKompressor",
+                    "co.crackn.kompressor.IosKompressorKt",
+                    "co.crackn.kompressor.AndroidKompressor",
+                    "co.crackn.kompressor.AndroidKompressorKt",
                 )
+                if (!mergedCoverageGate) {
+                    // Host-only mode: add all classes that require a real codec stack / native
+                    // platform APIs. In merged mode, device tests cover these and they're included.
+                    classes(
+                        "co.crackn.kompressor.*.Android*",
+                        "co.crackn.kompressor.*.Ios*",
+                        "co.crackn.kompressor.image.ImageSource",
+                        "co.crackn.kompressor.image.ImageSource\$*",
+                        "co.crackn.kompressor.image.FilePathSource",
+                        "co.crackn.kompressor.image.ContentUriSource",
+                        "co.crackn.kompressor.image.AndroidImageCompressorKt",
+                        "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                        "co.crackn.kompressor.video.AndroidVideoCompressorKt",
+                        "co.crackn.kompressor.Media3ExportRunnerKt",
+                        "co.crackn.kompressor.Media3ExportRunnerKt\$*",
+                        "co.crackn.kompressor.audio.InputAudioFormat",
+                        "co.crackn.kompressor.audio.AudioProcessorPlan",
+                        "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
+                    )
+                }
             }
         }
         verify {
             rule {
                 bound {
-                    minValue = 85
+                    // 85 % host-only, 90 % merged (host + device).
+                    minValue = if (mergedCoverageGate) 90 else 85
                 }
             }
         }
