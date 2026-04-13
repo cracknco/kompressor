@@ -2,7 +2,6 @@ package co.crackn.kompressor.audio
 
 import android.content.Context
 import android.media.MediaExtractor
-import android.net.Uri
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import androidx.media3.common.MediaItem
@@ -22,6 +21,7 @@ import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
 import java.io.File
+import java.io.FileNotFoundException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,40 +85,59 @@ internal class AndroidAudioCompressor(
             throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
         }
 
-        // Reject pre-existing non-file output paths (directories, sockets, fifos) up front:
-        // Media3 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing
-        // entry before opening its muxer FileOutputStream, which silently wipes a caller-owned
-        // empty directory before our `deletingOutputOnFailure` snapshot ever sees a throwable.
-        // Checking here keeps Media3 from touching the path at all.
-        val outputFile = File(outputPath)
-        if (outputFile.exists() && !outputFile.isFile) {
-            throw AudioCompressionError.IoFailed(
-                "Output path is not a writable file: $outputPath",
-            )
-        }
-
-        // Probe off-Main because MediaExtractor does blocking I/O.
-        val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
-
-        // Reject configurations Media3's channel mixer cannot handle before kicking off an
-        // export. Two complementary checks, both host-testable so the rules are covered without
-        // needing a real 5.1 / 7.1 fixture:
-        //  - `checkSupportedInputChannelCount`: rejects inputs outside our envelope (7-channel
-        //    or 9+-channel sources).
-        //  - `checkChannelMixSupported`: rejects (input, target) pairs the mixer can't satisfy
-        //    — primarily upmix attempts like stereo → 5.1 — so the caller sees the typed
-        //    `UnsupportedConfiguration` instead of a Media3 mid-pipeline crash.
-        checkSupportedInputChannelCount(probe?.channels)
-        checkChannelMixSupported(probe?.channels, config.channels.count)
+        rejectNonFileOutputPath(outputPath)
+        val probeResult = probeAndValidateInput(inputPath, config)
 
         deletingOutputOnFailure(outputPath) {
-            runTransformer(inputPath, outputPath, config, probe, onProgress)
+            runTransformerWithTrackSelection(
+                inputPath, outputPath, config, probeResult.format, onProgress,
+            )
         }
 
         onProgress(1f)
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Media3 Transformer doesn't expose "pick the Nth audio track" directly — it always picks
+     * the first audio track discovered by ExoPlayer. When the caller asked for a non-default
+     * index (or the source has >1 audio track), extract the selected track to a single-track
+     * temporary MP4 via MediaExtractor+MediaMuxer (bitstream copy, preserves codec so the AAC
+     * passthrough fast path still qualifies), then feed that to Transformer.
+     */
+    private suspend fun runTransformerWithTrackSelection(
+        inputPath: String,
+        outputPath: String,
+        config: AudioCompressionConfig,
+        probe: InputAudioFormat?,
+        onProgress: suspend (Float) -> Unit,
+    ) {
+        // Only pre-extract when the caller explicitly asks for a non-default track. Media3
+        // Transformer already picks the first audio track on its own, so routing every
+        // multi-track source through `extractAudioTrackToTempFile` just to land on index 0
+        // would regress multi-track inputs whose first track uses a non-MP4-muxable codec
+        // (Opus / Vorbis / FLAC / PCM) — `requireMp4MuxableCodec` would reject them even
+        // though Media3 would have transcoded them cleanly without the extraction step.
+        val transformerInputPath = if (config.audioTrackIndex > 0) {
+            withContext(Dispatchers.IO) {
+                extractAudioTrackToTempFile(inputPath, config.audioTrackIndex)
+            }
+        } else {
+            null
+        }
+        try {
+            runTransformer(
+                inputPath = transformerInputPath?.absolutePath ?: inputPath,
+                outputPath = outputPath,
+                config = config,
+                probe = probe,
+                onProgress = onProgress,
+            )
+        } finally {
+            transformerInputPath?.delete()
+        }
     }
 
     private suspend fun runTransformer(
@@ -185,6 +204,52 @@ internal class AndroidAudioCompressor(
             .build()
     }
 
+    /**
+     * Pre-flight: single-pass probe off-Main (one MediaExtractor open returns both the selected
+     * track's format AND the audio-track count — splitting the two cost us ~2× moov-atom parse
+     * per call), then enforce the track-index bounds and channel-count envelope. Extracted from
+     * [compress] so the main body stays within detekt's `LongMethod` threshold and the rules
+     * are individually readable.
+     */
+    private suspend fun probeAndValidateInput(
+        inputPath: String,
+        config: AudioCompressionConfig,
+    ): AudioProbeResult {
+        val probeResult = withContext(Dispatchers.IO) {
+            probeAudioInput(inputPath, config.audioTrackIndex)
+        }
+        if (config.audioTrackIndex >= probeResult.audioTrackCount) {
+            throw AudioCompressionError.UnsupportedSourceFormat(
+                "audioTrackIndex ${config.audioTrackIndex} out of bounds for " +
+                    "${probeResult.audioTrackCount} audio track(s)",
+            )
+        }
+        // Two complementary channel-count gates (both host-testable):
+        //  - `checkSupportedInputChannelCount` rejects inputs outside the envelope (7-channel
+        //    or 9+-channel sources have no mix path).
+        //  - `checkChannelMixSupported` rejects (input, target) pairs the mixer can't satisfy —
+        //    primarily upmix attempts like stereo → 5.1 — so the caller sees the typed
+        //    `UnsupportedConfiguration` instead of a Media3 mid-pipeline crash.
+        checkSupportedInputChannelCount(probeResult.format?.channels)
+        checkChannelMixSupported(probeResult.format?.channels, config.channels.count)
+        return probeResult
+    }
+
+    /**
+     * Reject pre-existing non-file output paths (directories, sockets, fifos) up front. Media3
+     * 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing entry
+     * before opening its muxer `FileOutputStream`, which silently wipes a caller-owned empty
+     * directory before our `deletingOutputOnFailure` snapshot ever sees a throwable.
+     */
+    private fun rejectNonFileOutputPath(outputPath: String) {
+        val outputFile = File(outputPath)
+        if (outputFile.exists() && !outputFile.isFile) {
+            throw AudioCompressionError.IoFailed(
+                "Output path is not a writable file: $outputPath",
+            )
+        }
+    }
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
         const val AUDIO_MIME_PREFIX = "audio/"
@@ -221,36 +286,48 @@ internal data class InputAudioFormat(
 }
 
 /**
- * Inspect the input file with a short-lived [MediaExtractor] to find the first audio track and
- * its (sample rate, channel count, bitrate). Runs on [Dispatchers.IO] from the caller.
- * Returns `null` if the file has no readable audio track — Media3 will surface a proper error
- * later. Cancellation propagates; other failures become `null` (best-effort probe).
+ * Carrier for the result of a single [MediaExtractor] pass over the input: both the selected
+ * track's [InputAudioFormat] (or `null` if the index doesn't resolve) and the total audio-track
+ * count (`0` on probe failure). Lets `compress()` do one I/O hit instead of opening the
+ * extractor twice in a row.
+ */
+internal data class AudioProbeResult(val format: InputAudioFormat?, val audioTrackCount: Int)
+
+/**
+ * Single-pass probe: opens one [MediaExtractor], reports both the selected track's format AND
+ * the audio-track count of the container. Runs on [Dispatchers.IO] from the caller.
+ *
+ * Failure taxonomy (chosen to keep the three test contracts distinct):
+ * - [CancellationException] propagates so structured concurrency stays intact.
+ * - [FileNotFoundException] / [SecurityException] surface a typed [AudioCompressionError.IoFailed]
+ *   so callers can distinguish "I couldn't read the source at all" from "the source exposes zero
+ *   audio tracks".
+ * - All other failures — including plain [java.io.IOException] from a malformed container, which
+ *   MediaExtractor throws as "Failed to instantiate extractor" — collapse to `(null, 0)` so the
+ *   explicit bounds check in `compress()` surfaces `UnsupportedSourceFormat`. We split
+ *   `FileNotFoundException` from plain `IOException` deliberately: the former is a file-level
+ *   fault, the latter a format-level one, and `AudioInputRobustnessTest.randomBytes_*` depends
+ *   on the latter ending up as `UnsupportedSourceFormat`.
  */
 @Suppress("TooGenericExceptionCaught")
-private fun probeInputFormat(inputPath: String): InputAudioFormat? = try {
-    val extractor = MediaExtractor().apply {
-        // MediaExtractor.setDataSource(String) can't read content:// URIs (SAF). Use the
-        // Context/Uri overload for content:// and file:// so the probe doesn't silently
-        // return null and disable the AAC passthrough fast path for supported inputs.
-        if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
-            setDataSource(KompressorContext.appContext, Uri.parse(inputPath), null)
-        } else {
-            setDataSource(inputPath)
-        }
-    }
-    try {
-        (0 until extractor.trackCount)
-            .asSequence()
-            .map { extractor.getTrackFormat(it) }
-            .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
-            ?.toInputAudioFormat()
-    } finally {
-        extractor.release()
+internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProbeResult = try {
+    openAudioExtractor(inputPath).useThenRelease { extractor ->
+        val count = extractor.countAudioTracks()
+        val format = findAudioTrackIndexInContainer(extractor, audioTrackIndex)
+            ?.let { extractor.getTrackFormat(it).toInputAudioFormat() }
+        AudioProbeResult(format, count)
     }
 } catch (ce: CancellationException) {
     throw ce
-} catch (_: Throwable) {
-    null
+} catch (e: FileNotFoundException) {
+    throw AudioCompressionError.IoFailed("Audio input not found: $inputPath", e)
+} catch (e: SecurityException) {
+    throw AudioCompressionError.IoFailed("Permission denied probing audio input: $inputPath", e)
+} catch (_: Exception) {
+    // Catch `Exception` (not `Throwable`): non-recoverable JVM `Error`s — `OutOfMemoryError`,
+    // `LinkageError`, `StackOverflowError` — must propagate so the caller's runtime sees them
+    // instead of being silently demoted to an `UnsupportedSourceFormat` error downstream.
+    AudioProbeResult(null, 0)
 }
 
 private fun MediaFormat.toInputAudioFormat(): InputAudioFormat = InputAudioFormat(
@@ -284,7 +361,7 @@ private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean {
 
 /**
  * Build a short human-readable description of the source using [MediaMetadataRetriever].
- * Invoked only on the error path and only when [probeInputFormat] returned `null` (so the
+ * Invoked only on the error path and only when [probeAudioInput] returned `null` (so the
  * cheap in-memory probe wasn't available). Best-effort — returns null on any failure other
  * than cancellation.
  */
