@@ -35,9 +35,11 @@ Kompressor provides a **single Kotlin API** that delegates to the native hardwar
 ## Features
 
 - 🖼️ **Image compression** — JPEG with quality control and resizing (PNG, WebP planned)
-- 🎬 **Video compression** — H.264 config and presets defined, implementation coming soon
-- 🔊 **Audio compression** — AAC config and presets defined, implementation coming soon
-- 🚀 **Hardware-accelerated** — BitmapFactory on Android, UIImage/Core Graphics on iOS
+- 🎬 **Video compression** — H.264 + AAC, resolution/bitrate/framerate control, presets
+- 🔊 **Audio compression** — AAC output from WAV/MP3/M4A/FLAC/OGG/Opus/AMR/MP4-audio; bitstream-passthrough fast path when the input is already AAC at the target settings
+- 🧭 **Probe & capability check** — inspect a file's tracks (`probe`) and ask the device whether it can compress it (`canCompress`) *before* starting, so you can gate the UX on decoder/encoder availability, HDR, 10-bit, resolution and framerate caps
+- 🚀 **Hardware-accelerated native backends** — `BitmapFactory` + Media3 `Transformer` on Android, Core Graphics + AVFoundation (`AVAssetExportSession` / `AVAssetWriter`) on iOS
+- ⛑️ **Typed errors** — `when`-branch on `AudioCompressionError` / `VideoCompressionError` subtypes for actionable UX instead of "compression failed"
 - 📱 **True KMP** — one API, shared business logic, native performance
 - 🎛️ **Sensible defaults** — works out of the box, configurable when you need control
 - **0 KB overhead** — no binaries, no FFmpeg, nothing added to your app
@@ -48,8 +50,8 @@ Kompressor provides a **single Kotlin API** that delegates to the native hardwar
 
 | Platform | Minimum | Image backend | Video backend | Audio backend |
 |----------|---------|--------------|--------------|--------------|
-| Android | API 24 (7.0) | `BitmapFactory` + `Bitmap.compress` | `MediaCodec` + `MediaMuxer` (planned) | `MediaCodec` (planned) |
-| iOS | iOS 15 | `UIImage` / Core Graphics | `AVAssetExportSession` (planned) | `AVAssetExportSession` (planned) |
+| Android | API 24 (7.0) | `BitmapFactory` + `Bitmap.compress` | Media3 `Transformer` 1.10 (H.264) | Media3 `Transformer` 1.10 (AAC / M4A) |
+| iOS | iOS 15 | `UIImage` / Core Graphics | `AVAssetExportSession` / `AVAssetWriter` | `AVAssetExportSession` / `AVAssetWriter` |
 
 ---
 
@@ -86,7 +88,7 @@ result.onSuccess { println("Compressed: ${it.compressionRatio} ratio in ${it.dur
     .onFailure { println("Error: ${it.message}") }
 ```
 
-### Video (coming soon)
+### Video
 
 ```kotlin
 val result = kompressor.video.compress(
@@ -99,17 +101,71 @@ result.onSuccess { println("Done — ratio ${it.compressionRatio}") }
     .onFailure { println("Error: ${it.message}") }
 ```
 
-### Audio (coming soon)
+### Audio
 
 ```kotlin
 val result = kompressor.audio.compress(
     inputPath  = "/path/to/recording.wav",
-    outputPath = "/path/to/recording.aac",
+    outputPath = "/path/to/recording.m4a",
 )
 
 result.onSuccess { println("${it.outputSize / 1000} KB") }
     .onFailure { println("Error: ${it.message}") }
 ```
+
+---
+
+## Before you compress: probe + capability check
+
+Transcoding a file just to discover the device can't decode it wastes time and leaves users staring at an indeterminate spinner. Kompressor gives you two cheap checks to run first:
+
+```kotlin
+// 1. Read the source's track metadata (codec, resolution, bit depth, HDR, etc.)
+val info: SourceMediaInfo = kompressor.probe(inputPath).getOrThrow()
+
+// 2. Ask the device whether it can actually compress this (required decoder
+//    + required encoder + resolution / fps / bit depth / HDR caps).
+when (val verdict = kompressor.canCompress(info)) {
+    Supportability.Supported ->
+        kompressor.video.compress(inputPath, outputPath)
+
+    is Supportability.Unsupported ->
+        showError("Can't compress: ${verdict.reasons.joinToString()}")
+
+    is Supportability.Unknown ->
+        // Probe couldn't verify something (e.g. bit depth). Warn and
+        // optionally let the user attempt compression anyway.
+        showWarning(verdict.reasons)
+}
+```
+
+`probe` is a quick metadata read (`MediaExtractor` / `MediaMetadataRetriever` on Android, `AVURLAsset` on iOS) — not a transcode. `canCompress` compares the probe against the device's reported codec capability matrix. Both are advisory: a `Supported` verdict does not guarantee the transcode will succeed (drivers can still fail at runtime), but together they catch the common "no decoder for this profile" / "HEVC 10-bit on an 8-bit-only decoder" failures before the user ever starts a compression.
+
+---
+
+## Handling errors
+
+Audio and video failures surface as typed subclasses so `when` branches can drive actionable UI — e.g. "we can't decode this codec, please convert first" versus "disk full" versus "this recording is too many channels for on-device compression":
+
+```kotlin
+result.onFailure { err ->
+    when (err) {
+        is AudioCompressionError.UnsupportedSourceFormat ->
+            showConvertFirstBanner(err.details)
+        is AudioCompressionError.UnsupportedConfiguration ->
+            fallbackToMono()
+        is AudioCompressionError.IoFailed ->
+            showStorageError(err.details)
+        is AudioCompressionError.DecodingFailed,
+        is AudioCompressionError.EncodingFailed,
+        is AudioCompressionError.Unknown ->
+            reportToCrashlytics(err)
+        else -> reportToCrashlytics(err)
+    }
+}
+```
+
+`VideoCompressionError` mirrors this hierarchy (`UnsupportedSourceFormat`, `DecodingFailed`, `EncodingFailed`, `IoFailed`, `Unknown`). Every subtype preserves the underlying platform `cause` for diagnostics.
 
 ---
 
@@ -174,9 +230,6 @@ val result = kompressor.audio.compress(
 > **Note:** Image compression does not offer progress tracking because the underlying platform APIs
 > (`Bitmap.compress` on Android, `UIImageJPEGRepresentation` on iOS) are synchronous single-step
 > operations with no intermediate progress data.
->
-> **Migration note:** `ImageCompressor.compress(...)` no longer accepts `onProgress`.
-> Remove that argument from existing image compression call sites.
 
 ### Cancellation
 
@@ -192,9 +245,11 @@ job.cancel() // compression is cancelled
 
 ---
 
-## Video (coming soon)
+## Video
 
-> Video compression is defined at the API level but not yet implemented. The interfaces, configs, and presets below are available — the platform implementations are in progress.
+Output is **H.264 in an MP4 container** on both platforms. Android runs through Media3 `Transformer` (hardware-first, software fallback); iOS runs through `AVAssetExportSession` / `AVAssetWriter`.
+
+> **Known limitation (v1):** rotation metadata (`preferredTransform` on iOS, `KEY_ROTATION` on Android) is not yet preserved. Portrait-recorded videos may appear rotated in the output until this lands.
 
 ### Configuration
 
@@ -234,17 +289,20 @@ val result = kompressor.video.compress(inputPath, outputPath, config)
 
 ### Presets
 
-| Preset | Codec | Resolution | Video | Audio |
-|--------|-------|-----------|-------|-------|
-| `MESSAGING` | H.264 | 720p | 1 200 kbps | 128 kbps AAC |
-| `HIGH_QUALITY` | H.264 | 1080p | 3 500 kbps | 192 kbps AAC |
-| `LOW_BANDWIDTH` | H.264 | 480p | 600 kbps | 96 kbps AAC |
+| Preset | Codec | Resolution | Video | Audio | Notes |
+|--------|-------|-----------|-------|-------|-------|
+| `MESSAGING` | H.264 | 720p | 1 200 kbps | 128 kbps AAC | Default frame rate, keyframe every 2s |
+| `HIGH_QUALITY` | H.264 | 1080p | 3 500 kbps | 192 kbps AAC | Near-original quality |
+| `LOW_BANDWIDTH` | H.264 | 480p | 600 kbps | 96 kbps AAC | Caps fps at 24, keyframe every 3s |
+| `SOCIAL_MEDIA` | H.264 | 720p | 2 000 kbps | 128 kbps AAC | Keyframe every 1s for clean seeking/scrubbing |
 
 ---
 
-## Audio (coming soon)
+## Audio
 
-> Audio compression is defined at the API level but not yet implemented. The interfaces, configs, and presets below are available — the platform implementations are in progress.
+Output is **AAC in an `.m4a` (MP4) container**. Input can be anything the platform's default extractors open — WAV, MP3, M4A / AAC, FLAC, OGG / Opus, AMR, and the audio track of an MP4 (video is stripped).
+
+> **Fast path:** when the input is already AAC and its bitrate / sample rate / channel count match the requested config within a small tolerance, the compressor activates a **bitstream-copy passthrough** — no decode, no re-encode, so the export finishes in milliseconds. Useful for pre-upload validation pipelines that might run the compressor against already-compressed files.
 
 ### Configuration
 
@@ -294,6 +352,12 @@ interface Kompressor {
     val image: ImageCompressor
     val video: VideoCompressor
     val audio: AudioCompressor
+
+    /** Read the source's track metadata (codec, resolution, HDR, bit depth, ...). */
+    suspend fun probe(inputPath: String): Result<SourceMediaInfo>
+
+    /** Advisory verdict: does the device have the decoders + encoders to handle [info]? */
+    fun canCompress(info: SourceMediaInfo): Supportability
 }
 ```
 
@@ -345,7 +409,63 @@ data class CompressionResult(
     val outputSize: Long,       // bytes
     val durationMs: Long,       // milliseconds
 ) {
-    val compressionRatio: Float // outputSize / inputSize (< 1.0 = smaller)
+    val compressionRatio: Float        // outputSize / inputSize (< 1.0 = smaller)
+    val isSmallerThanOriginal: Boolean // outputSize < inputSize
+}
+```
+
+> **Output can be larger than input.** Re-encoding a file that is already heavily compressed (common with JPEG and already-low-bitrate AAC) can produce a *bigger* output, especially if the requested quality / bitrate is higher than the source's. Check `isSmallerThanOriginal` at the call site and discard the compressed file when it would hurt the user's storage budget.
+
+### `SourceMediaInfo`
+
+Returned by `Kompressor.probe(...)`. All fields are nullable because not every container exposes every field.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `containerMimeType` | `String?` | e.g. `video/mp4`, `audio/mp4` |
+| `videoCodec` / `audioCodec` | `String?` | Track MIMEs, e.g. `video/hevc`, `audio/mp4a-latm` |
+| `videoProfile` / `videoLevel` | `String?` | Human-readable, e.g. `"Main 10"`, `"5.0"` |
+| `width` / `height` / `rotationDegrees` | `Int?` | Pre-rotation pixel dimensions + rotation metadata |
+| `frameRate` | `Float?` | fps |
+| `bitDepth` | `Int?` | 8 / 10 / 12 (relevant for HDR / 10-bit HEVC) |
+| `isHdr` | `Boolean` | Whether an HDR transfer function is present |
+| `bitrate` / `durationMs` | `Int?` / `Long?` | Container total bitrate and duration |
+| `audioSampleRate` / `audioChannels` | `Int?` | Audio track sample rate and channel count |
+| `isPlayable` | `Boolean?` | Populated on iOS (`AVAssetTrack.isPlayable`); null on Android |
+
+### `Supportability`
+
+Returned by `Kompressor.canCompress(...)`:
+
+```kotlin
+sealed class Supportability {
+    object Supported                                        : Supportability()
+    data class Unsupported(val reasons: List<String>)       : Supportability()  // hard blocker
+    data class Unknown(val reasons: List<String>)           : Supportability()  // probe couldn't verify
+}
+```
+
+- **`Unsupported`** — at least one hard blocker (missing decoder / encoder, source exceeds decoder max resolution or fps, 10-bit source on an 8-bit-only decoder, HDR on a non-HDR decoder). Don't start a compression.
+- **`Unknown`** — something the probe can't confirm (e.g. bit depth not present in metadata). Surface a warning and let the user attempt compression; the real outcome comes back through the typed error hierarchy if it fails.
+
+### Error types
+
+```kotlin
+sealed class AudioCompressionError : Exception() {
+    class UnsupportedSourceFormat(val details: String, cause: Throwable?) : AudioCompressionError
+    class DecodingFailed(val details: String, cause: Throwable?)          : AudioCompressionError
+    class EncodingFailed(val details: String, cause: Throwable?)          : AudioCompressionError
+    class IoFailed(val details: String, cause: Throwable?)                : AudioCompressionError
+    class UnsupportedConfiguration(val details: String, cause: Throwable?): AudioCompressionError
+    class Unknown(val details: String, cause: Throwable?)                 : AudioCompressionError
+}
+
+sealed class VideoCompressionError : Exception() {
+    class UnsupportedSourceFormat(val details: String, cause: Throwable?) : VideoCompressionError
+    class DecodingFailed(val details: String, cause: Throwable?)          : VideoCompressionError
+    class EncodingFailed(val details: String, cause: Throwable?)          : VideoCompressionError
+    class IoFailed(val details: String, cause: Throwable?)                : VideoCompressionError
+    class Unknown(val details: String, cause: Throwable?)                 : VideoCompressionError
 }
 ```
 

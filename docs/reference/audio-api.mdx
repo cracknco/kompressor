@@ -1,0 +1,102 @@
+---
+title: Audio API
+description: "`AudioCompressor`, `AudioCompressionConfig`, `AudioCodec`, `AudioChannels`, and `AudioPresets`."
+---
+
+Package: `co.crackn.kompressor.audio`
+(`AudioCodec` is in `co.crackn.kompressor` since it's shared with video configs.)
+
+## `AudioCompressor`
+
+```kotlin
+public interface AudioCompressor {
+    public val supportedInputFormats: Set<String>
+    public val supportedOutputFormats: Set<String>
+
+    public suspend fun compress(
+        inputPath: String,
+        outputPath: String,
+        config: AudioCompressionConfig = AudioCompressionConfig(),
+        onProgress: suspend (Float) -> Unit = {},
+    ): Result<CompressionResult>
+}
+```
+
+<ParamField path="inputPath" type="String" required>
+  Absolute filesystem path to the source audio.
+</ParamField>
+<ParamField path="outputPath" type="String" required>
+  Absolute filesystem path for the compressed output (`.m4a`).
+</ParamField>
+<ParamField path="config" type="AudioCompressionConfig" default="AudioCompressionConfig()">
+  Bitrate / sample-rate / channel parameters.
+</ParamField>
+<ParamField path="onProgress" type="suspend (Float) -> Unit" default="{}">
+  Called with a fraction `0.0..1.0` as progress advances.
+</ParamField>
+
+<ResponseField name="supportedInputFormats" type="Set<String>">
+  Audio decoder MIMEs the platform reports (advisory).
+</ResponseField>
+<ResponseField name="supportedOutputFormats" type="Set<String>">
+  Audio encoder MIMEs this compressor actually produces — today `{"audio/mp4a-latm"}`.
+</ResponseField>
+
+## `AudioCompressionConfig`
+
+```kotlin
+public data class AudioCompressionConfig(
+    val codec: AudioCodec = AudioCodec.AAC,
+    val bitrate: Int = 128_000,
+    val sampleRate: Int = 44_100,
+    val channels: AudioChannels = AudioChannels.STEREO,
+)
+```
+
+### Validation
+
+Throws `IllegalArgumentException` at construction if `bitrate ≤ 0` or `sampleRate ≤ 0`.
+
+## `AudioCodec`
+
+```kotlin
+public enum class AudioCodec {
+    AAC
+}
+```
+
+Shared by `AudioCompressionConfig` and `VideoCompressionConfig.audioCodec`. Only `AAC` today.
+
+## `AudioChannels`
+
+```kotlin
+public enum class AudioChannels(val count: Int) {
+    MONO(1),
+    STEREO(2),
+}
+```
+
+## `AudioPresets`
+
+```kotlin
+public object AudioPresets {
+    public val VOICE_MESSAGE: AudioCompressionConfig  // 32 kbps,  22 050 Hz, mono
+    public val PODCAST: AudioCompressionConfig        // 96 kbps,  44 100 Hz, stereo
+    public val HIGH_QUALITY: AudioCompressionConfig   // 192 kbps, 44 100 Hz, stereo
+}
+```
+
+## `AudioCompressionError`
+
+```kotlin
+public sealed class AudioCompressionError : Exception() {
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) : AudioCompressionError()
+    public class DecodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
+    public class EncodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
+    public class IoFailed(val details: String, cause: Throwable? = null)                : AudioCompressionError()
+    public class UnsupportedConfiguration(val details: String, cause: Throwable? = null): AudioCompressionError()
+    public class Unknown(val details: String, cause: Throwable? = null)                 : AudioCompressionError()
+}
+```
+
+See [Error handling](/concepts/errors) for when each fires. The audio hierarchy adds `UnsupportedConfiguration` (not present in the video hierarchy) — fired *before* the encoder is opened when the requested config is incompatible with the source.

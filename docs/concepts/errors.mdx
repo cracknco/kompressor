@@ -1,0 +1,88 @@
+---
+title: Error handling
+description: "Typed error hierarchies so you can `when`-branch instead of parsing messages."
+---
+
+Audio and video compression surface failures as typed subclasses wrapped in `Result.failure(...)`. `when`-branch on the concrete type to drive actionable UI — "we can't decode this codec" is a different user story from "disk full" and from "this recording has too many channels to downmix on-device".
+
+## The pattern
+
+```kotlin
+kompressor.audio.compress(inputPath, outputPath)
+    .onFailure { err ->
+        when (err) {
+            is AudioCompressionError.UnsupportedSourceFormat ->
+                showConvertFirstBanner(err.details)
+
+            is AudioCompressionError.UnsupportedConfiguration ->
+                // Retry with a different channel layout (see details for the specific blocker)
+                retryWith(config.copy(channels = AudioChannels.MONO))
+
+            is AudioCompressionError.IoFailed ->
+                showStorageErrorDialog(err.details)
+
+            is AudioCompressionError.DecodingFailed,
+            is AudioCompressionError.EncodingFailed,
+            is AudioCompressionError.Unknown ->
+                reportToCrashAnalytics(err)
+
+            else -> reportToCrashAnalytics(err)
+        }
+    }
+```
+
+Every error carries:
+
+- **`details: String`** — free-form diagnostic you can show in developer logs or attach to bug reports
+- **`cause: Throwable?`** — the original platform exception for crash-analytics attachment
+
+## Audio error hierarchy
+
+```kotlin
+public sealed class AudioCompressionError : Exception() {
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) : AudioCompressionError()
+    public class DecodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
+    public class EncodingFailed(val details: String, cause: Throwable? = null)          : AudioCompressionError()
+    public class IoFailed(val details: String, cause: Throwable? = null)                : AudioCompressionError()
+    public class UnsupportedConfiguration(val details: String, cause: Throwable? = null): AudioCompressionError()
+    public class Unknown(val details: String, cause: Throwable? = null)                 : AudioCompressionError()
+}
+```
+
+| Subtype | When it fires | What to do |
+| ------- | ------------- | ---------- |
+| `UnsupportedSourceFormat` | No on-device decoder supports the source's codec / profile, or the container wasn't recognised. | Offer a "convert first" flow. |
+| `DecodingFailed` | A decoder was initialised but failed mid-stream (corrupt file, OEM codec bug, unexpected EOF). | Treat as file-specific — retry with a different source. |
+| `EncodingFailed` | No AAC encoder found, OOM, muxer refused a sample, audio-processor reconfiguration error. | Report; this is usually device-wide. |
+| `IoFailed` | I/O failure reading input or writing output (permission denied, disk full, revoked `content://` URI). | Show storage / permission UI. |
+| `UnsupportedConfiguration` | Requested `AudioCompressionConfig` incompatible with the source (e.g. iOS can't upmix mono → stereo, or input has 5.1 / 7.1 channels the downmixer doesn't handle). | Retry with a narrower config. |
+| `Unknown` | Catch-all for platform errors the library couldn't classify. | Report. |
+
+## Video error hierarchy
+
+```kotlin
+public sealed class VideoCompressionError : Exception() {
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) : VideoCompressionError()
+    public class DecodingFailed(val details: String, cause: Throwable? = null)          : VideoCompressionError()
+    public class EncodingFailed(val details: String, cause: Throwable? = null)          : VideoCompressionError()
+    public class IoFailed(val details: String, cause: Throwable? = null)                : VideoCompressionError()
+    public class Unknown(val details: String, cause: Throwable? = null)                 : VideoCompressionError()
+}
+```
+
+The video hierarchy mirrors audio without `UnsupportedConfiguration`.
+
+## Image failures
+
+Image compression returns `Result.failure(Throwable)` without a typed hierarchy — most failures are `IllegalArgumentException` (invalid config values surfaced at `ImageCompressionConfig` construction) or `IOException` (file not found, permission denied). Handle them generically:
+
+```kotlin
+kompressor.image.compress(inputPath, outputPath, config)
+    .onFailure { error ->
+        Log.w("Kompressor", "Image compression failed", error)
+    }
+```
+
+## Don't forget `CancellationException`
+
+Because every compress call is a `suspend` function, `CancellationException` is **re-thrown**, not wrapped in `Result.failure`. Your `onFailure { }` block won't see cancellations — see [Cancellation](/concepts/cancellation) for details.

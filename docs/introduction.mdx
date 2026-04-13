@@ -1,0 +1,66 @@
+---
+title: Introduction
+description: "One Kotlin Multiplatform API for image, video, and audio compression — backed by the native hardware encoders already on the device."
+---
+
+Kompressor is a Kotlin Multiplatform library that compresses **images**, **videos**, and **audio** on Android and iOS through the platform's own hardware-accelerated media stack. There is no bundled codec binary, no FFmpeg, no CPU-only fallback — just a thin Kotlin layer over `BitmapFactory`, Media3 `Transformer`, `AVAssetExportSession`, and friends.
+
+```kotlin
+val result = kompressor.video.compress(
+    inputPath  = "/path/to/video.mp4",
+    outputPath = "/path/to/out.mp4",
+    onProgress = { fraction -> updateProgressBar(fraction) },
+)
+```
+
+## Why Kompressor
+
+<CardGroup cols={2}>
+  <Card title="Zero binary overhead" icon="feather">
+    Nothing is shipped alongside your APK / IPA. The library delegates to the decoders and encoders the OS already provides.
+  </Card>
+  <Card title="Hardware-accelerated" icon="bolt">
+    Transcodes run on the same hardware paths platform media apps use — MediaCodec on Android, VideoToolbox / AudioToolbox on iOS.
+  </Card>
+  <Card title="One API, two platforms" icon="code">
+    A single `Kompressor` interface in `commonMain` with `expect`/`actual` wiring. Write compression logic once.
+  </Card>
+  <Card title="Structured concurrency" icon="arrows-rotate">
+    Compression is a `suspend` function. Cancel the coroutine to abort the transcode; progress arrives through a suspend callback.
+  </Card>
+</CardGroup>
+
+## Comparison
+
+|                                | **Kompressor** | ffmpeg-kit.kmp | Platform-specific libs |
+| ------------------------------ | -------------- | -------------- | ---------------------- |
+| Image + video + audio in one   | ✅             | ✅             | ❌ Separate libraries  |
+| Android + iOS (KMP)            | ✅             | ✅             | ❌ Written twice       |
+| Hardware acceleration          | ✅             | ❌ CPU only    | Varies                 |
+| Binary overhead                | **0 KB**       | 15–30 MB       | N/A                    |
+| Coroutine progress / cancel    | ✅             | ❌             | ❌                     |
+| Typed error hierarchy          | ✅             | ❌             | Varies                 |
+
+## Platform support
+
+| Platform | Minimum     | Image                           | Video                               | Audio                                  |
+| -------- | ----------- | ------------------------------- | ----------------------------------- | -------------------------------------- |
+| Android  | API 24 (7.0) | `BitmapFactory` + EXIF rotation | Media3 `Transformer` 1.10 (H.264)   | Media3 `Transformer` 1.10 (AAC / M4A)  |
+| iOS      | iOS 15       | `UIImage` / Core Graphics       | `AVAssetExportSession` / `AVAssetWriter` | `AVAssetExportSession` / `AVAssetWriter` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install" icon="download" href="/installation">
+    Add the Maven Central dependency to your shared module.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Compress your first image, video, and audio file.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/overview">
+    The `Kompressor` interface, `Result<CompressionResult>`, and cancellation.
+  </Card>
+  <Card title="API reference" icon="square-terminal" href="/reference/kompressor">
+    Every public type, method, and preset.
+  </Card>
+</CardGroup>

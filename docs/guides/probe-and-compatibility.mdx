@@ -1,0 +1,114 @@
+---
+title: Probe & compatibility
+description: "Inspect a file's tracks and ask the device whether it can compress them — before you start a transcode."
+---
+
+Transcoding a file only to discover the device can't decode it wastes time and leaves users watching an indeterminate spinner. Kompressor gives you two cheap checks to run first:
+
+1. **`probe(path)`** — a fast metadata read (`MediaExtractor` / `MediaMetadataRetriever` on Android, `AVURLAsset` on iOS). Not a transcode.
+2. **`canCompress(info)`** — compares the probe against the device's reported codec capability matrix and returns an advisory verdict.
+
+## The pattern
+
+```kotlin
+val info = kompressor.probe(inputPath).getOrThrow()
+
+when (val verdict = kompressor.canCompress(info)) {
+    Supportability.Supported ->
+        kompressor.video.compress(inputPath, outputPath)
+
+    is Supportability.Unsupported ->
+        showError("Can't compress: ${verdict.reasons.joinToString()}")
+
+    is Supportability.Unknown ->
+        // Probe couldn't verify something (e.g. bit depth missing from metadata).
+        // Warn the user but optionally allow them to try.
+        showWarning(verdict.reasons)
+}
+```
+
+## `SourceMediaInfo`
+
+Returned by `probe()`. All fields are nullable because not every container reports every field:
+
+```kotlin
+public data class SourceMediaInfo(
+    val containerMimeType: String?  = null,
+    val videoCodec: String?         = null,
+    val videoProfile: String?       = null,
+    val videoLevel: String?         = null,
+    val width: Int?                 = null,
+    val height: Int?                = null,
+    val bitDepth: Int?              = null,
+    val rotationDegrees: Int?       = null,
+    val frameRate: Float?           = null,
+    val bitrate: Int?               = null,
+    val durationMs: Long?           = null,
+    val isHdr: Boolean              = false,
+    val audioCodec: String?         = null,
+    val audioSampleRate: Int?       = null,
+    val audioChannels: Int?         = null,
+    val isPlayable: Boolean?        = null,
+)
+```
+
+<Note>
+  `isPlayable` is populated on **iOS** only (from `AVAssetTrack.isPlayable`). On Android it's always `null` — the device capability matrix is the authoritative source there.
+</Note>
+
+## `Supportability`
+
+```kotlin
+public sealed class Supportability {
+    public object Supported                                  : Supportability()
+    public data class Unsupported(val reasons: List<String>) : Supportability()
+    public data class Unknown(val reasons: List<String>)     : Supportability()
+}
+```
+
+<Tabs>
+  <Tab title="Supported">
+    Every required decoder + encoder is present and every checked constraint matches. You can call `compress(...)`.
+  </Tab>
+  <Tab title="Unsupported">
+    At least one **hard blocker** was found:
+
+    - Missing decoder for the source's video / audio MIME.
+    - Missing encoder for the required output MIME (H.264 for video, AAC for audio).
+    - Source exceeds the decoder's max resolution or frame rate.
+    - 10-bit source on an 8-bit-only decoder.
+    - HDR content on a non-HDR-capable decoder.
+    - Platform reports the file isn't playable (iOS `isPlayable == false`).
+
+    `reasons` contains human-readable developer-log strings; don't display them verbatim to users — localise as needed.
+  </Tab>
+  <Tab title="Unknown">
+    The probe couldn't confirm something — most commonly, the bit depth wasn't present in the metadata. The device *might* be able to compress the file. Present a warning and optionally let the user try; the real outcome will come back through the typed error hierarchy.
+  </Tab>
+</Tabs>
+
+## What `canCompress` does NOT guarantee
+
+A `Supported` verdict is **advisory**. It reflects the platform's reported capabilities but cannot guarantee the runtime will succeed — OEM codec drivers can still fail mid-stream, files can be corrupt, and disk I/O can fail. Always handle [typed errors](/concepts/errors) at the `compress(...)` call site too.
+
+## Probing on the critical path
+
+`probe` runs off the main thread and completes quickly — a `MediaExtractor` track walk or an `AVURLAsset` metadata read. It's safe to block a share / upload flow on it.
+
+```kotlin
+suspend fun canUpload(inputPath: String): Boolean {
+    val info = kompressor.probe(inputPath).getOrNull() ?: return false
+    return kompressor.canCompress(info) == Supportability.Supported
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="SourceMediaInfo reference" icon="square-terminal" href="/reference/types">
+    Every field and its meaning.
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/errors">
+    Typed subclasses for post-probe failures.
+  </Card>
+</CardGroup>
