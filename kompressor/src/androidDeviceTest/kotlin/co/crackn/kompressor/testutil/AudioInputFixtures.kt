@@ -187,6 +187,94 @@ object AudioInputFixtures {
         error("No track starting with $prefix")
     }
 
+    /**
+     * Generate an AMR-NB `.3gp` file. AMR-NB is 8 kHz mono 16-bit PCM fed into the always-
+     * available `audio/3gpp` MediaCodec encoder, muxed into a 3GPP container. The input PCM
+     * is resampled from the WAV generator's default by taking every Nth sample — good enough
+     * for a deterministic fixture that exercises Media3's AMR extractor; fidelity is
+     * irrelevant since we only round-trip to AAC.
+     */
+    fun createAmrNb(output: File, durationSeconds: Int = 1): File {
+        val amrSampleRate = AMR_NB_SAMPLE_RATE
+        val wavBytes = WavGenerator.generateWavBytes(durationSeconds, amrSampleRate, 1)
+        val pcm = wavBytes.copyOfRange(WAV_HEADER_SIZE, wavBytes.size)
+        encodeAmrNbToThreeGpp(
+            output = output,
+            pcm = pcm,
+            sampleRate = amrSampleRate,
+        )
+        return output
+    }
+
+    private fun encodeAmrNbToThreeGpp(output: File, pcm: ByteArray, sampleRate: Int) {
+        val format = MediaFormat.createAudioFormat(AMR_NB_MIME, sampleRate, 1).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, AMR_NB_BITRATE)
+        }
+        val encoder = MediaCodec.createEncoderByType(AMR_NB_MIME)
+        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        encoder.start()
+
+        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP)
+        var muxerTrack = -1
+        var muxerStarted = false
+        val info = MediaCodec.BufferInfo()
+
+        var srcOffset = 0
+        val bytesPerFrame = BYTES_PER_SAMPLE // mono
+        var ptsUs = 0L
+        var remainderNumerator = 0L
+        var inputDone = false
+
+        try {
+            while (true) {
+                if (!inputDone) {
+                    val idx = encoder.dequeueInputBuffer(TIMEOUT_US)
+                    if (idx >= 0) {
+                        val buf = encoder.getInputBuffer(idx) ?: error("encoder input null")
+                        val remaining = pcm.size - srcOffset
+                        if (remaining < bytesPerFrame) {
+                            encoder.queueInputBuffer(
+                                idx, 0, 0, ptsUs,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
+                            )
+                            inputDone = true
+                        } else {
+                            var toCopy = minOf(buf.capacity(), remaining)
+                            toCopy -= toCopy % bytesPerFrame
+                            buf.put(pcm, srcOffset, toCopy)
+                            encoder.queueInputBuffer(idx, 0, toCopy, ptsUs, 0)
+                            srcOffset += toCopy
+                            val frames = (toCopy / bytesPerFrame).toLong()
+                            val deltaNum = frames * 1_000_000L + remainderNumerator
+                            ptsUs += deltaNum / sampleRate
+                            remainderNumerator = deltaNum % sampleRate
+                        }
+                    }
+                }
+
+                val status = encoder.dequeueOutputBuffer(info, TIMEOUT_US)
+                if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    muxerTrack = muxer.addTrack(encoder.outputFormat)
+                    muxer.start()
+                    muxerStarted = true
+                } else if (status >= 0) {
+                    val out = encoder.getOutputBuffer(status) ?: error("encoder output null")
+                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
+                    if (info.size > 0 && muxerStarted) {
+                        muxer.writeSampleData(muxerTrack, out, info)
+                    }
+                    encoder.releaseOutputBuffer(status, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                }
+            }
+        } finally {
+            runCatching { encoder.stop() }
+            encoder.release()
+            runCatching { if (muxerStarted) muxer.stop() }
+            muxer.release()
+        }
+    }
+
     private fun copyTrack(src: MediaExtractor, srcIdx: Int, dst: MediaMuxer, dstIdx: Int) {
         src.selectTrack(srcIdx)
         val buf = ByteBuffer.allocate(MUX_BUFFER_SIZE)
@@ -203,6 +291,9 @@ object AudioInputFixtures {
     }
 
     private const val AAC_MIME = "audio/mp4a-latm"
+    private const val AMR_NB_MIME = "audio/3gpp"
+    private const val AMR_NB_SAMPLE_RATE = 8_000
+    private const val AMR_NB_BITRATE = 12_200 // the standard AMR-NB mode (MR122).
     private const val TIMEOUT_US = 10_000L
     private const val BYTES_PER_SAMPLE = 2
     private const val WAV_HEADER_SIZE = 44

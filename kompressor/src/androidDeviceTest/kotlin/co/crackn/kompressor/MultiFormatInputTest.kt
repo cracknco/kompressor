@@ -4,6 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
 import co.crackn.kompressor.testutil.readAudioDurationMs
@@ -70,6 +71,41 @@ class MultiFormatInputTest {
             resourceName = "sample_mono_24k.ogg",
             config = AudioCompressionConfig(bitrate = 64_000, sampleRate = 24_000, channels = AudioChannels.MONO),
         )
+    }
+
+    @Test
+    fun aacAdtsInput_compressesToAacWithMatchingConfig() = runTest {
+        // AAC-ADTS is an alternative ingest path through Media3 vs AAC-in-MP4. The extractor
+        // matrix differs — ADTS frames carry their own sync words instead of piggybacking on
+        // the MP4 structure — so a regression in one path wouldn't necessarily break the
+        // other. Shipped as a binary resource because Android's public `MediaMuxer` API
+        // doesn't expose an ADTS output format, so on-device generation would require manually
+        // wrapping each AAC access unit with a 7-byte ADTS header (which is a separate feature
+        // that doesn't belong in a test helper).
+        assertRoundTripMatchesConfig(
+            resourceName = "sample_mono_44k.aac",
+            config = AudioCompressionConfig(bitrate = 64_000, sampleRate = 44_100, channels = AudioChannels.MONO),
+        )
+    }
+
+    @Test
+    fun amrNbInput_compressesToAac() = runTest {
+        // AMR-NB: 8 kHz mono phone-call codec. Our compressor must be able to transcode it
+        // (Media3's AMR extractor + AAC encoder). The output config requests 22.05 kHz / mono
+        // since re-upsampling beyond 8 kHz source is the practical "voice messaging" flow.
+        val input = File(tempDir, "amr_fixture.3gp")
+        AudioInputFixtures.createAmrNb(output = input, durationSeconds = 1)
+        val output = File(tempDir, "from_amr.m4a")
+        val config = AudioCompressionConfig(bitrate = 32_000, sampleRate = 22_050, channels = AudioChannels.MONO)
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+
+        assertTrue(result.isSuccess, "AMR-NB → AAC must succeed: ${result.exceptionOrNull()}")
+        assertTrue(OutputValidators.isValidM4a(output.readBytes()))
+        val track = readAudioTrackInfo(output)
+        assertEquals("audio/mp4a-latm", track.mime)
+        assertEquals(22_050, track.sampleRate)
+        assertEquals(1, track.channels)
     }
 
     /**
