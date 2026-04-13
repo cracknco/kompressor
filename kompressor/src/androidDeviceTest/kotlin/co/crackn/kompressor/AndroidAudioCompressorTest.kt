@@ -380,6 +380,42 @@ class AndroidAudioCompressorTest {
         )
     }
 
+    @Test
+    fun compressAudio_outputParentDirMissing_failsGracefully() = runTest {
+        // The compressor must not crash when handed an output path whose parent directory
+        // doesn't exist (common when callers naively build a path under a sub-folder the app
+        // hasn't created yet). Media3 / the platform muxer will throw an IO error; we assert
+        // that surfaces as a clean Result.failure AND that `deletingOutputOnFailure` doesn't
+        // crash on its follow-up delete of the never-created file.
+        val input = createTestWavFile(1, SAMPLE_RATE_44K, STEREO)
+        val outputPath = File(tempDir, "nonexistent_subdir/deeper/out.m4a").absolutePath
+
+        val result = compressor.compress(input.absolutePath, outputPath)
+
+        assertTrue(result.isFailure, "Missing parent dir must produce a graceful Result.failure")
+        assertTrue(!File(outputPath).exists(), "No partial output should exist")
+    }
+
+    @Test
+    fun compressAudio_sixChannelSource_downmixesToStereo() = runTest {
+        // End-to-end gate for the 5.1 → stereo downmix path now that surround support has
+        // landed. Pre-PR-59 this 6-channel input was rejected upfront; PR 59 wired Media3's
+        // constant-power 6→2 matrix through `supportedInputCountsForOutput`, so the same
+        // fixture must now compress successfully to a stereo M4A.
+        val bytes = WavGenerator.generateWavBytes(
+            durationSeconds = 1,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = 6,
+        )
+        val input = File(tempDir, "input_5_1.wav").apply { writeBytes(bytes) }
+        val output = File(tempDir, "output_5_1.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+
+        assertTrue(result.isSuccess, "5.1→stereo downmix must succeed, got: $result")
+        assertTrue(output.exists() && output.length() > 0, "Output M4A must be present and non-empty")
+    }
+
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): File {
         val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)

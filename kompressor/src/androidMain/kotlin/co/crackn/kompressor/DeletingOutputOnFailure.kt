@@ -15,10 +15,19 @@ import java.io.File
  * need a strict "output absent on failure" invariant must verify via [File.exists] themselves.
  */
 @Suppress("TooGenericExceptionCaught")
-internal inline fun <T> deletingOutputOnFailure(outputPath: String, block: () -> T): T =
-    try {
+internal inline fun <T> deletingOutputOnFailure(outputPath: String, block: () -> T): T {
+    // Snapshot whether the path existed (and as what) BEFORE invoking the block so we don't
+    // clobber caller-owned artifacts on the failure path. The cleanup contract is: "delete the
+    // file the block was about to produce" — if the path is a pre-existing directory or other
+    // non-file entry, leave it alone and let the underlying compress() error speak for itself.
+    val output = File(outputPath)
+    val preExistedAsNonFile = output.exists() && !output.isFile
+    return try {
         block()
     } catch (t: Throwable) {
-        runCatching { File(outputPath).delete() }
+        if (!preExistedAsNonFile) {
+            runCatching { output.delete() }
+        }
         throw t
     }
+}

@@ -177,7 +177,12 @@ class AudioCompressionPropertyTest {
     }
 
     private companion object {
-        const val SEED = 12345L
+        // Rotate the seed per run; Kotlin/Native `Random.nextLong()` works here (no JVM
+        // System.getProperty), and we log it so a failing seed can be pinned locally by
+        // editing back to a literal value during bisect.
+        val SEED: Long = kotlin.random.Random.nextLong().also {
+            println("[property-seed] iOS AudioCompressionPropertyTest: $it")
+        }
         const val ITERATIONS = 15
         const val FINAL_PROGRESS_MIN = 0.99f
     }

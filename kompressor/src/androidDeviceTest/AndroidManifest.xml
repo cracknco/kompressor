@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!-- Test-only ContentProvider used by `ContentUriInputTest` to hand kompressor a real
+             `content://` URI backed by a file in the test app's cache dir. Avoids FileProvider's
+             XML paths resource (which AAPT cannot resolve across the KMP Android plugin's
+             androidDeviceTest → androidMain res-merge boundary). -->
+        <provider
+            android:name="co.crackn.kompressor.testutil.TestContentProvider"
+            android:authorities="co.crackn.kompressor.test.contentprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>
