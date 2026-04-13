@@ -112,13 +112,13 @@ kover {
     reports {
         filters {
             excludes {
-                // Always-excluded platform glue — device or simulator only, no equivalent pure
-                // logic available host-side. These exist irrespective of merged vs host-only mode.
-                classes(
-                    // KompressorInitializer + KompressorContext are exercised by
-                    // KompressorInitializerTest under androidHostTest (uninitialized failure
-                    // path + create/dependencies happy path), so they no longer need a blanket
-                    // exclude — host coverage now reaches them.
+                // Single merged `classes(...)` call — Kover 0.9.8 appends per call, but keeping
+                // everything in one invocation avoids any ordering/append surprises when the
+                // task graph is warmed by a prior `testAndroidHostTest` run (observed in CI:
+                // filters silently skipped when registered in two separate vararg calls).
+                val alwaysExcluded = listOf(
+                    // Platform glue — device or simulator only, no equivalent pure logic
+                    // available host-side. Excluded irrespective of host-only vs merged mode.
                     "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
                     "co.crackn.kompressor.MediaCodecUtilsKt",
                     "co.crackn.kompressor.IosDeviceCapabilitiesKt",
@@ -128,26 +128,27 @@ kover {
                     "co.crackn.kompressor.AndroidKompressor",
                     "co.crackn.kompressor.AndroidKompressorKt",
                 )
-                if (!mergedCoverageGate) {
+                val hostOnlyExcluded = if (mergedCoverageGate) emptyList() else listOf(
                     // Host-only mode: add all classes that require a real codec stack / native
                     // platform APIs. In merged mode, device tests cover these and they're included.
-                    classes(
-                        "co.crackn.kompressor.*.Android*",
-                        "co.crackn.kompressor.*.Ios*",
-                        "co.crackn.kompressor.image.ImageSource",
-                        "co.crackn.kompressor.image.ImageSource\$*",
-                        "co.crackn.kompressor.image.FilePathSource",
-                        "co.crackn.kompressor.image.ContentUriSource",
-                        "co.crackn.kompressor.image.AndroidImageCompressorKt",
-                        "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-                        "co.crackn.kompressor.video.AndroidVideoCompressorKt",
-                        "co.crackn.kompressor.Media3ExportRunnerKt",
-                        "co.crackn.kompressor.Media3ExportRunnerKt\$*",
-                        "co.crackn.kompressor.audio.InputAudioFormat",
-                        "co.crackn.kompressor.audio.AudioProcessorPlan",
-                        "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
-                    )
-                }
+                    "co.crackn.kompressor.*.Android*",
+                    "co.crackn.kompressor.*.Ios*",
+                    "co.crackn.kompressor.image.ImageSource",
+                    "co.crackn.kompressor.image.ImageSource\$*",
+                    "co.crackn.kompressor.image.FilePathSource",
+                    "co.crackn.kompressor.image.FilePathSource\$*",
+                    "co.crackn.kompressor.image.ContentUriSource",
+                    "co.crackn.kompressor.image.ContentUriSource\$*",
+                    "co.crackn.kompressor.image.AndroidImageCompressorKt",
+                    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
+                    "co.crackn.kompressor.Media3ExportRunnerKt",
+                    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
+                    "co.crackn.kompressor.audio.InputAudioFormat",
+                    "co.crackn.kompressor.audio.AudioProcessorPlan",
+                    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
+                )
+                classes(alwaysExcluded + hostOnlyExcluded)
             }
         }
         verify {
