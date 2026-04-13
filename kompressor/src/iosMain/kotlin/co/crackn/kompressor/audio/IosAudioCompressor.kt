@@ -6,6 +6,7 @@ import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
+import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -59,24 +60,55 @@ internal class IosAudioCompressor : AudioCompressor {
         require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
-        val inputSize = nsFileSize(inputPath)
-
+        val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error so callers see the
+        // same `IoFailed` subtype across platforms instead of the AVFoundation-specific
+        // `fileFormatNotRecognized` → `UnsupportedSourceFormat` mapping an empty file would
+        // otherwise trigger.
+        if (inputSize == 0L) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
         // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
         // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
         // sample buffer` from deep in the pipeline.
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
-
-        if (canUseExportSession(config)) {
-            IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
-        } else {
-            IosPipeline(inputPath, outputPath, config).execute(onProgress)
+        runPipelineWithTypedErrors(outputPath) {
+            if (canUseExportSession(config)) {
+                IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
+            } else {
+                IosPipeline(inputPath, outputPath, config).execute(onProgress)
+            }
         }
-
         onProgress(1f)
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private fun sizeOrTypedError(path: String): Long =
+        try {
+            nsFileSize(path)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: AudioCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToAudioError(t)
+        }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private suspend inline fun runPipelineWithTypedErrors(outputPath: String, block: () -> Unit) {
+        try {
+            deletingOutputOnFailure(outputPath) { block() }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: AudioCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToAudioError(t)
+        }
     }
 
     /**
@@ -162,6 +194,24 @@ internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
                 "max supported is $maxBitrate bps",
         )
     }
+    // Apple's AAC-LC encoder also rejects bitrates below a per-sample-rate **minimum**.
+    // The surrounding failure mode is identical to the over-cap case ("failed to append
+    // sample buffer") so we fail fast with the same typed error. Minimums empirically
+    // determined from Apple AudioToolbox AAC-LC parameters and confirmed by property-test
+    // shrinks (32 kHz stereo @ 42 kbps fails; 32 kHz stereo @ 48 kbps succeeds).
+    val minPerChannel = when {
+        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
+        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
+        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
+    }
+    val minBitrate = minPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    if (config.bitrate < minBitrate) {
+        throw AudioCompressionError.UnsupportedConfiguration(
+            "iOS AAC encoder does not support ${config.bitrate} bps at " +
+                "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
+                "minimum supported is $minBitrate bps",
+        )
+    }
 }
 
 private const val IOS_KBPS_TO_BPS = 1_000
@@ -172,6 +222,9 @@ private const val IOS_AAC_MAX_KBPS_LOW_RATE = 64
 private const val IOS_AAC_MAX_KBPS_MID_RATE = 96
 private const val IOS_AAC_MAX_KBPS_HIGH_RATE = 160
 private const val IOS_AAC_MAX_KBPS_VERY_HIGH_RATE = 192
+private const val IOS_AAC_MIN_KBPS_LOW_RATE = 16
+private const val IOS_AAC_MIN_KBPS_MID_RATE = 24
+private const val IOS_AAC_MIN_KBPS_HIGH_RATE = 32
 
 @OptIn(ExperimentalForeignApi::class)
 private class IosPipeline(
@@ -216,15 +269,8 @@ private class IosPipeline(
         val (writer, writerInput) = createWriter()
 
         try {
-            check(reader.startReading()) {
-                "AVAssetReader failed to start: ${reader.error?.localizedDescription}"
-            }
-            check(writer.startWriting()) {
-                "AVAssetWriter failed to start: ${writer.error?.localizedDescription}"
-            }
-            writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
+            startReaderWriter(reader, writer)
             onProgress(PROGRESS_READ_START)
-
             copySamples(readerOutput, writer, writerInput, totalDurationSec, onProgress)
             finishPipeline(reader, writer, writerInput)
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -234,14 +280,32 @@ private class IosPipeline(
         }
     }
 
+    private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
+        if (!reader.startReading()) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed to start")
+            error("AVAssetReader failed to start: unknown")
+        }
+        if (!writer.startWriting()) {
+            val err = writer.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetWriter failed to start")
+            error("AVAssetWriter failed to start: unknown")
+        }
+        writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
+    }
+
     private suspend fun finishPipeline(
         reader: AVAssetReader,
         writer: AVAssetWriter,
         writerInput: AVAssetWriterInput,
     ) {
         writerInput.markAsFinished()
-        check(reader.status != AVAssetReaderStatusFailed) {
-            "AVAssetReader failed: ${reader.error?.localizedDescription}"
+        if (reader.status == AVAssetReaderStatusFailed) {
+            val err = reader.error
+            if (err != null) {
+                throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed")
+            }
+            error("AVAssetReader failed: unknown")
         }
         awaitWriterFinish(writer)
         checkWriterCompleted(writer)

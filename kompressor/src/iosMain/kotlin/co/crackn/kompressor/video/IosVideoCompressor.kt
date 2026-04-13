@@ -5,6 +5,7 @@ import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
+import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -70,22 +71,73 @@ internal class IosVideoCompressor : VideoCompressor {
     ): Result<CompressionResult> = suspendRunCatching {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
-        val inputSize = nsFileSize(inputPath)
-
-        if (canUseExportSession(config)) {
-            IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
-        } else {
-            IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+        val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error so
+        // callers see the same `UnsupportedSourceFormat` subtype as the Android side, rather
+        // than a generic `IllegalArgumentException` from deep in the pipeline.
+        validateHasVideoTrack(inputPath)
+        runPipelineWithTypedErrors(outputPath) {
+            if (canUseExportSession(config)) {
+                IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
+            } else {
+                IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+            }
         }
-
         onProgress(1f)
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private fun sizeOrTypedError(path: String): Long =
+        try {
+            nsFileSize(path)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: VideoCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToVideoError(t)
+        }
+
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    private suspend inline fun runPipelineWithTypedErrors(outputPath: String, block: () -> Unit) {
+        try {
+            deletingOutputOnFailure(outputPath) { block() }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (typed: VideoCompressionError) {
+            throw typed
+        } catch (t: Throwable) {
+            throw mapToVideoError(t)
+        }
+    }
+
     private fun canUseExportSession(config: VideoCompressionConfig): Boolean =
         config == VideoCompressionConfig()
+
+    /**
+     * Reject audio-only inputs upfront with a typed [VideoCompressionError.UnsupportedSourceFormat].
+     * Uses the same `tracksWithMediaType` check the pipelines use internally; failing here means
+     * callers see a clean typed error instead of racing a generic `IllegalArgumentException`
+     * from deep in `execute()`.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun validateHasVideoTrack(inputPath: String) {
+        val hasVideo = try {
+            AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+                .tracksWithMediaType(AVMediaTypeVideo).isNotEmpty()
+        } catch (_: Throwable) {
+            // Treat probe failures as "unknown" — the real pipeline will surface its own error.
+            return
+        }
+        if (!hasVideo) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "Input has no video track (only audio): $inputPath",
+            )
+        }
+    }
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
@@ -219,11 +271,15 @@ private class IosVideoTranscodePipeline(
     )
 
     private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
-        check(reader.startReading()) {
-            "AVAssetReader failed to start: ${reader.error?.localizedDescription}"
+        if (!reader.startReading()) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed to start")
+            error("AVAssetReader failed to start: unknown")
         }
-        check(writer.startWriting()) {
-            "AVAssetWriter failed to start: ${writer.error?.localizedDescription}"
+        if (!writer.startWriting()) {
+            val err = writer.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetWriter failed to start")
+            error("AVAssetWriter failed to start: unknown")
         }
         writer.startSessionAtSourceTime(CMTimeMake(value = 0, timescale = 1))
     }
@@ -318,8 +374,10 @@ private class IosVideoTranscodePipeline(
     ) {
         videoInput.markAsFinished()
         audioInput?.markAsFinished()
-        check(reader.status != AVAssetReaderStatusFailed) {
-            "AVAssetReader failed: ${reader.error?.localizedDescription}"
+        if (reader.status == AVAssetReaderStatusFailed) {
+            val err = reader.error
+            if (err != null) throw co.crackn.kompressor.AVNSErrorException(err, "AVAssetReader failed")
+            error("AVAssetReader failed: unknown")
         }
         awaitWriterFinish(writer)
         checkWriterCompleted(writer)

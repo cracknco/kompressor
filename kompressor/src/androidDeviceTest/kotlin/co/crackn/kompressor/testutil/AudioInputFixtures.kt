@@ -75,7 +75,6 @@ object AudioInputFixtures {
         return output
     }
 
-    @Suppress("LongParameterList", "LongMethod")
     private fun encodeToAacContainer(
         output: File,
         pcm: ByteArray,
@@ -83,12 +82,44 @@ object AudioInputFixtures {
         channels: Int,
         bitrate: Int,
         outputFormat: Int,
+    ) = encodeToContainer(
+        output = output,
+        pcm = pcm,
+        mime = AAC_MIME,
+        sampleRate = sampleRate,
+        channels = channels,
+        bitrate = bitrate,
+        outputFormat = outputFormat,
+        configureFormat = { format ->
+            format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+        },
+    )
+
+    /**
+     * Shared PCM → encoded-container pipeline: drives a single MediaCodec encoder into a
+     * MediaMuxer of the requested [outputFormat], with sample-accurate PTS tracked via
+     * fractional accumulation so 44.1 kHz doesn't drift (`1_000_000 / 44_100 = 22 µs`
+     * truncates — >1 % error accumulates in seconds).
+     *
+     * The [configureFormat] lambda lets each codec-specific wrapper attach its own extra
+     * [MediaFormat] keys (AAC profile, AMR mode, …) without duplicating the buffer loop.
+     */
+    @Suppress("LongParameterList", "LongMethod")
+    private fun encodeToContainer(
+        output: File,
+        pcm: ByteArray,
+        mime: String,
+        sampleRate: Int,
+        channels: Int,
+        bitrate: Int,
+        outputFormat: Int,
+        configureFormat: (MediaFormat) -> Unit = {},
     ) {
-        val format = MediaFormat.createAudioFormat(AAC_MIME, sampleRate, channels).apply {
+        val format = MediaFormat.createAudioFormat(mime, sampleRate, channels).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            configureFormat(this)
         }
-        val encoder = MediaCodec.createEncoderByType(AAC_MIME)
+        val encoder = MediaCodec.createEncoderByType(mime)
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
@@ -99,9 +130,6 @@ object AudioInputFixtures {
 
         var srcOffset = 0
         val bytesPerFrame = channels * BYTES_PER_SAMPLE
-        // PTS tracked via fractional accumulation: ptsUs += (frames * 1_000_000) / sampleRate,
-        // with the integer-division remainder carried forward so 44.1 kHz doesn't drift
-        // (1_000_000 / 44_100 = 22 µs truncates — >1% error accumulates in seconds).
         var ptsUs = 0L
         var remainderNumerator = 0L
         var inputDone = false
@@ -187,6 +215,35 @@ object AudioInputFixtures {
         error("No track starting with $prefix")
     }
 
+    /**
+     * Generate an AMR-NB `.3gp` file. AMR-NB is 8 kHz mono 16-bit PCM fed into the always-
+     * available `audio/3gpp` MediaCodec encoder, muxed into a 3GPP container. The input PCM
+     * is generated directly at 8 kHz mono via [WavGenerator.generateWavBytes] — no
+     * post-resampling step. Fidelity is irrelevant since we only round-trip to AAC.
+     */
+    fun createAmrNb(output: File, durationSeconds: Int = 1): File {
+        val amrSampleRate = AMR_NB_SAMPLE_RATE
+        val wavBytes = WavGenerator.generateWavBytes(durationSeconds, amrSampleRate, 1)
+        val pcm = wavBytes.copyOfRange(WAV_HEADER_SIZE, wavBytes.size)
+        encodeAmrNbToThreeGpp(
+            output = output,
+            pcm = pcm,
+            sampleRate = amrSampleRate,
+        )
+        return output
+    }
+
+    private fun encodeAmrNbToThreeGpp(output: File, pcm: ByteArray, sampleRate: Int) =
+        encodeToContainer(
+            output = output,
+            pcm = pcm,
+            mime = AMR_NB_MIME,
+            sampleRate = sampleRate,
+            channels = 1,
+            bitrate = AMR_NB_BITRATE,
+            outputFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP,
+        )
+
     private fun copyTrack(src: MediaExtractor, srcIdx: Int, dst: MediaMuxer, dstIdx: Int) {
         src.selectTrack(srcIdx)
         val buf = ByteBuffer.allocate(MUX_BUFFER_SIZE)
@@ -203,6 +260,9 @@ object AudioInputFixtures {
     }
 
     private const val AAC_MIME = "audio/mp4a-latm"
+    private const val AMR_NB_MIME = "audio/3gpp"
+    private const val AMR_NB_SAMPLE_RATE = 8_000
+    private const val AMR_NB_BITRATE = 12_200 // the standard AMR-NB mode (MR122).
     private const val TIMEOUT_US = 10_000L
     private const val BYTES_PER_SAMPLE = 2
     private const val WAV_HEADER_SIZE = 44

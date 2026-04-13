@@ -7,22 +7,30 @@ import kotlin.math.sin
  * Generates a valid RIFF WAV file as a [ByteArray] using pure Kotlin — no platform dependencies.
  *
  * Each channel gets a distinct sine-wave frequency (440 Hz * (channelIndex + 1)) so that
- * channel-mixing logic can be verified downstream.
+ * channel-mixing logic can be verified downstream. [bitsPerSample] selects the PCM sample width
+ * ([8], [16], [24], or [32]); the default [16] keeps existing callers byte-identical. 8-bit WAV
+ * samples are unsigned per the RIFF spec, all wider widths are signed little-endian.
  */
 object WavGenerator {
 
+    @Suppress("LongParameterList")
     fun generateWavBytes(
         durationSeconds: Int,
         sampleRate: Int,
         channels: Int,
         toneFrequency: Double = TONE_FREQUENCY,
+        bitsPerSample: Int = DEFAULT_BITS_PER_SAMPLE,
     ): ByteArray {
         require(sampleRate > 0) { "sampleRate must be > 0, was $sampleRate" }
         require(durationSeconds > 0) { "durationSeconds must be > 0, was $durationSeconds" }
         require(channels > 0) { "channels must be > 0, was $channels" }
+        require(bitsPerSample in setOf(BITS_8, BITS_16, BITS_24, BITS_32)) {
+            "bitsPerSample must be 8, 16, 24, or 32, was $bitsPerSample"
+        }
 
+        val bytesPerSample = bitsPerSample / BITS_PER_BYTE
         val totalSamples = sampleRate.toLong() * durationSeconds
-        val dataSize = totalSamples * channels * BYTES_PER_SAMPLE
+        val dataSize = totalSamples * channels * bytesPerSample
         require(dataSize <= Int.MAX_VALUE) { "WAV data too large: $dataSize bytes" }
         val dataSizeInt = dataSize.toInt()
         val bytes = ByteArray(WAV_HEADER_SIZE + dataSizeInt)
@@ -38,9 +46,9 @@ object WavGenerator {
         writeShortLE(bytes, 20, PCM_FORMAT)
         writeShortLE(bytes, 22, channels)
         writeIntLE(bytes, 24, sampleRate)
-        writeIntLE(bytes, 28, sampleRate * channels * BYTES_PER_SAMPLE)
-        writeShortLE(bytes, 32, channels * BYTES_PER_SAMPLE)
-        writeShortLE(bytes, 34, BITS_PER_SAMPLE)
+        writeIntLE(bytes, 28, sampleRate * channels * bytesPerSample)
+        writeShortLE(bytes, 32, channels * bytesPerSample)
+        writeShortLE(bytes, 34, bitsPerSample)
 
         // data sub-chunk
         writeString(bytes, 36, "data")
@@ -51,14 +59,50 @@ object WavGenerator {
         for (i in 0L until totalSamples) {
             for (ch in 0 until channels) {
                 val frequency = toneFrequency * (ch + 1)
-                val sample = (Short.MAX_VALUE * sin(2.0 * PI * frequency * i / sampleRate))
-                    .toInt().toShort()
-                bytes[offset++] = (sample.toInt() and 0xFF).toByte()
-                bytes[offset++] = ((sample.toInt() shr 8) and 0xFF).toByte()
+                val unit = sin(2.0 * PI * frequency * i / sampleRate)
+                offset = writeSample(bytes, offset, unit, bitsPerSample)
             }
         }
 
         return bytes
+    }
+
+    /**
+     * Write a single PCM sample at [offset] in [bytes], scaling the [-1.0, 1.0] unit value into
+     * the signed/unsigned range for the requested [bitsPerSample]. Returns the new offset.
+     */
+    private fun writeSample(bytes: ByteArray, offset: Int, unit: Double, bitsPerSample: Int): Int {
+        when (bitsPerSample) {
+            BITS_8 -> {
+                // RIFF 8-bit PCM is unsigned, centred at 128.
+                val v = (UNSIGNED_8_BIT_CENTER + unit * UNSIGNED_8_BIT_CENTER).toInt()
+                    .coerceIn(0, UNSIGNED_8_BIT_MAX)
+                bytes[offset] = v.toByte()
+                return offset + 1
+            }
+            BITS_16 -> {
+                val v = (unit * Short.MAX_VALUE).toInt()
+                bytes[offset] = (v and 0xFF).toByte()
+                bytes[offset + 1] = ((v shr BYTE_SHIFT_1) and 0xFF).toByte()
+                return offset + 2
+            }
+            BITS_24 -> {
+                val v = (unit * SIGNED_24_BIT_MAX).toInt()
+                bytes[offset] = (v and 0xFF).toByte()
+                bytes[offset + 1] = ((v shr BYTE_SHIFT_1) and 0xFF).toByte()
+                bytes[offset + 2] = ((v shr BYTE_SHIFT_2) and 0xFF).toByte()
+                return offset + 3
+            }
+            BITS_32 -> {
+                val v = (unit * Int.MAX_VALUE).toLong().toInt()
+                bytes[offset] = (v and 0xFF).toByte()
+                bytes[offset + 1] = ((v shr BYTE_SHIFT_1) and 0xFF).toByte()
+                bytes[offset + 2] = ((v shr BYTE_SHIFT_2) and 0xFF).toByte()
+                bytes[offset + 3] = ((v shr BYTE_SHIFT_3) and 0xFF).toByte()
+                return offset + 4
+            }
+            else -> error("unreachable: bitsPerSample=$bitsPerSample")
+        }
     }
 
     private fun writeString(bytes: ByteArray, offset: Int, value: String) {
@@ -69,21 +113,34 @@ object WavGenerator {
 
     private fun writeIntLE(bytes: ByteArray, offset: Int, value: Int) {
         bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
-        bytes[offset + 2] = ((value shr 16) and 0xFF).toByte()
-        bytes[offset + 3] = ((value shr 24) and 0xFF).toByte()
+        bytes[offset + 1] = ((value shr BYTE_SHIFT_1) and 0xFF).toByte()
+        bytes[offset + 2] = ((value shr BYTE_SHIFT_2) and 0xFF).toByte()
+        bytes[offset + 3] = ((value shr BYTE_SHIFT_3) and 0xFF).toByte()
     }
 
     private fun writeShortLE(bytes: ByteArray, offset: Int, value: Int) {
         bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
+        bytes[offset + 1] = ((value shr BYTE_SHIFT_1) and 0xFF).toByte()
     }
 
     private const val TONE_FREQUENCY = 440.0
-    private const val BYTES_PER_SAMPLE = 2
-    private const val BITS_PER_SAMPLE = 16
+    private const val DEFAULT_BITS_PER_SAMPLE = 16
     private const val PCM_FORMAT = 1
     private const val PCM_FMT_CHUNK_SIZE = 16
     private const val WAV_HEADER_SIZE = 44
     private const val RIFF_CHUNK_HEADER = 8
+
+    private const val BITS_PER_BYTE = 8
+    private const val BITS_8 = 8
+    private const val BITS_16 = 16
+    private const val BITS_24 = 24
+    private const val BITS_32 = 32
+
+    private const val BYTE_SHIFT_1 = 8
+    private const val BYTE_SHIFT_2 = 16
+    private const val BYTE_SHIFT_3 = 24
+
+    private const val UNSIGNED_8_BIT_CENTER = 128.0
+    private const val UNSIGNED_8_BIT_MAX = 255
+    private const val SIGNED_24_BIT_MAX = 8_388_607.0 // 2^23 - 1
 }

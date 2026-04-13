@@ -108,7 +108,19 @@ class VideoCompressionPropertyTest {
     }
 
     private companion object {
-        const val SEED = 12345L
+        // Rotate the seed on every test run so CI explores different config corners over time
+        // instead of re-running the same 5 combinations forever. Echoed to logcat so a
+        // reproducible bisect can plug the failing seed back in via
+        // `-Pandroid.testInstrumentationRunnerArguments.kompressorPropSeed=…` (forwarded to
+        // `InstrumentationRegistry.getArguments()`); `-PkompressorPropSeed=…` works locally
+        // when forwarded as a `-D` system property to the test JVM.
+        val SEED: Long = (
+            InstrumentationRegistry.getArguments().getString("kompressorPropSeed")
+                ?: System.getProperty("kompressorPropSeed")
+            )?.toLongOrNull()
+            ?: kotlin.random.Random.nextLong().also {
+                println("[property-seed] VideoCompressionPropertyTest: $it")
+            }
         const val ITERATIONS = 5
         const val INPUT_WIDTH = 640
         const val INPUT_HEIGHT = 480

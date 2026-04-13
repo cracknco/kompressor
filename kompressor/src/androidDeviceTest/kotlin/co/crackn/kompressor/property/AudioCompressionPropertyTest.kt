@@ -146,7 +146,10 @@ class AudioCompressionPropertyTest {
     private enum class InputFormat { WAV, AAC }
 
     private companion object {
-        const val SEED = 12345L
+        val SEED: Long = System.getProperty("kompressorPropSeed")?.toLongOrNull()
+            ?: kotlin.random.Random.nextLong().also {
+                println("[property-seed] AudioCompressionPropertyTest: $it")
+            }
         const val ITERATIONS = 15
         const val CROSS_FORMAT_ITERATIONS = 10
         const val FINAL_PROGRESS_MIN = 0.99f

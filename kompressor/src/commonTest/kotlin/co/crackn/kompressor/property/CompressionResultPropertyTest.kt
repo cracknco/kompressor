@@ -72,6 +72,8 @@ class CompressionResultPropertyTest {
     }
 
     private companion object {
-        const val SEED = 12345L
+        val SEED: Long = kotlin.random.Random.nextLong().also {
+            println("[property-seed] CompressionResultPropertyTest: $it")
+        }
     }
 }
