@@ -8,6 +8,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
+import platform.AVFoundation.AVAssetWriterStatusCancelled
 import platform.AVFoundation.AVAssetWriterStatusCompleted
 import platform.AVFoundation.AVAssetWriterStatusFailed
 import kotlin.coroutines.resume
@@ -46,12 +47,14 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
     suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation { writer.cancelWriting() }
         writer.finishWritingWithCompletionHandler {
-            if (writer.status == AVAssetWriterStatusCompleted) {
-                continuation.resume(Unit)
-            } else {
-                continuation.resumeWithException(
-                    writerFailureException(writer, "AVAssetWriter failed"),
-                )
+            when (writer.status) {
+                AVAssetWriterStatusCompleted -> continuation.resume(Unit)
+                AVAssetWriterStatusCancelled ->
+                    continuation.resumeWithException(CancellationException("AVAssetWriter cancelled"))
+                else ->
+                    continuation.resumeWithException(
+                        writerFailureException(writer, "AVAssetWriter failed"),
+                    )
             }
         }
     }
@@ -60,8 +63,10 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
 /** Checks that [writer] completed successfully, throwing otherwise. */
 @OptIn(ExperimentalForeignApi::class)
 internal fun checkWriterCompleted(writer: AVAssetWriter) {
-    if (writer.status != AVAssetWriterStatusCompleted) {
-        throw writerFailureException(writer, "AVAssetWriter not completed")
+    when (writer.status) {
+        AVAssetWriterStatusCompleted -> Unit
+        AVAssetWriterStatusCancelled -> throw CancellationException("AVAssetWriter cancelled")
+        else -> throw writerFailureException(writer, "AVAssetWriter not completed")
     }
 }
 
