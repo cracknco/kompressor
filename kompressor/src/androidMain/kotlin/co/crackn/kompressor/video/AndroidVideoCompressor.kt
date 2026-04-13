@@ -38,7 +38,15 @@ import kotlinx.coroutines.withContext
  * (e.g. [VideoCompressionError.UnsupportedSourceFormat] for the "device can't decode HEVC 10-bit"
  * case) rather than a generic `ExportException`.
  */
-internal class AndroidVideoCompressor : VideoCompressor {
+internal class AndroidVideoCompressor(
+    /**
+     * Extra audio processors appended to the Effects chain **for testing only** — parallel to
+     * the seam on `AndroidAudioCompressor`. Device tests inject a `SlowAudioProcessor` here
+     * to stall the encoder long enough that cancellation tests reliably land mid-export.
+     * Production `createKompressor()` uses the default empty list.
+     */
+    private val testExtraAudioProcessors: List<androidx.media3.common.audio.AudioProcessor> = emptyList(),
+) : VideoCompressor {
 
     override val supportedInputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = "video/")
@@ -123,7 +131,7 @@ internal class AndroidVideoCompressor : VideoCompressor {
             maxResolution.toPresentationOrNull(sourceShortSide)?.let(::add)
         }
         return EditedMediaItem.Builder(MediaItem.fromUri(toMediaItemUri(inputPath)))
-            .setEffects(Effects(emptyList(), videoEffects))
+            .setEffects(Effects(testExtraAudioProcessors, videoEffects))
             .build()
     }
 

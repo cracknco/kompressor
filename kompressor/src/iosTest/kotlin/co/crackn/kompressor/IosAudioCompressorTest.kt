@@ -19,6 +19,7 @@ import co.crackn.kompressor.testutil.fileSize
 import co.crackn.kompressor.testutil.readAudioDurationSec
 import co.crackn.kompressor.testutil.readAudioMetadata
 import co.crackn.kompressor.testutil.writeBytes
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
@@ -120,6 +121,38 @@ class IosAudioCompressorTest {
         assertTrue(
             err is AudioCompressionError.UnsupportedConfiguration,
             "Expected UnsupportedConfiguration, got ${err?.let { it::class.simpleName }}: ${err?.message}",
+        )
+    }
+
+    @Test
+    fun cancellation_deletesPartialOutput() = kotlinx.coroutines.runBlocking {
+        // iOS mirror of the Android cancellation test. Long input ensures AVAssetReader /
+        // AVAssetWriter are mid-copy when cancel lands — `IosPipeline.copySamples` checks
+        // `currentCoroutineContext().ensureActive()` on each buffer, so the first yield after
+        // cancel throws `CancellationException`. The new `deletingOutputOnFailure` wrapper
+        // (iosMain) must then remove the partial .m4a before the coroutine unwinds.
+        val inputPath = createTestWavFile(30, SAMPLE_RATE_44K, STEREO)
+        val outputPath = testDir + "cancelled.m4a"
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
+        )
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val job = scope.launch {
+            compressor.compress(
+                inputPath = inputPath,
+                outputPath = outputPath,
+                config = AudioCompressionConfig(sampleRate = 22_050),
+                onProgress = { p -> if (p > 0f && !started.isCompleted) started.complete(Unit) },
+            )
+        }
+        kotlinx.coroutines.withTimeout(5_000L) { started.await() }
+        job.cancel()
+        kotlinx.coroutines.withTimeout(15_000L) { job.join() }
+
+        assertTrue(job.isCancelled, "Job must be cancelled to validate partial-output cleanup")
+        assertTrue(
+            !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
+            "Cancelled iOS audio export must delete its partial output",
         )
     }
 

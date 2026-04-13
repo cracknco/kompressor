@@ -1,8 +1,11 @@
 package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.hasAudioTrack
+import co.crackn.kompressor.testutil.readAudioTrackInfo
 import co.crackn.kompressor.testutil.readVideoMetadata
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.MaxResolution
@@ -13,6 +16,7 @@ import co.crackn.kompressor.video.probeVideoShortSide
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -170,6 +174,59 @@ class AndroidVideoCompressorTest {
             err is VideoCompressionError,
             "Error must be a typed VideoCompressionError, got ${err?.let { it::class.simpleName }}: $err",
         )
+    }
+
+    @Test
+    fun cancellation_deletesPartialOutput() = kotlinx.coroutines.runBlocking {
+        // Mirror of the audio compressor's cancellation test: inject a SlowAudioProcessor so
+        // the encoder deterministically stalls mid-export, cancel after a fixed delay, and
+        // verify Media3's cleanup + our `deletingOutputOnFailure` removed the partial output.
+        // The fixture must carry an audio track — otherwise the injected processor is never
+        // invoked and the stall never fires.
+        val slowCompressor = AndroidVideoCompressor(
+            testExtraAudioProcessors = listOf(
+                co.crackn.kompressor.testutil.SlowAudioProcessor(delayPerBufferMs = 50L),
+            ),
+        )
+        val input = File(tempDir, "cancel_input.mp4")
+        AudioInputFixtures.createMp4WithVideoAndAudio(input, durationSeconds = 5)
+        val output = File(tempDir, "cancelled_video.mp4")
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
+        )
+        val job = scope.launch {
+            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
+        }
+
+        kotlinx.coroutines.delay(200L)
+        job.cancel()
+        kotlinx.coroutines.withTimeout(15_000L) { job.join() }
+
+        assertTrue(job.isCancelled, "Cancel must interrupt the video export, not let it complete")
+        assertTrue(
+            !output.exists(),
+            "Cancelled video export must delete its partial output, got ${output.length()} bytes",
+        )
+    }
+
+    @Test
+    fun compressVideo_videoWithAudio_preservesAudioTrack() = runTest {
+        // Regression gate for the "Mp4Generator has no audio track so every video golden is
+        // implicitly silent" blind spot. `createMp4WithVideoAndAudio` yields a mixed MP4; the
+        // compressor must re-encode both tracks and the output must still carry an audio
+        // track at the same MIME (AAC) with matching channel count + sample rate.
+        val input = File(tempDir, "v_plus_a_input.mp4")
+        AudioInputFixtures.createMp4WithVideoAndAudio(input, durationSeconds = 2)
+        val output = File(tempDir, "v_plus_a_output.mp4")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        assertTrue(result.isSuccess, "V+A compression failed: ${result.exceptionOrNull()}")
+
+        assertTrue(hasAudioTrack(output), "Output MP4 must keep its audio track after video compression")
+        val audio = readAudioTrackInfo(output)
+        assertTrue(audio.mime.startsWith("audio/mp4a-latm"), "Audio should be AAC, got ${audio.mime}")
+        assertEquals(44_100, audio.sampleRate, "Sample rate should be preserved")
+        assertEquals(2, audio.channels, "Channel count should be preserved")
     }
 
     @Test

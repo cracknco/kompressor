@@ -5,6 +5,7 @@ import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
+import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -72,10 +73,12 @@ internal class IosVideoCompressor : VideoCompressor {
         onProgress(0f)
         val inputSize = nsFileSize(inputPath)
 
-        if (canUseExportSession(config)) {
-            IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
-        } else {
-            IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+        deletingOutputOnFailure(outputPath) {
+            if (canUseExportSession(config)) {
+                IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
+            } else {
+                IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+            }
         }
 
         onProgress(1f)

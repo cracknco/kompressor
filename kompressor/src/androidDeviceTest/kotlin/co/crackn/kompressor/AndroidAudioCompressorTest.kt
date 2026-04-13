@@ -380,6 +380,31 @@ class AndroidAudioCompressorTest {
         )
     }
 
+    @Test
+    fun compressAudio_sixChannelSource_rejectedWithTypedError() = runTest {
+        // End-to-end gate for the 5.1 / 7.1 upfront-rejection path. WAV supports arbitrary
+        // channel counts, so we synthesise a 6-channel fixture, hand it to `compress()`, and
+        // verify the library refuses with `UnsupportedConfiguration` BEFORE Media3's mixer
+        // crashes on an unsupported constant-gain matrix.
+        val bytes = WavGenerator.generateWavBytes(
+            durationSeconds = 1,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = 6,
+        )
+        val input = File(tempDir, "input_5_1.wav").apply { writeBytes(bytes) }
+        val output = File(tempDir, "output_5_1.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+
+        assertTrue(result.isFailure, "5.1 input must be rejected upfront, got: $result")
+        val err = result.exceptionOrNull()
+        assertTrue(
+            err is co.crackn.kompressor.audio.AudioCompressionError.UnsupportedConfiguration,
+            "Expected UnsupportedConfiguration, got ${err?.let { it::class.simpleName }}: $err",
+        )
+        assertTrue(!output.exists(), "No partial output should be created for rejected configs")
+    }
+
     @Suppress("SameParameterValue")
     private fun createTestWavFile(durationSeconds: Int, sampleRate: Int, channels: Int): File {
         val bytes = WavGenerator.generateWavBytes(durationSeconds, sampleRate, channels)

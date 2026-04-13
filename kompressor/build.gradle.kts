@@ -99,6 +99,20 @@ kotlin {
     }
 }
 
+// TODO(kover-merge): Item 8 of the post-PR #45 audit — bump the `minValue` gate from 85 → 90
+//  once the FTL `.ec` device-coverage file is merged into the Kover report. The FTL job
+//  already uploads `ftl-device-coverage` as a GitHub Actions artifact (see pr.yml).
+//
+//  Concrete next steps to wire up the merge:
+//   1. In the `Tests & coverage (host)` job, download the `ftl-device-coverage` artifact
+//      *after* the FTL job completes (needs `needs: android-device-tests-ftl` OR a dedicated
+//      `merged-coverage` job depending on both).
+//   2. Drop the artifact into `kompressor/build/outputs/code_coverage/androidDeviceTest/` so
+//      Kover picks it up automatically alongside host coverage.
+//   3. Trim the exclusions below — classes like `AndroidAudioCompressorKt`, `Media3ExportRunnerKt`,
+//      `AudioProcessorPlan` become measurable once device coverage is in the report.
+//   4. Raise `minValue` to 90. If that's not achievable on the first run, leave it at 85 and
+//      open a follow-up to close specific gaps one by one.
 kover {
     reports {
         filters {
