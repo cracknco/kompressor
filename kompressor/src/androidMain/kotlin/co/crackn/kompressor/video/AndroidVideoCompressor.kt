@@ -108,12 +108,17 @@ internal class AndroidVideoCompressor(
             )
         }
         val sourceShortSide = probe?.shortSide
+        // When the probe fails we default to "probably has audio" so the sequence is permissive
+        // — declaring TRACK_TYPE_AUDIO for a track that's actually absent just causes Media3 to
+        // mux in silence (the regression we're avoiding goes the other way — declaring it when
+        // NOT present). For unreadable sources Media3 will surface its own error either way.
+        val sourceHasAudio = probe?.hasAudioTrack ?: true
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
                 val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceShortSide)
-                val composition = buildComposition(item, config)
+                val composition = buildComposition(item, config, sourceHasAudio)
                 awaitMedia3Export(transformer, composition, outputPath, onProgress)
             }
         } catch (e: ExportException) {
@@ -151,13 +156,21 @@ internal class AndroidVideoCompressor(
      * Media3's KDoc); HDR10 keeps the Composition default `HDR_MODE_KEEP_HDR` so HDR sources
      * pass through 10-bit BT.2020+PQ end-to-end.
      */
-    private fun buildComposition(item: EditedMediaItem, config: VideoCompressionConfig): Composition {
+    private fun buildComposition(
+        item: EditedMediaItem,
+        config: VideoCompressionConfig,
+        sourceHasAudio: Boolean,
+    ): Composition {
         // Use the addItem(...) builder API — the vararg/List Builder constructors are
         // @Deprecated in Media3 1.10 (the trackTypes-based constructor + addItem is the
-        // forward-compatible path).
-        val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
-            .addItem(item)
-            .build()
+        // forward-compatible path). `trackTypes` must match the tracks the *source actually
+        // carries*: declaring TRACK_TYPE_AUDIO for a video-only source makes Media3 mux in a
+        // silent audio track, which regresses the video-only-stays-video-only contract.
+        val trackTypes = buildSet {
+            add(C.TRACK_TYPE_VIDEO)
+            if (sourceHasAudio) add(C.TRACK_TYPE_AUDIO)
+        }
+        val sequence = EditedMediaItemSequence.Builder(trackTypes).addItem(item).build()
         val builder = Composition.Builder(sequence)
         if (config.dynamicRange == DynamicRange.SDR) {
             builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
@@ -247,14 +260,23 @@ private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentat
             }
     }
 
-/** Combined probe result: whether a video track exists and the source's shortest edge. */
-internal data class VideoProbe(val hasVideoTrack: Boolean, val shortSide: Int?)
+/**
+ * Combined probe result: video track presence, audio track presence, and the source's shortest
+ * edge. `hasAudioTrack` drives whether the Composition sequence advertises `TRACK_TYPE_AUDIO` —
+ * declaring that for a video-only source makes Media3 synthesise a silent audio track on the way
+ * out, which regressed `VideoEdgeCasesTest.videoOnlyNoAudioTrack_compressesSuccessfully`.
+ */
+internal data class VideoProbe(
+    val hasVideoTrack: Boolean,
+    val hasAudioTrack: Boolean,
+    val shortSide: Int?,
+)
 
 /**
- * Best-effort single-pass probe: whether the container has a video track AND what its shortest
- * edge is, from one [MediaMetadataRetriever] open. Returns `null` when the source can't be
- * read at all — callers should treat that as "unknown, let the downstream pipeline report its
- * own error" rather than a hard pre-flight rejection.
+ * Best-effort single-pass probe: whether the container has a video track AND an audio track AND
+ * what its shortest edge is, from one [MediaMetadataRetriever] open. Returns `null` when the
+ * source can't be read at all — callers should treat that as "unknown, let the downstream
+ * pipeline report its own error" rather than a hard pre-flight rejection.
  *
  * Handles `content://` (SAF) and `file://` URIs via the `setDataSource(Context, Uri)` overload;
  * plain `setDataSource(String)` silently fails on content URIs, which would nil out
@@ -266,6 +288,7 @@ internal fun probeVideo(inputPath: String): VideoProbe? = try {
     try {
         mmr.applyDataSource(inputPath)
         val hasVideo = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
+        val hasAudio = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
         val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
@@ -273,7 +296,7 @@ internal fun probeVideo(inputPath: String): VideoProbe? = try {
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
         val shortSide = if (w != null && h != null) minOf(w, h) else null
-        VideoProbe(hasVideoTrack = hasVideo, shortSide = shortSide)
+        VideoProbe(hasVideoTrack = hasVideo, hasAudioTrack = hasAudio, shortSide = shortSide)
     } finally {
         mmr.release()
     }
