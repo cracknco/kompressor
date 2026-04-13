@@ -8,6 +8,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
+import platform.AVFoundation.AVAssetWriterStatusCancelled
 import platform.AVFoundation.AVAssetWriterStatusCompleted
 import platform.AVFoundation.AVAssetWriterStatusFailed
 import kotlin.coroutines.resume
@@ -24,8 +25,8 @@ internal suspend fun awaitWriterReady(
 ) {
     var waited = 0L
     while (!input.readyForMoreMediaData) {
-        check(writer.status != AVAssetWriterStatusFailed) {
-            "AVAssetWriter failed while waiting: ${writer.error?.localizedDescription ?: "unknown"}"
+        if (writer.status == AVAssetWriterStatusFailed) {
+            throw writerFailureException(writer, "AVAssetWriter failed while waiting")
         }
         check(waited < WRITER_READY_TIMEOUT_MS) {
             "AVAssetWriterInput not ready after ${waited}ms (writer status: ${writer.status})"
@@ -46,13 +47,14 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
     suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation { writer.cancelWriting() }
         writer.finishWritingWithCompletionHandler {
-            if (writer.status == AVAssetWriterStatusCompleted) {
-                continuation.resume(Unit)
-            } else {
-                val msg = writer.error?.localizedDescription ?: "unknown"
-                continuation.resumeWithException(
-                    IllegalStateException("AVAssetWriter failed: $msg"),
-                )
+            when (writer.status) {
+                AVAssetWriterStatusCompleted -> continuation.resume(Unit)
+                AVAssetWriterStatusCancelled ->
+                    continuation.resumeWithException(CancellationException("AVAssetWriter cancelled"))
+                else ->
+                    continuation.resumeWithException(
+                        writerFailureException(writer, "AVAssetWriter failed"),
+                    )
             }
         }
     }
@@ -61,9 +63,17 @@ internal suspend fun awaitWriterFinish(writer: AVAssetWriter) {
 /** Checks that [writer] completed successfully, throwing otherwise. */
 @OptIn(ExperimentalForeignApi::class)
 internal fun checkWriterCompleted(writer: AVAssetWriter) {
-    check(writer.status == AVAssetWriterStatusCompleted) {
-        "AVAssetWriter not completed: ${writer.error?.localizedDescription}"
+    when (writer.status) {
+        AVAssetWriterStatusCompleted -> Unit
+        AVAssetWriterStatusCancelled -> throw CancellationException("AVAssetWriter cancelled")
+        else -> throw writerFailureException(writer, "AVAssetWriter not completed")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun writerFailureException(writer: AVAssetWriter, message: String): Throwable {
+    val err = writer.error ?: return IllegalStateException("$message: unknown")
+    return AVNSErrorException(err, message)
 }
 
 /**
@@ -80,12 +90,8 @@ internal suspend fun awaitExportSession(session: platform.AVFoundation.AVAssetEx
                 platform.AVFoundation.AVAssetExportSessionStatusCompleted -> {
                     continuation.resume(Unit)
                 }
-                platform.AVFoundation.AVAssetExportSessionStatusFailed -> {
-                    val msg = session.error?.localizedDescription ?: "unknown"
-                    continuation.resumeWithException(
-                        IllegalStateException("Export failed: $msg"),
-                    )
-                }
+                platform.AVFoundation.AVAssetExportSessionStatusFailed ->
+                    continuation.resumeWithException(exportFailureException(session))
                 platform.AVFoundation.AVAssetExportSessionStatusCancelled -> {
                     continuation.resumeWithException(
                         CancellationException("Export cancelled"),
@@ -99,6 +105,14 @@ internal suspend fun awaitExportSession(session: platform.AVFoundation.AVAssetEx
             }
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun exportFailureException(
+    session: platform.AVFoundation.AVAssetExportSession,
+): Throwable {
+    val err = session.error ?: return IllegalStateException("Export failed: unknown")
+    return AVNSErrorException(err, "Export failed")
 }
 
 internal const val WRITER_POLL_INTERVAL_MS = 10L

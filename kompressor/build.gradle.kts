@@ -108,45 +108,48 @@ kotlin {
 //     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
 //     before invoking `koverXmlReport`, so those classes show up in the merged report.
 val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
+
+// Kover 0.9.8 quirk: `reports.filters.excludes` is honoured by `koverXmlReport` but
+// `koverVerify` / `koverCachedVerify` read their filter set from `reports.verify.rule.filters`
+// and do NOT inherit from `reports.filters`. Apply the exclude list in both places so the
+// quality gate evaluates the same coverage as the XML report.
+val koverExcludedClasses = buildList {
+    // Platform glue — device or simulator only, no equivalent pure logic available
+    // host-side. Excluded irrespective of host-only vs merged mode.
+    add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
+    add("co.crackn.kompressor.MediaCodecUtilsKt")
+    add("co.crackn.kompressor.IosDeviceCapabilitiesKt")
+    add("co.crackn.kompressor.IosFileUtils*")
+    add("co.crackn.kompressor.IosKompressor")
+    add("co.crackn.kompressor.IosKompressorKt")
+    add("co.crackn.kompressor.AndroidKompressor")
+    add("co.crackn.kompressor.AndroidKompressorKt")
+    if (!mergedCoverageGate) {
+        // Host-only mode: add all classes that require a real codec stack / native
+        // platform APIs. In merged mode, device tests cover these and they're included.
+        add("co.crackn.kompressor.*.Android*")
+        add("co.crackn.kompressor.*.Ios*")
+        add("co.crackn.kompressor.image.ImageSource")
+        add("co.crackn.kompressor.image.ImageSource\$*")
+        add("co.crackn.kompressor.image.FilePathSource")
+        add("co.crackn.kompressor.image.FilePathSource\$*")
+        add("co.crackn.kompressor.image.ContentUriSource")
+        add("co.crackn.kompressor.image.ContentUriSource\$*")
+        add("co.crackn.kompressor.image.AndroidImageCompressorKt")
+        add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
+        add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
+        add("co.crackn.kompressor.Media3ExportRunnerKt")
+        add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
+        add("co.crackn.kompressor.audio.InputAudioFormat")
+        add("co.crackn.kompressor.audio.AudioProcessorPlan")
+        add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
+    }
+}
+
 kover {
     reports {
         filters {
-            excludes {
-                // Always-excluded platform glue — device or simulator only, no equivalent pure
-                // logic available host-side. These exist irrespective of merged vs host-only mode.
-                classes(
-                    "co.crackn.kompressor.KompressorInitializer",
-                    "co.crackn.kompressor.KompressorContext",
-                    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.MediaCodecUtilsKt",
-                    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.IosFileUtils*",
-                    "co.crackn.kompressor.IosKompressor",
-                    "co.crackn.kompressor.IosKompressorKt",
-                    "co.crackn.kompressor.AndroidKompressor",
-                    "co.crackn.kompressor.AndroidKompressorKt",
-                )
-                if (!mergedCoverageGate) {
-                    // Host-only mode: add all classes that require a real codec stack / native
-                    // platform APIs. In merged mode, device tests cover these and they're included.
-                    classes(
-                        "co.crackn.kompressor.*.Android*",
-                        "co.crackn.kompressor.*.Ios*",
-                        "co.crackn.kompressor.image.ImageSource",
-                        "co.crackn.kompressor.image.ImageSource\$*",
-                        "co.crackn.kompressor.image.FilePathSource",
-                        "co.crackn.kompressor.image.ContentUriSource",
-                        "co.crackn.kompressor.image.AndroidImageCompressorKt",
-                        "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-                        "co.crackn.kompressor.video.AndroidVideoCompressorKt",
-                        "co.crackn.kompressor.Media3ExportRunnerKt",
-                        "co.crackn.kompressor.Media3ExportRunnerKt\$*",
-                        "co.crackn.kompressor.audio.InputAudioFormat",
-                        "co.crackn.kompressor.audio.AudioProcessorPlan",
-                        "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
-                    )
-                }
-            }
+            excludes { classes(koverExcludedClasses) }
         }
         verify {
             rule {

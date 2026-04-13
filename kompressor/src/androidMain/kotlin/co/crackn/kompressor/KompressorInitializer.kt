@@ -4,18 +4,24 @@ import android.content.Context
 import androidx.startup.Initializer
 
 internal object KompressorContext {
-    private lateinit var _appContext: Context
+    // Nullable backing rather than `lateinit` so [resetForTest] can clear it between tests
+    // exercising the uninitialized → access failure path. Production code never calls
+    // [resetForTest]; App Startup invokes [init] exactly once per process.
+    @Volatile
+    private var _appContext: Context? = null
 
     val appContext: Context
-        get() {
-            check(::_appContext.isInitialized) {
-                "Kompressor is not initialized. Ensure App Startup is not disabled for KompressorInitializer."
-            }
-            return _appContext
+        get() = checkNotNull(_appContext) {
+            "Kompressor is not initialized. Ensure App Startup is not disabled for KompressorInitializer."
         }
 
     fun init(context: Context) {
         _appContext = context.applicationContext
+    }
+
+    /** Test-only hook to reset the singleton between tests. Do not call from production code. */
+    internal fun resetForTest() {
+        _appContext = null
     }
 }
 
