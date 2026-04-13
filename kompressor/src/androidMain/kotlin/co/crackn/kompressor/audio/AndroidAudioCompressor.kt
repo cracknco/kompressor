@@ -21,6 +21,7 @@ import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
 import java.io.File
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -76,6 +77,8 @@ internal class AndroidAudioCompressor(
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
+
+        rejectNonFileOutputPath(outputPath)
 
         // Single-pass probe off-Main: one MediaExtractor open returns both the selected track's
         // format AND the total audio-track count. Splitting the two cost us ~2× moov-atom parse
@@ -208,6 +211,21 @@ internal class AndroidAudioCompressor(
             .build()
     }
 
+    /**
+     * Reject pre-existing non-file output paths (directories, sockets, fifos) up front. Media3
+     * 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing entry
+     * before opening its muxer `FileOutputStream`, which silently wipes a caller-owned empty
+     * directory before our `deletingOutputOnFailure` snapshot ever sees a throwable.
+     */
+    private fun rejectNonFileOutputPath(outputPath: String) {
+        val outputFile = File(outputPath)
+        if (outputFile.exists() && !outputFile.isFile) {
+            throw AudioCompressionError.IoFailed(
+                "Output path is not a writable file: $outputPath",
+            )
+        }
+    }
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
         const val AUDIO_MIME_PREFIX = "audio/"
@@ -253,9 +271,18 @@ internal data class AudioProbeResult(val format: InputAudioFormat?, val audioTra
 
 /**
  * Single-pass probe: opens one [MediaExtractor], reports both the selected track's format AND
- * the audio-track count of the container. Runs on [Dispatchers.IO] from the caller. Cancellation
- * propagates; other failures collapse to `AudioProbeResult(null, 0)` (best-effort) so the
- * explicit bounds check in `compress()` can then surface a typed error.
+ * the audio-track count of the container. Runs on [Dispatchers.IO] from the caller.
+ *
+ * Failure taxonomy:
+ * - [CancellationException] propagates so structured concurrency stays intact.
+ * - [IOException] / [SecurityException] surface a typed [AudioCompressionError.IoFailed], so the
+ *   caller can distinguish "I couldn't read the source at all" from "the source exposes zero
+ *   audio tracks". Earlier revisions swallowed these to a `(null, 0)` sentinel, which silently
+ *   turned permission/IO errors into `UnsupportedSourceFormat` — CodeRabbit flagged this.
+ * - Any other `Throwable` (malformed container, unexpected runtime condition) still collapses to
+ *   `AudioProbeResult(null, 0)` so the explicit bounds check in `compress()` surfaces a typed
+ *   `UnsupportedSourceFormat`. The `@Suppress("TooGenericExceptionCaught")` is kept for that
+ *   last-resort catch.
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProbeResult = try {
@@ -267,6 +294,13 @@ internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProb
     }
 } catch (ce: CancellationException) {
     throw ce
+} catch (e: IOException) {
+    throw AudioCompressionError.IoFailed("Failed to probe audio input: $inputPath", e)
+} catch (e: SecurityException) {
+    throw AudioCompressionError.IoFailed(
+        "Permission denied probing audio input: $inputPath",
+        e,
+    )
 } catch (_: Throwable) {
     AudioProbeResult(null, 0)
 }

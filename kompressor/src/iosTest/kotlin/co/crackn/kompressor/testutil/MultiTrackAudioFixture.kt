@@ -112,9 +112,17 @@ object MultiTrackAudioFixture {
 
         var done = false
         session.exportAsynchronouslyWithCompletionHandler { done = true }
-        while (!done) {
-            NSThread.sleepForTimeInterval(0.01)
+        // Bounded wait: if the completion handler never fires the test rig would otherwise hang
+        // the CI worker indefinitely. 30 s is ~30× the observed export time for the fixtures we
+        // build here (few-second mono WAVs), so it surfaces real hangs without flaking.
+        val pollIntervalSec = 0.01
+        val timeoutSec = 30.0
+        var waitedSec = 0.0
+        while (!done && waitedSec < timeoutSec) {
+            NSThread.sleepForTimeInterval(pollIntervalSec)
+            waitedSec += pollIntervalSec
         }
+        check(done) { "AVAssetExportSession did not complete within ${timeoutSec}s" }
         check(session.status == AVAssetExportSessionStatusCompleted) {
             "export failed: status=${session.status} err=${session.error}"
         }

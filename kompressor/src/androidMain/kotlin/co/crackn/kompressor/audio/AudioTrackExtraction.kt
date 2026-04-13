@@ -8,7 +8,6 @@ import android.net.Uri
 import co.crackn.kompressor.KompressorContext
 import java.io.File
 import java.nio.ByteBuffer
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * MediaExtractor-based helpers that let `AndroidAudioCompressor` honour
@@ -18,20 +17,6 @@ import kotlin.coroutines.cancellation.CancellationException
  * (no re-encode), so the source codec is preserved end-to-end and the AAC-passthrough fast path
  * still qualifies on eligible inputs.
  */
-
-/**
- * Count how many audio tracks the container exposes. Returns `0` on any failure (including a
- * missing/unreadable file) so the compress path then surfaces a typed error via the bounds
- * check rather than a platform exception.
- */
-@Suppress("TooGenericExceptionCaught")
-internal fun countAudioTracks(inputPath: String): Int = try {
-    openAudioExtractor(inputPath).use { extractor -> extractor.countAudioTracks() }
-} catch (ce: CancellationException) {
-    throw ce
-} catch (_: Throwable) {
-    0
-}
 
 internal fun MediaExtractor.countAudioTracks(): Int =
     (0 until trackCount).count { i ->
@@ -55,6 +40,7 @@ internal fun extractAudioTrackToTempFile(inputPath: String, audioTrackIndex: Int
             val trackIndex = findAudioTrackIndexInContainer(extractor, audioTrackIndex)
                 ?: error("No audio track at index $audioTrackIndex")
             val format = extractor.getTrackFormat(trackIndex)
+            requireMp4MuxableCodec(format)
             val muxer = MediaMuxer(tempFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             try {
                 val dstTrack = muxer.addTrack(format)
@@ -70,6 +56,24 @@ internal fun extractAudioTrackToTempFile(inputPath: String, audioTrackIndex: Int
     } catch (t: Throwable) {
         tempFile.delete()
         throw t
+    }
+}
+
+/**
+ * Validate that the selected track can be bitstream-copied into an MP4 container. Attempting
+ * `MediaMuxer.addTrack()` with a non-MP4-remuxable codec (Opus, Vorbis, FLAC, raw PCM, …) throws
+ * `IllegalStateException` deep inside the muxer; pre-validating lets the caller receive a typed,
+ * actionable error instead of a platform failure. Transcode fallback (decode → AAC) is out of
+ * scope for the multi-track-selection feature — MP4-remuxable inputs cover the vast majority of
+ * multi-track audio containers in practice.
+ */
+private fun requireMp4MuxableCodec(format: MediaFormat) {
+    val mime = format.getString(MediaFormat.KEY_MIME)
+    if (mime == null || mime !in MP4_MUXABLE_AUDIO_MIMES) {
+        throw AudioCompressionError.UnsupportedSourceFormat(
+            "Multi-track audio selection does not support codec '$mime' " +
+                "(MP4 container supports only: $MP4_MUXABLE_AUDIO_MIMES)",
+        )
     }
 }
 
@@ -120,3 +124,11 @@ internal inline fun <R> MediaExtractor.use(block: (MediaExtractor) -> R): R {
 }
 
 private const val EXTRACT_COPY_BUFFER_SIZE = 1 shl 18 // 256 KiB — large enough for AAC access units.
+
+// MP4 container audio codecs supported by `android.media.MediaMuxer` with MUXER_OUTPUT_MPEG_4.
+// Source: Android MediaMuxer docs (AAC, AMR-NB, AMR-WB are the only officially-supported entries).
+private val MP4_MUXABLE_AUDIO_MIMES = setOf(
+    "audio/mp4a-latm", // AAC
+    "audio/3gpp", // AMR-NB
+    "audio/amr-wb", // AMR-WB
+)
