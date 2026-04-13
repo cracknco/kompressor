@@ -12,7 +12,7 @@ import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
 import co.crackn.kompressor.video.VideoCompressionError
 import co.crackn.kompressor.video.VideoPresets
-import co.crackn.kompressor.video.probeVideoShortSide
+import co.crackn.kompressor.video.probeVideo
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -131,30 +131,32 @@ class AndroidVideoCompressorTest {
     }
 
     @Test
-    fun probeVideoShortSide_malformedInput_returnsNull() {
+    fun probeVideo_malformedInput_returnsNullOrEmpty() {
         // Direct assertion on the probe's null-fallback: a file with garbage bytes must not
-        // crash and must not report a fake dimension. This is the branch
-        // `toPresentationOrNull` falls through to when the probe fails, so we test it in
-        // isolation rather than inferring from a larger pipeline error.
+        // crash and must not report a fake dimension. `probeVideo` may either fail to open
+        // (returns null) or open but produce no usable width/height (shortSide == null); both
+        // are acceptable — what we guard against is a bogus non-null short-side value.
         val garbage = File(tempDir, "garbage_probe.mp4").apply {
             writeBytes(ByteArray(256) { 0xFF.toByte() })
         }
-        val shortSide = probeVideoShortSide(garbage.absolutePath)
-        assertEquals(null, shortSide, "Probe must return null on unreadable input, got $shortSide")
+        val probe = probeVideo(garbage.absolutePath)
+        assertEquals(null, probe?.shortSide, "Probe must not report a dimension for unreadable input")
     }
 
     @Test
-    fun probeVideoShortSide_nonexistentFile_returnsNull() {
-        val shortSide = probeVideoShortSide("/nonexistent/definitely_not_a_video.mp4")
-        assertEquals(null, shortSide, "Probe must return null on missing file, got $shortSide")
+    fun probeVideo_nonexistentFile_returnsNull() {
+        val probe = probeVideo("/nonexistent/definitely_not_a_video.mp4")
+        assertEquals(null, probe, "Probe must return null on missing file, got $probe")
     }
 
     @Test
-    fun probeVideoShortSide_realVideo_returnsMinDimension() {
+    fun probeVideo_realVideo_returnsMinDimension() {
         // Sanity check: a real 1280×720 video must produce 720 as the short side. If this
         // regressed (e.g. to `max` or to null) every Presentation decision in the compressor
         // would silently flip to the force-scale path.
-        assertEquals(INPUT_HEIGHT, probeVideoShortSide(inputFile.absolutePath))
+        val probe = probeVideo(inputFile.absolutePath)
+        assertEquals(INPUT_HEIGHT, probe?.shortSide)
+        assertTrue(probe?.hasVideoTrack == true, "Real video probe must report hasVideoTrack=true")
     }
 
     @Test

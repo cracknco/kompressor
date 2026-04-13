@@ -34,12 +34,29 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * expected to run the whole export on [kotlinx.coroutines.Dispatchers.Main]. Cancellation
  * callbacks (which may fire from arbitrary threads) are explicitly hopped to the Main looper
  * before touching the [Transformer].
+ *
+ * Two overloads exist: one taking an [EditedMediaItem] (the default for audio + non-HDR video)
+ * and one taking a [Composition] (used by video paths that need [Composition.Builder.setHdrMode]).
+ * Both share the same listener / progress / cancellation glue.
  */
+internal suspend fun awaitMedia3Export(
+    transformer: Transformer,
+    composition: Composition,
+    outputPath: String,
+    onProgress: suspend (Float) -> Unit,
+) = awaitMedia3Export(transformer, onProgress) { transformer.start(composition, outputPath) }
+
 internal suspend fun awaitMedia3Export(
     transformer: Transformer,
     item: EditedMediaItem,
     outputPath: String,
     onProgress: suspend (Float) -> Unit,
+) = awaitMedia3Export(transformer, onProgress) { transformer.start(item, outputPath) }
+
+private suspend fun awaitMedia3Export(
+    transformer: Transformer,
+    onProgress: suspend (Float) -> Unit,
+    startTransformer: () -> Unit,
 ) = coroutineScope {
     val progressJob = launchMedia3ProgressPoller(transformer, onProgress)
     // Track whether the export needs a synchronous cancel on the caller's withContext(Main)
@@ -78,7 +95,7 @@ internal suspend fun awaitMedia3Export(
             }
             try {
                 transformer.addListener(listener)
-                transformer.start(item, outputPath)
+                startTransformer()
                 started = true
             } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
                 // Synchronous failures from addListener/start would otherwise leak the listener.
