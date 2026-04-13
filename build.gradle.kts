@@ -41,6 +41,7 @@ kover {
                     "co.crackn.kompressor.image.ContentUriSource\$*",
                     "co.crackn.kompressor.image.AndroidImageCompressorKt",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+                    "co.crackn.kompressor.audio.AudioTrackExtractionKt",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
                     "co.crackn.kompressor.Media3ExportRunnerKt",
                     "co.crackn.kompressor.Media3ExportRunnerKt\$*",

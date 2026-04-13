@@ -26,6 +26,7 @@ object Mp4Generator {
         height: Int = DEFAULT_HEIGHT,
         frameCount: Int = DEFAULT_FRAME_COUNT,
         fps: Int = DEFAULT_FPS,
+        rotationDegrees: Int = 0,
     ): File {
         val format = MediaFormat.createVideoFormat(H264_MIME, width, height).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE)
@@ -41,6 +42,12 @@ object Mp4Generator {
         encoder.start()
 
         val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val normalisedRotation = ((rotationDegrees % FULL_CIRCLE) + FULL_CIRCLE) % FULL_CIRCLE
+        if (normalisedRotation != 0) {
+            // Writes into the container's tkhd matrix so downstream decoders / players
+            // (and MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION) see the tag.
+            muxer.setOrientationHint(normalisedRotation)
+        }
         try {
             encodeFrames(encoder, muxer, width, height, frameCount, fps)
         } finally {
@@ -155,6 +162,7 @@ object Mp4Generator {
     private const val YUV_DIVISOR = 2
     private const val UV_PLANE_DIVISOR = 4
     private const val BYTE_MASK = 0xFF
+    private const val FULL_CIRCLE = 360
     private const val LUMA_FRAME_PHASE = 7
     private const val CHROMA_U_FRAME_PHASE = 3
     private const val CHROMA_V_FRAME_PHASE = 5

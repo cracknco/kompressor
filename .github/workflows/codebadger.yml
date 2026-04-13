@@ -32,7 +32,7 @@ jobs:
         run: echo "version=4.0.500" >> "$GITHUB_OUTPUT"
 
       # ── Cache Joern CLI (~500 MB) ──────────────────────────
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         id: joern-cache
         with:
           path: joern-cli
@@ -53,13 +53,13 @@ jobs:
         run: echo "$PWD/joern-cli" >> "$GITHUB_PATH"
 
       # ── Cache CPG binaries (keyed on source hashes) ────────
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         id: cpg-kotlin-cache
         with:
           path: cpg-kotlin.bin
           key: cpg-kotlin-${{ steps.joern-version.outputs.version }}-${{ hashFiles('kompressor/src/commonMain/**', 'kompressor/src/androidMain/**') }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         id: cpg-swift-cache
         with:
           path: cpg-swift.bin
