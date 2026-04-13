@@ -14,13 +14,21 @@ import java.io.File
  * Asset Manager.
  */
 fun copyResourceToCache(resourceName: String, destDir: File): File {
-    require(destDir.exists() || destDir.mkdirs()) {
-        "Unable to create destination dir: ${destDir.absolutePath}"
+    require((destDir.isDirectory) || destDir.mkdirs()) {
+        "Destination is not a directory and could not be created: ${destDir.absolutePath}"
     }
     val target = File(destDir, resourceName)
+    val destCanonical = destDir.canonicalFile
+    val targetCanonical = target.canonicalFile
+    require(
+        targetCanonical.path == destCanonical.path ||
+            targetCanonical.path.startsWith(destCanonical.path + File.separator),
+    ) {
+        "Resource path escapes destination directory: $resourceName"
+    }
     target.parentFile?.let { parent ->
-        require(parent.exists() || parent.mkdirs()) {
-            "Unable to create parent dir: ${parent.absolutePath}"
+        require((parent.isDirectory) || parent.mkdirs()) {
+            "Parent is not a directory and could not be created: ${parent.absolutePath}"
         }
     }
     val loader = Thread.currentThread().contextClassLoader ?: error("No context ClassLoader")
