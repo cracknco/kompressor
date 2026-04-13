@@ -43,9 +43,13 @@ class Media3ErrorMappingTest {
     }
 
     @Test
-    fun misc1xxxErrorFallsThroughToUnknown() {
+    fun assetLoader1xxxBandMapsToUnsupportedSourceFormat() {
+        // The 1xxx band covers Media3's asset-loader / runtime-check failures (1000, 1004 etc.)
+        // — emitted when the source bytes don't match any registered extractor. From the
+        // compressor's POV this is "we cannot read this input format", so we surface the typed
+        // UnsupportedSourceFormat instead of an opaque Unknown.
         classifyExportErrorCode(1999, "d", null)
-            .shouldBeInstanceOf<VideoCompressionError.Unknown>()
+            .shouldBeInstanceOf<VideoCompressionError.UnsupportedSourceFormat>()
     }
 
     @Test

@@ -9,6 +9,10 @@ import co.crackn.kompressor.video.VideoCompressor
  *
  * Obtain an instance via [createKompressor]. Each compressor is lazily initialised —
  * only the ones you access are created.
+ *
+ * Implementations are stateless. Concurrent `compress()` calls from different coroutines on the
+ * same instance are safe **provided output paths differ**. Concurrent calls with the same output
+ * path produce undefined results.
  */
 public interface Kompressor {
     /** Image compressor for JPEG (and future format) compression. */
