@@ -46,7 +46,7 @@ class ContentUriInputTest {
         input.writeBytes(WavGenerator.generateWavBytes(2, SAMPLE_RATE_44K, STEREO))
         val output = File(tempDir, "output.m4a")
         // URI form apps get back from OPEN_DOCUMENT / share sheets: content://<authority>/<path>.
-        val contentUri = TestContentProvider.contentUriFor("kompressor-content-uri-test/input.wav")
+        val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
 
         val result = audioCompressor.compress(
             inputPath = contentUri.toString(),
@@ -66,7 +66,7 @@ class ContentUriInputTest {
         val input = File(tempDir, "input.mp4")
         AudioInputFixtures.createMp4WithVideoAndAudio(input, durationSeconds = 1)
         val output = File(tempDir, "output.mp4")
-        val contentUri = TestContentProvider.contentUriFor("kompressor-content-uri-test/input.mp4")
+        val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
 
         val result = videoCompressor.compress(
             inputPath = contentUri.toString(),

@@ -24,8 +24,12 @@ class TestContentProvider : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         val cacheDir = context?.cacheDir ?: error("No context")
         val relative = uri.path?.trimStart('/') ?: error("URI has no path: $uri")
-        val target = File(cacheDir, relative)
-        require(target.exists()) { "TestContentProvider: no file at ${target.absolutePath}" }
+        val cacheRoot = cacheDir.canonicalFile
+        val target = File(cacheRoot, relative).canonicalFile
+        require(target.path.startsWith(cacheRoot.path + File.separator)) {
+            "TestContentProvider: path escapes cacheDir: $uri"
+        }
+        require(target.isFile) { "TestContentProvider: no file at ${target.absolutePath}" }
         return ParcelFileDescriptor.open(target, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 

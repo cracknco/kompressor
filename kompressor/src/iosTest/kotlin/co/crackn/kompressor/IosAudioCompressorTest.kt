@@ -143,17 +143,11 @@ class IosAudioCompressorTest {
         job.cancel()
         kotlinx.coroutines.withTimeout(15_000L) { job.join() }
 
-        if (job.isCancelled) {
-            assertTrue(
-                !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
-                "Cancelled iOS audio export must delete its partial output",
-            )
-        } else {
-            assertTrue(
-                NSFileManager.defaultManager.fileExistsAtPath(outputPath),
-                "A cleanly-completed export must leave its output on disk",
-            )
-        }
+        assertTrue(job.isCancelled, "Job must be cancelled to validate partial-output cleanup")
+        assertTrue(
+            !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
+            "Cancelled iOS audio export must delete its partial output",
+        )
     }
 
     @Test

@@ -119,12 +119,11 @@ class IosVideoCompressorTest {
 
     @Test
     fun cancellation_deletesPartialOutput() = kotlinx.coroutines.runBlocking {
-        // iOS mirror of the video cancellation test. The standard Mp4Generator fixture is
-        // short (1 s / 30 frames) but `IosVideoTranscodePipeline.copySamples` yields on every
-        // buffer via `currentCoroutineContext().ensureActive()`, so a 200 ms cancel still
-        // tends to land mid-export on the simulator. If compress completes before cancel
-        // (hyperfast sim), the test falls back to asserting the output exists — identical
-        // semantics to the Android equivalent.
+        // iOS mirror of the video cancellation test. A 300-frame fixture ensures the export
+        // is mid-copy when cancel lands; `IosVideoTranscodePipeline.copySamples` yields on
+        // every buffer via `currentCoroutineContext().ensureActive()`, so the first yield
+        // after cancel throws `CancellationException`. The `deletingOutputOnFailure` wrapper
+        // (iosMain) must then remove the partial .mp4 before the coroutine unwinds.
         val longInputPath = Mp4Generator.generateMp4(
             outputPath = testDir + "cancel_input.mp4",
             width = INPUT_WIDTH,
@@ -143,12 +142,11 @@ class IosVideoCompressorTest {
         job.cancel()
         kotlinx.coroutines.withTimeout(15_000L) { job.join() }
 
-        if (job.isCancelled) {
-            assertTrue(
-                !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
-                "Cancelled iOS video export must delete its partial output",
-            )
-        }
+        assertTrue(job.isCancelled, "Job must be cancelled to validate partial-output cleanup")
+        assertTrue(
+            !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
+            "Cancelled iOS video export must delete its partial output",
+        )
     }
 
     @Test
