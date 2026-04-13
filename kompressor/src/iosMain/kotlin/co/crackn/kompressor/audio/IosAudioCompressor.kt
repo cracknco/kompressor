@@ -61,6 +61,13 @@ internal class IosAudioCompressor : AudioCompressor {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
         val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error so callers see the
+        // same `IoFailed` subtype across platforms instead of the AVFoundation-specific
+        // `fileFormatNotRecognized` → `UnsupportedSourceFormat` mapping an empty file would
+        // otherwise trigger.
+        if (inputSize == 0L) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
         // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
         // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
         // sample buffer` from deep in the pipeline.

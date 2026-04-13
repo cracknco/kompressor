@@ -1,5 +1,7 @@
 package co.crackn.kompressor.video
 
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -90,6 +92,17 @@ internal class AndroidVideoCompressor(
         // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
         // input with `HIGH_QUALITY` preset targeting 1080p).
         val sourceShortSide = withContext(Dispatchers.IO) { probeVideoShortSide(inputPath) }
+        // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error.
+        // Without this check Media3 surfaces an opaque `ERROR_CODE_IO_UNSPECIFIED` or decoder
+        // init failure mid-export; the typed `UnsupportedSourceFormat` lets callers `when`-branch
+        // cleanly. A null probe result (file unreadable) falls through so Media3's existing
+        // error reporting wins for genuinely broken inputs.
+        val probe = withContext(Dispatchers.IO) { probeVideoTracks(inputPath) }
+        if (probe != null && !probe.hasVideoTrack) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "Input has no video track (only audio): $inputPath",
+            )
+        }
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
@@ -163,6 +176,29 @@ private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentat
                 Presentation.createForShortSide(maxShortEdge)
             }
     }
+
+/** Summary of the track layout in the input container. */
+internal data class VideoTrackProbe(val hasVideoTrack: Boolean)
+
+/**
+ * Best-effort probe of the input container to determine whether a video track is present.
+ * Returns `null` when the file can't be opened; callers should treat that as "unknown, let the
+ * downstream pipeline report its own error" rather than a hard pre-flight rejection.
+ */
+@Suppress("TooGenericExceptionCaught")
+internal fun probeVideoTracks(inputPath: String): VideoTrackProbe? = try {
+    val extractor = MediaExtractor().apply { setDataSource(inputPath) }
+    try {
+        val hasVideo = (0 until extractor.trackCount).any { i ->
+            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+        }
+        VideoTrackProbe(hasVideoTrack = hasVideo)
+    } finally {
+        extractor.release()
+    }
+} catch (_: Throwable) {
+    null
+}
 
 /**
  * Best-effort probe of a video's shortest edge via [MediaMetadataRetriever]. Returns `null`

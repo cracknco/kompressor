@@ -77,6 +77,13 @@ internal class AndroidAudioCompressor(
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error instead of letting
+        // Media3 surface an opaque decoder-init failure. `resolveMediaInputSize` returns 0 for
+        // unreadable sources as well, so we only reject when the file exists and is zero bytes;
+        // a genuinely missing file will surface its own error downstream.
+        if (inputPath.startsWith("/") && inputSize == 0L && File(inputPath).exists()) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
 
         // Probe off-Main because MediaExtractor does blocking I/O.
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }

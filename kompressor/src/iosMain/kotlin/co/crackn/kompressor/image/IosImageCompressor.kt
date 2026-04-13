@@ -35,6 +35,15 @@ internal class IosImageCompressor : ImageCompressor {
             throw e
         } catch (e: IllegalArgumentException) {
             throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+            // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
+            // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
+            // caller subsequently dereferences a member. Classify it as `DecodingFailed` so
+            // callers see the same typed error as the Android side.
+            throw ImageCompressionError.DecodingFailed(
+                "Platform decoder failed (nil image): ${e.message ?: "UIImage(contentsOfFile)"}",
+                e,
+            )
         } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
             throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
         }
