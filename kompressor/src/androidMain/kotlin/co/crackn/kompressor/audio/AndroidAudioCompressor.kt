@@ -78,6 +78,18 @@ internal class AndroidAudioCompressor(
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
 
+        // Reject pre-existing non-file output paths (directories, sockets, fifos) up front:
+        // Media3 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing
+        // entry before opening its muxer FileOutputStream, which silently wipes a caller-owned
+        // empty directory before our `deletingOutputOnFailure` snapshot ever sees a throwable.
+        // Checking here keeps Media3 from touching the path at all.
+        val outputFile = File(outputPath)
+        if (outputFile.exists() && !outputFile.isFile) {
+            throw AudioCompressionError.IoFailed(
+                "Output path is not a writable file: $outputPath",
+            )
+        }
+
         // Probe off-Main because MediaExtractor does blocking I/O.
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
