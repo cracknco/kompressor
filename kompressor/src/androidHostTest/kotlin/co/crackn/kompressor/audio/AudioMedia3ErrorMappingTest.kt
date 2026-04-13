@@ -48,9 +48,12 @@ class AudioMedia3ErrorMappingTest {
     }
 
     @Test
-    fun misc1xxxErrorFallsThroughToUnknown() {
+    fun assetLoader1xxxBandMapsToUnsupportedSourceFormat() {
+        // 1xxx covers Media3's asset-loader / runtime-check failures (1000, 1004 etc.) —
+        // emitted when the input bytes don't match a registered extractor. Surface as
+        // typed UnsupportedSourceFormat instead of opaque Unknown.
         classifyAudioExportErrorCode(1999, "d", null)
-            .shouldBeInstanceOf<AudioCompressionError.Unknown>()
+            .shouldBeInstanceOf<AudioCompressionError.UnsupportedSourceFormat>()
     }
 
     @Test
