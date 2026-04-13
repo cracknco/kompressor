@@ -11,7 +11,9 @@ import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
@@ -23,6 +25,22 @@ internal class AndroidImageCompressor : ImageCompressor {
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
         require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
+        try {
+            doCompress(inputPath, outputPath, config)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw classifyAndroidImageError(inputPath, e)
+        }
+    }
+
+    private suspend fun doCompress(
+        inputPath: String,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
         val startNanos = System.nanoTime()
 
         val source = ImageSource.of(inputPath)
@@ -46,7 +64,7 @@ internal class AndroidImageCompressor : ImageCompressor {
 
         val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
-        CompressionResult(inputSize, outputSize, durationMs)
+        return CompressionResult(inputSize, outputSize, durationMs)
     }
 
     private fun applyRotationToDimensions(dims: ImageDimensions, rotation: ExifRotation): ImageDimensions =
@@ -68,9 +86,20 @@ internal class AndroidImageCompressor : ImageCompressor {
     }
 
     private fun writeBitmapAsJpeg(bitmap: Bitmap, outputPath: String, quality: Int) {
-        FileOutputStream(outputPath).use { stream ->
-            val success = bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
-            check(success) { "Failed to compress bitmap as JPEG to: $outputPath" }
+        // Capture the compress result inside `use { }` so the stream is closed before we throw.
+        // Throwing inside the use-block works too but leaves the throw-point visibly inside the
+        // open-stream frame, which static analysers (CodeBadger/Joern) flag as a potential leak
+        // of sibling resources (e.g. the caller-owned Bitmap). Returning the boolean and then
+        // throwing after close moves the error path to a point where the I/O resource is
+        // provably released — the ownership contract for the Bitmap itself lives with the
+        // caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
+        val success = FileOutputStream(outputPath).use { stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+        }
+        if (!success) {
+            throw ImageCompressionError.EncodingFailed(
+                "Bitmap.compress(JPEG, quality=$quality) returned false for: $outputPath",
+            )
         }
     }
 
@@ -129,8 +158,11 @@ private class FilePathSource(private val path: String) : ImageSource {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
         BitmapFactory.decodeFile(path, options)
-        require(options.outWidth > 0 && options.outHeight > 0) {
-            "Cannot decode image dimensions: $path"
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            if (!File(path).exists()) {
+                throw ImageCompressionError.IoFailed("Input file not found: $path")
+            }
+            throw ImageCompressionError.DecodingFailed("Cannot decode image dimensions: $path")
         }
         return ImageDimensions(options.outWidth, options.outHeight)
     }
@@ -141,7 +173,8 @@ private class FilePathSource(private val path: String) : ImageSource {
         exifRotation: ExifRotation,
     ): Bitmap {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
-        val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
+        val decoded = BitmapFactory.decodeFile(path, options)
+            ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $path")
         return rotateOrRecycle(decoded, exifRotation)
     }
 }
@@ -170,8 +203,8 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
             // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
             BitmapFactory.decodeStream(stream, null, options)
         }
-        require(options.outWidth > 0 && options.outHeight > 0) {
-            "Cannot decode image dimensions: $uri"
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            throw ImageCompressionError.DecodingFailed("Cannot decode image dimensions: $uri")
         }
         return ImageDimensions(options.outWidth, options.outHeight)
     }
@@ -184,14 +217,16 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
         val decoded = openStream().use { stream ->
             // codebadger:suppress(resource-leak) Bitmap ownership transfers to caller via rotateOrRecycle.
-            BitmapFactory.decodeStream(stream, null, options) ?: error("Failed to decode image: $uri")
+            BitmapFactory.decodeStream(stream, null, options)
+                ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $uri")
         }
         return rotateOrRecycle(decoded, exifRotation)
     }
 
     private fun openStream(): InputStream =
         // codebadger:suppress(resource-leak) Stream closed by caller via `use { }`.
-        resolver.openInputStream(uri) ?: error("ContentResolver returned null input stream for $uri")
+        resolver.openInputStream(uri)
+            ?: throw ImageCompressionError.IoFailed("ContentResolver returned null input stream for $uri")
 }
 
 private fun decodeExifOrientation(exif: ExifInterface): ExifRotation =
@@ -239,4 +274,19 @@ private fun rotateOrRecycle(decoded: Bitmap, rotation: ExifRotation): Bitmap = t
 } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
     decoded.recycle()
     throw e
+}
+
+/**
+ * Classifies a Throwable raised from the Android image pipeline into the appropriate
+ * [ImageCompressionError] subtype. Already-typed errors are rethrown unchanged by the caller
+ * before this runs; this handles the raw platform exceptions.
+ */
+private fun classifyAndroidImageError(inputPath: String, e: Throwable): ImageCompressionError = when (e) {
+    is FileNotFoundException -> ImageCompressionError.IoFailed("Input not found: $inputPath", e)
+    is IOException -> ImageCompressionError.IoFailed(e.message ?: "I/O error reading $inputPath", e)
+    is OutOfMemoryError -> ImageCompressionError.DecodingFailed(
+        "Out of memory decoding $inputPath",
+        e,
+    )
+    else -> ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
 }

@@ -77,6 +77,13 @@ internal class AndroidAudioCompressor(
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error instead of letting
+        // Media3 surface an opaque decoder-init failure. `resolveMediaInputSize` returns 0 for
+        // unreadable sources as well, so we only reject when the file exists and is zero bytes;
+        // a genuinely missing file will surface its own error downstream.
+        if (inputPath.startsWith("/") && inputSize == 0L && File(inputPath).exists()) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
 
         // Reject pre-existing non-file output paths (directories, sockets, fifos) up front:
         // Media3 1.10's `Transformer.start(item, outputPath)` eagerly `File.delete()`s an existing
@@ -94,9 +101,15 @@ internal class AndroidAudioCompressor(
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
         // Reject configurations Media3's channel mixer cannot handle before kicking off an
-        // export. Check is extracted to `checkSupportedInputChannelCount` so the rule is
-        // covered by host tests without needing a real 5.1 / 7.1 fixture.
+        // export. Two complementary checks, both host-testable so the rules are covered without
+        // needing a real 5.1 / 7.1 fixture:
+        //  - `checkSupportedInputChannelCount`: rejects inputs outside our envelope (7-channel
+        //    or 9+-channel sources).
+        //  - `checkChannelMixSupported`: rejects (input, target) pairs the mixer can't satisfy
+        //    — primarily upmix attempts like stereo → 5.1 — so the caller sees the typed
+        //    `UnsupportedConfiguration` instead of a Media3 mid-pipeline crash.
         checkSupportedInputChannelCount(probe?.channels)
+        checkChannelMixSupported(probe?.channels, config.channels.count)
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, probe, onProgress)
