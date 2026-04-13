@@ -2,9 +2,14 @@ package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
+import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
+import co.crackn.kompressor.testutil.readAudioDurationMs
+import co.crackn.kompressor.testutil.readAudioTrackInfo
+import kotlin.math.abs
+import kotlin.test.assertEquals
 import java.io.File
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -44,41 +49,70 @@ class MultiFormatInputTest {
     }
 
     @Test
-    fun mp3Input_compressesToAac() = runTest {
-        val input = copyResourceToCache("sample_mono_22k.mp3", tempDir)
-        val output = File(tempDir, "from_mp3.m4a")
-        val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
-            AudioCompressionConfig(bitrate = 64_000),
+    fun mp3Input_compressesToAacWithMatchingConfig() = runTest {
+        assertRoundTripMatchesConfig(
+            resourceName = "sample_mono_22k.mp3",
+            config = AudioCompressionConfig(bitrate = 64_000, sampleRate = 22_050, channels = AudioChannels.MONO),
         )
-        assertTrue(result.isSuccess, "MP3 → AAC must succeed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
     }
 
     @Test
-    fun flacInput_compressesToAac() = runTest {
-        val input = copyResourceToCache("sample_mono_22k.flac", tempDir)
-        val output = File(tempDir, "from_flac.m4a")
-        val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
-            AudioCompressionConfig(bitrate = 64_000),
+    fun flacInput_compressesToAacWithMatchingConfig() = runTest {
+        assertRoundTripMatchesConfig(
+            resourceName = "sample_mono_22k.flac",
+            config = AudioCompressionConfig(bitrate = 64_000, sampleRate = 22_050, channels = AudioChannels.MONO),
         )
-        assertTrue(result.isSuccess, "FLAC → AAC must succeed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
     }
 
     @Test
-    fun oggOpusInput_compressesToAac() = runTest {
-        val input = copyResourceToCache("sample_mono_24k.ogg", tempDir)
-        val output = File(tempDir, "from_ogg.m4a")
-        val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
-            AudioCompressionConfig(bitrate = 64_000),
+    fun oggOpusInput_compressesToAacWithMatchingConfig() = runTest {
+        assertRoundTripMatchesConfig(
+            resourceName = "sample_mono_24k.ogg",
+            config = AudioCompressionConfig(bitrate = 64_000, sampleRate = 24_000, channels = AudioChannels.MONO),
         )
-        assertTrue(result.isSuccess, "OGG/Opus → AAC must succeed: ${result.exceptionOrNull()}")
+    }
+
+    /**
+     * Round-trip gate shared across the multi-format cases. Goes beyond
+     * `OutputValidators.isValidM4a` (which only checks container magic bytes) by parsing the
+     * output with [android.media.MediaExtractor] and asserting the decoded track matches the
+     * requested [AudioCompressionConfig]: AAC mime, correct sample rate + channel count, and a
+     * duration within tolerance of the 1 s source. This catches regressions that produce a
+     * "valid M4A container with empty / garbage AAC track" — a class of failure our earlier
+     * validators couldn't distinguish from success.
+     */
+    private suspend fun assertRoundTripMatchesConfig(resourceName: String, config: AudioCompressionConfig) {
+        val input = copyResourceToCache(resourceName, tempDir)
+        val output = File(tempDir, "from_$resourceName.m4a")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+
+        assertTrue(result.isSuccess, "$resourceName → AAC must succeed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
+
+        val track = readAudioTrackInfo(output)
+        assertEquals("audio/mp4a-latm", track.mime, "Output must be AAC")
+        assertEquals(config.sampleRate, track.sampleRate, "Output sample rate must match config")
+        assertEquals(config.channels.count, track.channels, "Output channel count must match config")
+
+        val durationMs = readAudioDurationMs(output)
+        assertTrue(
+            abs(durationMs - SOURCE_DURATION_MS) < DURATION_TOLERANCE_MS,
+            "Duration $durationMs ms must be within ${DURATION_TOLERANCE_MS}ms of the ${SOURCE_DURATION_MS}ms source " +
+                "— zero / wildly different means the encoder produced an empty or corrupt stream",
+        )
+    }
+
+    private companion object {
+        /** Source fixtures are 1 s 440 Hz sines. */
+        const val SOURCE_DURATION_MS = 1_000L
+
+        /** MP3 and Opus each add encoder-delay + frame-padding samples that inflate the
+         *  decoded duration by up to ~150 ms on short clips (ffmpeg pads to the next full MP3
+         *  frame, and LAME / Opus insert priming samples that the decoder doesn't always
+         *  strip). 200 ms is wide enough to absorb that framing slop across all three formats
+         *  while still catching the "encoder produced an empty stream" regression (zero-length
+         *  output would miss by 1000 ms). */
+        const val DURATION_TOLERANCE_MS = 200L
     }
 }

@@ -53,26 +53,149 @@ class AndroidImageCompressorTest {
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output should be valid JPEG")
     }
 
+    /**
+     * Parameterised sweep of every EXIF orientation the compressor's when-expression in
+     * `AndroidImageCompressor.applyExifRotation` handles. Each case asserts:
+     *   1. Output exists and is valid JPEG.
+     *   2. Output dimensions match the expected post-rotation dims (swapped for the 90°
+     *      and 270° cases, preserved for the 180° and flip cases).
+     *   3. A sentinel pixel from the input's distinctive quadrant lands in the right
+     *      destination quadrant — the only gate that catches a "swap metadata, skip the
+     *      actual matrix transform" regression.
+     */
     @Test
-    fun exifOrientation_rotatedInput_outputRespectsRotation() = runTest {
-        // Regression gate for `ExifInterface.TAG_ORIENTATION` handling in
-        // `AndroidImageCompressor`. Input is a 200×100 JPEG tagged with Orientation=6
-        // (ROTATE_90 CW); the compressor must swap dimensions so the output is 100×200.
-        // Without this test the full EXIF-rotation branch in `AndroidImageCompressor`
-        // (lines 49-59) had no device-side gate.
-        val input = co.crackn.kompressor.testutil.createExifRotatedJpeg(
-            tempDir, width = 200, height = 100,
+    fun exifOrientation_rotate90_swapsDimensionsAndRotatesPixels() =
+        assertExifRotationEndToEnd(
             exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90,
+            srcW = 200, srcH = 100, expectedW = 100, expectedH = 200,
+            // Top-left of input (red) ends up in the top-right after 90° CW rotation.
+            sentinelDestCorner = Corner.TOP_RIGHT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
         )
-        val output = java.io.File(tempDir, "rotated_out.jpg")
+
+    @Test
+    fun exifOrientation_rotate180_preservesDimensionsAndRotatesPixels() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180,
+            srcW = 200, srcH = 100, expectedW = 200, expectedH = 100,
+            // Top-left of input ends up in the bottom-right after 180° rotation.
+            sentinelDestCorner = Corner.BOTTOM_RIGHT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    @Test
+    fun exifOrientation_rotate270_swapsDimensionsAndRotatesPixels() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270,
+            srcW = 200, srcH = 100, expectedW = 100, expectedH = 200,
+            // Top-left of input ends up in the bottom-left after 270° CW rotation.
+            sentinelDestCorner = Corner.BOTTOM_LEFT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    @Test
+    fun exifOrientation_flipHorizontal_preservesDimensionsAndMirrorsPixels() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL,
+            srcW = 200, srcH = 100, expectedW = 200, expectedH = 100,
+            // FLIP_HORIZONTAL mirrors left/right → top-left → top-right.
+            sentinelDestCorner = Corner.TOP_RIGHT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    @Test
+    fun exifOrientation_flipVertical_preservesDimensionsAndMirrorsPixels() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_FLIP_VERTICAL,
+            srcW = 200, srcH = 100, expectedW = 200, expectedH = 100,
+            // FLIP_VERTICAL mirrors up/down → top-left → bottom-left.
+            sentinelDestCorner = Corner.BOTTOM_LEFT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    @Test
+    fun exifOrientation_transpose_swapsDimensionsAndFlipsAlongMainDiagonal() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_TRANSPOSE,
+            srcW = 200, srcH = 100, expectedW = 100, expectedH = 200,
+            // TRANSPOSE = flip along the top-left→bottom-right diagonal. Top-left stays
+            // top-left; top-right → bottom-left. Use TOP_LEFT as the stable sentinel.
+            sentinelDestCorner = Corner.TOP_LEFT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    @Test
+    fun exifOrientation_transverse_swapsDimensionsAndFlipsAlongAntiDiagonal() =
+        assertExifRotationEndToEnd(
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_TRANSVERSE,
+            srcW = 200, srcH = 100, expectedW = 100, expectedH = 200,
+            // TRANSVERSE = flip along the top-right→bottom-left diagonal. Top-left → bottom-right.
+            sentinelDestCorner = Corner.BOTTOM_RIGHT,
+            sentinelColor = co.crackn.kompressor.testutil.TOP_LEFT_COLOR,
+        )
+
+    private enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+    private fun assertExifRotationEndToEnd(
+        exifOrientation: Int,
+        srcW: Int,
+        srcH: Int,
+        expectedW: Int,
+        expectedH: Int,
+        sentinelDestCorner: Corner,
+        sentinelColor: Int,
+    ) = runTest {
+        val input = co.crackn.kompressor.testutil.createExifTaggedJpeg(
+            tempDir, width = srcW, height = srcH, exifOrientation = exifOrientation,
+        )
+        val output = File(tempDir, "rotated_${exifOrientation}_out.jpg")
 
         val result = compressor.compress(input.absolutePath, output.absolutePath)
-
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
-        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeFile(output.absolutePath, options)
-        assertEquals(100, options.outWidth, "EXIF ROTATE_90: output width must be input height")
-        assertEquals(200, options.outHeight, "EXIF ROTATE_90: output height must be input width")
+        assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
+
+        val bmp = android.graphics.BitmapFactory.decodeFile(output.absolutePath)
+            ?: error("Output couldn't be decoded as bitmap")
+        try {
+            assertEquals(expectedW, bmp.width, "Dimension mismatch for orientation=$exifOrientation")
+            assertEquals(expectedH, bmp.height, "Dimension mismatch for orientation=$exifOrientation")
+
+            // Sample a pixel well inside the expected destination quadrant (avoid the JPEG
+            // block boundary noise at the edge by sampling at quarter/three-quarters).
+            val sampleX = when (sentinelDestCorner) {
+                Corner.TOP_LEFT, Corner.BOTTOM_LEFT -> bmp.width / 4
+                Corner.TOP_RIGHT, Corner.BOTTOM_RIGHT -> (bmp.width * 3) / 4
+            }
+            val sampleY = when (sentinelDestCorner) {
+                Corner.TOP_LEFT, Corner.TOP_RIGHT -> bmp.height / 4
+                Corner.BOTTOM_LEFT, Corner.BOTTOM_RIGHT -> (bmp.height * 3) / 4
+            }
+            val sampled = bmp.getPixel(sampleX, sampleY)
+            assertPixelsApproximatelyEqual(
+                expected = sentinelColor,
+                actual = sampled,
+                tolerance = JPEG_COMPONENT_TOLERANCE,
+                context = "orientation=$exifOrientation at ($sampleX,$sampleY) " +
+                    "expected corner=$sentinelDestCorner",
+            )
+        } finally {
+            bmp.recycle()
+        }
+    }
+
+    private fun assertPixelsApproximatelyEqual(expected: Int, actual: Int, tolerance: Int, context: String) {
+        val er = android.graphics.Color.red(expected)
+        val eg = android.graphics.Color.green(expected)
+        val eb = android.graphics.Color.blue(expected)
+        val ar = android.graphics.Color.red(actual)
+        val ag = android.graphics.Color.green(actual)
+        val ab = android.graphics.Color.blue(actual)
+        assertTrue(
+            kotlin.math.abs(er - ar) <= tolerance &&
+                kotlin.math.abs(eg - ag) <= tolerance &&
+                kotlin.math.abs(eb - ab) <= tolerance,
+            "Pixel mismatch: expected rgb($er,$eg,$eb) got rgb($ar,$ag,$ab) — $context",
+        )
     }
 
     @Test
@@ -115,4 +238,13 @@ class AndroidImageCompressorTest {
         assertTrue(result.isFailure)
     }
 
+    private companion object {
+        /**
+         * JPEG quantisation blurs flat-colour blocks by a handful of levels per channel. 24
+         * is tight enough to reject "my output is mostly green" if we expected red (those
+         * would differ by ~200 on one channel), loose enough to tolerate the per-channel drift
+         * on real JPEGs encoded at quality ~85-95.
+         */
+        const val JPEG_COMPONENT_TOLERANCE = 24
+    }
 }

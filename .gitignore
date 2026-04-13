@@ -14,4 +14,4 @@ xcuserdata
 # Firebase / GCP service account JSON — should only ever live in a GitHub secret,
 # never on disk inside the repo.
 *firebase-adminsdk*.json
-*-service-account*.json
+*-service-account*.json.claude/

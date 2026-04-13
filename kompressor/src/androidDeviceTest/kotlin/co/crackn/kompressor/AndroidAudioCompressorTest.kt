@@ -381,6 +381,22 @@ class AndroidAudioCompressorTest {
     }
 
     @Test
+    fun compressAudio_outputParentDirMissing_failsGracefully() = runTest {
+        // The compressor must not crash when handed an output path whose parent directory
+        // doesn't exist (common when callers naively build a path under a sub-folder the app
+        // hasn't created yet). Media3 / the platform muxer will throw an IO error; we assert
+        // that surfaces as a clean Result.failure AND that `deletingOutputOnFailure` doesn't
+        // crash on its follow-up delete of the never-created file.
+        val input = createTestWavFile(1, SAMPLE_RATE_44K, STEREO)
+        val outputPath = File(tempDir, "nonexistent_subdir/deeper/out.m4a").absolutePath
+
+        val result = compressor.compress(input.absolutePath, outputPath)
+
+        assertTrue(result.isFailure, "Missing parent dir must produce a graceful Result.failure")
+        assertTrue(!File(outputPath).exists(), "No partial output should exist")
+    }
+
+    @Test
     fun compressAudio_sixChannelSource_rejectedWithTypedError() = runTest {
         // End-to-end gate for the 5.1 / 7.1 upfront-rejection path. WAV supports arbitrary
         // channel counts, so we synthesise a 6-channel fixture, hand it to `compress()`, and

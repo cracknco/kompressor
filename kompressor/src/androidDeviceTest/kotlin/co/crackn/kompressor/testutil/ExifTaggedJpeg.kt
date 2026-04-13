@@ -7,16 +7,18 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Write a JPEG fixture whose EXIF `Orientation` tag signals the compressor needs to rotate
- * before encoding. The input bitmap is a [width] × [height] photographic gradient (continuous-
- * tone so JPEG compresses it efficiently); the EXIF header is appended post-encode via
- * [ExifInterface.setAttribute].
+ * Test-only JPEG fixture used to verify [co.crackn.kompressor.image.AndroidImageCompressor]'s
+ * EXIF-orientation handling.
  *
- * Used by `AndroidImageCompressorTest.exifOrientation_rotatedInput_outputRespectsRotation` to
- * verify the compressor's rotation pipeline end-to-end — a dimension of `width × height`
- * together with `orientation=6` (ROTATE_90) must produce an output of `height × width`.
+ * The bitmap is filled with four distinct solid-colour quadrants (top-left red, top-right blue,
+ * bottom-left green, bottom-right yellow) so a caller can assert not just the expected output
+ * dimensions but **which pixel ends up where** after rotation — guarding against the trivial
+ * "swap metadata, skip actual rotation" regression.
+ *
+ * Call sites provide the EXIF `Orientation` tag they want; `ExifInterface` rewrites the file
+ * in place after the JPEG is encoded.
  */
-fun createExifRotatedJpeg(
+fun createExifTaggedJpeg(
     tempDir: File,
     width: Int,
     height: Int,
@@ -24,14 +26,18 @@ fun createExifRotatedJpeg(
 ): File {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val pixels = IntArray(width * height)
+    val halfW = width / 2
+    val halfH = height / 2
     for (y in 0 until height) {
         for (x in 0 until width) {
-            // Simple continuous-tone gradient so JPEG can actually encode it.
-            val r = (COMPONENT_MID + (COMPONENT_AMPLITUDE * x / width)).coerceIn(0, MAX_BYTE)
-            val g = (COMPONENT_MID + (COMPONENT_AMPLITUDE * y / height)).coerceIn(0, MAX_BYTE)
-            val b = (COMPONENT_MID + ((COMPONENT_AMPLITUDE * (x + y)) / (width + height)))
-                .coerceIn(0, MAX_BYTE)
-            pixels[y * width + x] = Color.argb(ALPHA_OPAQUE, r, g, b)
+            val left = x < halfW
+            val top = y < halfH
+            pixels[y * width + x] = when {
+                left && top -> TOP_LEFT_COLOR
+                !left && top -> TOP_RIGHT_COLOR
+                left && !top -> BOTTOM_LEFT_COLOR
+                else -> BOTTOM_RIGHT_COLOR
+            }
         }
     }
     bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
@@ -44,15 +50,22 @@ fun createExifRotatedJpeg(
     } finally {
         bitmap.recycle()
     }
-    // Append the EXIF orientation tag. `ExifInterface` rewrites the file in place.
     val exif = ExifInterface(file.absolutePath)
     exif.setAttribute(ExifInterface.TAG_ORIENTATION, exifOrientation.toString())
     exif.saveAttributes()
     return file
 }
 
-private const val ALPHA_OPAQUE = 255
-private const val MAX_BYTE = 255
-private const val COMPONENT_MID = 64
-private const val COMPONENT_AMPLITUDE = 191
-private const val JPEG_QUALITY = 90
+/** Colour a test caller can identify in a rotated output to prove the pixels actually moved. */
+val TOP_LEFT_COLOR: Int = Color.rgb(255, 0, 0) // red
+
+@Suppress("MagicNumber")
+val TOP_RIGHT_COLOR: Int = Color.rgb(0, 0, 255) // blue
+
+@Suppress("MagicNumber")
+val BOTTOM_LEFT_COLOR: Int = Color.rgb(0, 255, 0) // green
+
+@Suppress("MagicNumber")
+val BOTTOM_RIGHT_COLOR: Int = Color.rgb(255, 255, 0) // yellow
+
+private const val JPEG_QUALITY = 95
