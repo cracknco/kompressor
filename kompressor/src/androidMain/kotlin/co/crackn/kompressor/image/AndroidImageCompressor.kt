@@ -182,17 +182,15 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         exifRotation: ExifRotation,
     ): Bitmap {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
-        // codebadger:suppress(resource-leak) InputStream is closed by `use { }` before return;
-        //   the returned Bitmap is owned by the caller (rotateOrRecycle → resizeAndWrite).
-        // codebadger:suppress(resource-leak) BitmapFactory.decodeStream does not itself own a
-        //   resource — false-positive from Joern's file-scope tracker.
         val decoded = openStream().use { stream ->
+            // codebadger:suppress(resource-leak) Bitmap ownership transfers to caller via rotateOrRecycle.
             BitmapFactory.decodeStream(stream, null, options) ?: error("Failed to decode image: $uri")
         }
         return rotateOrRecycle(decoded, exifRotation)
     }
 
     private fun openStream(): InputStream =
+        // codebadger:suppress(resource-leak) Stream closed by caller via `use { }`.
         resolver.openInputStream(uri) ?: error("ContentResolver returned null input stream for $uri")
 }
 

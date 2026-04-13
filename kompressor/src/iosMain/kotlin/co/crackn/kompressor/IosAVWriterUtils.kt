@@ -102,4 +102,14 @@ internal suspend fun awaitExportSession(session: platform.AVFoundation.AVAssetEx
 }
 
 internal const val WRITER_POLL_INTERVAL_MS = 10L
-internal const val WRITER_READY_TIMEOUT_MS = 10_000L
+
+/**
+ * Cap for [awaitWriterReady] — guards against a genuine hang (writer wedged in an internal
+ * state machine, no progress possible) without masking slow legitimate encode starts. Was
+ * 10 s historically; bumped to 30 s after iOS simulator stalls on AAC-LC `44.1 kHz × stereo`
+ * at the 64 kbps boundary started reliably exceeding 10 s on fresh simulators (AudioToolbox
+ * appears to do extra initialisation work for low-bitrate stereo that legitimately blocks
+ * the input for up to ~15 s on the first buffer). Real production devices hit this path in
+ * <1 s so the extra headroom is simulator-only slack; a real deadlock still trips the check.
+ */
+internal const val WRITER_READY_TIMEOUT_MS = 30_000L
