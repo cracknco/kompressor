@@ -187,6 +187,31 @@ jobs:
             --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
             --directories-to-pull /sdcard
 
+      # Download the JaCoCo `.ec` coverage file FTL pulled from `/sdcard/` so it can be
+      # merged into the Kover report in a later iteration (see TODO in `kompressor/build.gradle.kts`
+      # — unlocks raising the Kover gate from 85 → 90 % by covering device-only classes like
+      # `AndroidAudioCompressor`, `AndroidVideoCompressor`, `Media3ExportRunner`).
+      - name: Download FTL device coverage
+        if: always()
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p build/ftl-coverage
+          # FTL deposits the pulled artifacts under <results-dir>/<device-id>/artifacts/
+          # `coverage.ec` keeps that exact filename.
+          gcloud storage cp -r \
+            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
+            build/ftl-coverage/ || echo "No coverage.ec produced (likely a validation-time failure)"
+          ls -la build/ftl-coverage/ || true
+
+      - name: Upload FTL coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ftl-device-coverage
+          path: build/ftl-coverage/
+          if-no-files-found: warn
+
   # ── iOS simulator tests ──────────────────────────────────
   # Runs the Kotlin/Native simulator tests on every PR. macos-latest is arm64
   # with Xcode pre-installed; ~6-10 min per run. Same command is repeated in
