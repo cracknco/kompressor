@@ -6,6 +6,7 @@ import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
+import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -67,10 +68,12 @@ internal class IosAudioCompressor : AudioCompressor {
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
 
-        if (canUseExportSession(config)) {
-            IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
-        } else {
-            IosPipeline(inputPath, outputPath, config).execute(onProgress)
+        deletingOutputOnFailure(outputPath) {
+            if (canUseExportSession(config)) {
+                IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
+            } else {
+                IosPipeline(inputPath, outputPath, config).execute(onProgress)
+            }
         }
 
         onProgress(1f)

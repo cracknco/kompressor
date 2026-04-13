@@ -16,6 +16,7 @@ import co.crackn.kompressor.video.probeVideoShortSide
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -172,6 +173,39 @@ class AndroidVideoCompressorTest {
         assertTrue(
             err is VideoCompressionError,
             "Error must be a typed VideoCompressionError, got ${err?.let { it::class.simpleName }}: $err",
+        )
+    }
+
+    @Test
+    fun cancellation_deletesPartialOutput() = kotlinx.coroutines.runBlocking {
+        // Mirror of the audio compressor's cancellation test: inject a SlowAudioProcessor so
+        // the encoder deterministically stalls mid-export, cancel after a fixed delay, and
+        // verify Media3's cleanup + our `deletingOutputOnFailure` removed the partial output.
+        // The fixture must carry an audio track — otherwise the injected processor is never
+        // invoked and the stall never fires.
+        val slowCompressor = AndroidVideoCompressor(
+            testExtraAudioProcessors = listOf(
+                co.crackn.kompressor.testutil.SlowAudioProcessor(delayPerBufferMs = 50L),
+            ),
+        )
+        val input = File(tempDir, "cancel_input.mp4")
+        AudioInputFixtures.createMp4WithVideoAndAudio(input, durationSeconds = 5)
+        val output = File(tempDir, "cancelled_video.mp4")
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
+        )
+        val job = scope.launch {
+            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
+        }
+
+        kotlinx.coroutines.delay(200L)
+        job.cancel()
+        kotlinx.coroutines.withTimeout(15_000L) { job.join() }
+
+        assertTrue(job.isCancelled, "Cancel must interrupt the video export, not let it complete")
+        assertTrue(
+            !output.exists(),
+            "Cancelled video export must delete its partial output, got ${output.length()} bytes",
         )
     }
 

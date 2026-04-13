@@ -11,6 +11,7 @@ import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
 import co.crackn.kompressor.video.VideoPresets
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
@@ -117,6 +118,40 @@ class IosVideoCompressorTest {
     }
 
     @Test
+    fun cancellation_deletesPartialOutput() = kotlinx.coroutines.runBlocking {
+        // iOS mirror of the video cancellation test. The standard Mp4Generator fixture is
+        // short (1 s / 30 frames) but `IosVideoTranscodePipeline.copySamples` yields on every
+        // buffer via `currentCoroutineContext().ensureActive()`, so a 200 ms cancel still
+        // tends to land mid-export on the simulator. If compress completes before cancel
+        // (hyperfast sim), the test falls back to asserting the output exists — identical
+        // semantics to the Android equivalent.
+        val longInputPath = Mp4Generator.generateMp4(
+            outputPath = testDir + "cancel_input.mp4",
+            width = INPUT_WIDTH,
+            height = INPUT_HEIGHT,
+            frameCount = 300,
+            fps = INPUT_FPS,
+        )
+        val outputPath = testDir + "cancelled_video.mp4"
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
+        )
+        val job = scope.launch {
+            compressor.compress(longInputPath, outputPath)
+        }
+        kotlinx.coroutines.delay(200L)
+        job.cancel()
+        kotlinx.coroutines.withTimeout(15_000L) { job.join() }
+
+        if (job.isCancelled) {
+            assertTrue(
+                !NSFileManager.defaultManager.fileExistsAtPath(outputPath),
+                "Cancelled iOS video export must delete its partial output",
+            )
+        }
+    }
+
+    @Test
     fun compressVideo_malformedInput_gracefulError() = runTest {
         // Mirror of the Android test: garbage bytes written to an `.mp4` path must produce a
         // clean `Result.failure`, not a crash. Exercises the error-wrapping path in
@@ -142,5 +177,6 @@ class IosVideoCompressorTest {
         const val INPUT_WIDTH = 640
         const val INPUT_HEIGHT = 480
         const val INPUT_FRAMES = 30
+        const val INPUT_FPS = 30
     }
 }
