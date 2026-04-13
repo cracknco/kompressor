@@ -106,7 +106,6 @@ class IosVideoRotationPreservationTest {
         assertEquals(rotation, readTrackRotation(output), "Transcode path lost rotation=$rotation")
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun readTrackRotation(path: String): Int {
         val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
         val track = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
