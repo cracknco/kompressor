@@ -35,11 +35,30 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * callbacks (which may fire from arbitrary threads) are explicitly hopped to the Main looper
  * before touching the [Transformer].
  */
+/**
+ * Composition overload of [awaitMedia3Export]. Used by the video pipeline when an HDR mode
+ * needs to be set via [Composition.Builder.setHdrMode]. Internally identical to the
+ * `EditedMediaItem` version — the only difference is `Transformer.start(Composition, …)` vs
+ * `start(EditedMediaItem, …)`.
+ */
+internal suspend fun awaitMedia3Export(
+    transformer: Transformer,
+    composition: Composition,
+    outputPath: String,
+    onProgress: suspend (Float) -> Unit,
+) = awaitMedia3Export(transformer, onProgress) { transformer.start(composition, outputPath) }
+
 internal suspend fun awaitMedia3Export(
     transformer: Transformer,
     item: EditedMediaItem,
     outputPath: String,
     onProgress: suspend (Float) -> Unit,
+) = awaitMedia3Export(transformer, onProgress) { transformer.start(item, outputPath) }
+
+private suspend fun awaitMedia3Export(
+    transformer: Transformer,
+    onProgress: suspend (Float) -> Unit,
+    startTransformer: () -> Unit,
 ) = coroutineScope {
     val progressJob = launchMedia3ProgressPoller(transformer, onProgress)
     // Track whether the export needs a synchronous cancel on the caller's withContext(Main)
@@ -78,7 +97,7 @@ internal suspend fun awaitMedia3Export(
             }
             try {
                 transformer.addListener(listener)
-                transformer.start(item, outputPath)
+                startTransformer()
                 started = true
             } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
                 // Synchronous failures from addListener/start would otherwise leak the listener.

@@ -41,12 +41,17 @@ private fun iosVideoCodecs(): List<CodecSupport> {
             supportsHdr = true,
         ),
         videoCodec("video/avc", CodecSupport.Role.Encoder, h264Profiles, supports10Bit = false),
+        // iOS 11+ guarantees HEVC Main10 hardware encode on A10 Fusion and later (the entire
+        // supported iOS-15+ device matrix). VideoToolbox accepts kVTProfileLevel_HEVC_Main10
+        // as the value for AVVideoProfileLevelKey, and `IosVideoCompressor` wires BT.2020 + PQ
+        // colour properties for HDR10 output. Mark the encoder accordingly so callers that
+        // probe `queryDeviceCapabilities` see the same truth as the compressor enforces.
         videoCodec(
             "video/hevc",
             CodecSupport.Role.Encoder,
             hevcEncoderProfiles,
-            supports10Bit = false,
-            supportsHdr = false,
+            supports10Bit = true,
+            supportsHdr = true,
         ),
     )
 }

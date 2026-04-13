@@ -4,8 +4,10 @@ import android.media.MediaMetadataRetriever
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.Presentation
+import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.Transformer
@@ -52,12 +54,13 @@ internal class AndroidVideoCompressor(
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = "video/")
     }
 
-    // This implementation always emits H.264 (see [buildTransformer] hard-coding
-    // `MimeTypes.VIDEO_H264`). Intersect with the device's advertised encoders so we don't
-    // promise HEVC / VP9 / AV1 outputs this compressor can't actually produce.
+    // Output mime depends on `VideoCompressionConfig.codec` — H.264 (default) or HEVC (required
+    // for HDR10). Intersect with the device's advertised encoders so we don't promise codecs
+    // this device cannot produce. Both H.264 and HEVC are advertised when the device supports
+    // them; callers pick via the config.
     override val supportedOutputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = "video/")
-            .intersect(setOf(MimeTypes.VIDEO_H264))
+            .intersect(setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265))
     }
 
     override suspend fun compress(
@@ -86,6 +89,11 @@ internal class AndroidVideoCompressor(
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ) {
+        // Pre-flight HDR10: if the device cannot encode HEVC Main10 HDR10, fail fast with a
+        // typed error rather than crashing deep in the Media3 encoder selection.
+        if (config.dynamicRange == DynamicRange.HDR10) {
+            withContext(Dispatchers.IO) { requireHdr10Hevc(config) }
+        }
         // Probe source short side off-Main so [toPresentationOrNull] can skip scaling when the
         // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
         // input with `HIGH_QUALITY` preset targeting 1080p).
@@ -95,7 +103,8 @@ internal class AndroidVideoCompressor(
                 val context = KompressorContext.appContext
                 val transformer = buildTransformer(context, config)
                 val item = buildEditedMediaItem(inputPath, config.maxResolution, sourceShortSide)
-                awaitMedia3Export(transformer, item, outputPath, onProgress)
+                val composition = buildComposition(item, config)
+                awaitMedia3Export(transformer, composition, outputPath, onProgress)
             }
         } catch (e: ExportException) {
             // describeSource does blocking I/O via MediaMetadataRetriever — keep it off Main.
@@ -114,12 +123,39 @@ internal class AndroidVideoCompressor(
         val encoderFactory = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(videoSettings)
             .build()
+        val outputMime = when (config.codec) {
+            VideoCodec.H264 -> MimeTypes.VIDEO_H264
+            VideoCodec.HEVC -> MimeTypes.VIDEO_H265
+        }
         return Transformer.Builder(context)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setVideoMimeType(outputMime)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(encoderFactory)
             .setMuxerFactory(buildTightMp4MuxerFactory())
             .build()
+    }
+
+    /**
+     * Wraps the [item] in a [Composition] with the HDR mode that matches [config.dynamicRange].
+     * SDR explicitly opts into OpenGL tone-mapping (the most consistent path across devices per
+     * Media3's KDoc); HDR10 keeps the Composition default `HDR_MODE_KEEP_HDR` so HDR sources
+     * pass through 10-bit BT.2020+PQ end-to-end.
+     */
+    private fun buildComposition(item: EditedMediaItem, config: VideoCompressionConfig): Composition {
+        // Use the addItem(...) builder API — the vararg/List Builder constructors are
+        // @Deprecated in Media3 1.10 (the trackTypes-based constructor + addItem is the
+        // forward-compatible path).
+        val trackTypes = setOf(
+            androidx.media3.common.C.TRACK_TYPE_AUDIO,
+            androidx.media3.common.C.TRACK_TYPE_VIDEO,
+        )
+        val sequence = EditedMediaItemSequence.Builder(trackTypes).addItem(item).build()
+        val builder = Composition.Builder(sequence)
+        if (config.dynamicRange == DynamicRange.SDR) {
+            builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
+        }
+        // HDR10 path leaves hdrMode at the Composition default (HDR_MODE_KEEP_HDR).
+        return builder.build()
     }
 
     private fun buildEditedMediaItem(
@@ -135,8 +171,41 @@ internal class AndroidVideoCompressor(
             .build()
     }
 
+    /**
+     * Pre-flight check for HDR10: throws [VideoCompressionError.UnsupportedSourceFormat] when
+     * the device exposes no HEVC encoder that advertises a Main10/Main10HDR10 profile. This
+     * fails fast with a typed error instead of letting Media3 surface a generic encoder-init
+     * failure deep in the export pipeline.
+     */
+    private fun requireHdr10Hevc(config: VideoCompressionConfig) {
+        if (!deviceSupportsHdr10Hevc()) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                details = "HEVC Main10 HDR10 encoder unavailable on this device " +
+                    "(requested DynamicRange.HDR10 with codec=${config.codec})",
+            )
+        }
+    }
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
+    }
+}
+
+/**
+ * Returns true when the device's `MediaCodecList` advertises at least one HEVC encoder
+ * supporting the Main10 or Main10HDR10 profile. Used to pre-flight HDR10 compression requests.
+ */
+internal fun deviceSupportsHdr10Hevc(): Boolean {
+    val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+    val main10Profiles = setOf(
+        android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
+        android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
+        android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+    )
+    return codecs.any { info ->
+        if (!info.isEncoder) return@any false
+        val caps = runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull() ?: return@any false
+        caps.profileLevels.any { pl -> pl.profile in main10Profiles }
     }
 }
 

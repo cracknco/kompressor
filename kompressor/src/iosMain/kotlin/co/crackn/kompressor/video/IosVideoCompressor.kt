@@ -50,11 +50,8 @@ import platform.Foundation.NSURL
 // HEVC (including 10-bit on A10 Fusion and later) are the guaranteed matrix.
 private val IOS_SUPPORTED_INPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
 
-// Only H.264 is actually wired in buildVideoSettings today. Expand this when
-// VideoCodec gains an HEVC variant AND buildVideoSettings handles it — keeping
-// the advertised set in sync with the implementation avoids misleading callers
-// that inspect supportedOutputFormats before calling compress().
-private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc")
+// H.264 + HEVC are both wired in buildVideoSettings. HEVC is required for HDR10 output.
+private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/hevc")
 
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
@@ -229,20 +226,55 @@ private class IosVideoTranscodePipeline(
         return Triple(writer, videoInput, audioInput)
     }
 
-    private fun buildVideoSettings(width: Int, height: Int): Map<Any?, *> = mapOf(
-        // Dispatched via `when` so the compiler forces this to stay in sync when
-        // the VideoCodec enum grows a new variant (e.g. HEVC).
-        AVVideoCodecKey to when (config.codec) {
-            co.crackn.kompressor.video.VideoCodec.H264 -> AVVideoCodecH264
-        },
-        AVVideoWidthKey to width,
-        AVVideoHeightKey to height,
-        AVVideoCompressionPropertiesKey to mapOf(
-            AVVideoAverageBitRateKey to config.videoBitrate,
-            AVVideoMaxKeyFrameIntervalKey to config.keyFrameInterval * config.maxFrameRate,
-            AVVideoExpectedSourceFrameRateKey to config.maxFrameRate,
-        ),
+    private fun buildVideoSettings(width: Int, height: Int): Map<Any?, *> {
+        val codecKey = codecKeyFor(config.codec)
+        val compressionProps = baseCompressionProps()
+        val baseSettings = mutableMapOf<Any?, Any?>(
+            AVVideoCodecKey to codecKey,
+            AVVideoWidthKey to width,
+            AVVideoHeightKey to height,
+        )
+        if (config.dynamicRange == co.crackn.kompressor.video.DynamicRange.HDR10) {
+            applyHdr10Settings(baseSettings, compressionProps)
+        }
+        baseSettings[AVVideoCompressionPropertiesKey] = compressionProps
+        return baseSettings
+    }
+
+    // Note: AVVideoCodecH264 / AVVideoCodecHEVC are typed as `String?` in K/N's AVFoundation
+    // bridge despite being non-null AVFoundation constants. The `!!` is correct here — these
+    // are documented to be non-null since iOS 5 (H264) / 11 (HEVC).
+    private fun codecKeyFor(codec: co.crackn.kompressor.video.VideoCodec): String = when (codec) {
+        co.crackn.kompressor.video.VideoCodec.H264 -> platform.AVFoundation.AVVideoCodecH264!!
+        co.crackn.kompressor.video.VideoCodec.HEVC -> platform.AVFoundation.AVVideoCodecHEVC!!
+    }
+
+    private fun baseCompressionProps(): MutableMap<Any?, Any?> = mutableMapOf(
+        AVVideoAverageBitRateKey to config.videoBitrate,
+        AVVideoMaxKeyFrameIntervalKey to config.keyFrameInterval * config.maxFrameRate,
+        AVVideoExpectedSourceFrameRateKey to config.maxFrameRate,
     )
+
+    private fun applyHdr10Settings(
+        baseSettings: MutableMap<Any?, Any?>,
+        compressionProps: MutableMap<Any?, Any?>,
+    ) {
+        // HEVC Main10 profile is required for 10-bit HDR. AVFoundation accepts the
+        // VideoToolbox kVTProfileLevel_HEVC_Main10_AutoLevel CFStringRef as the value
+        // for AVVideoProfileLevelKey (per AVVideoSettings.h documentation).
+        compressionProps[platform.AVFoundation.AVVideoProfileLevelKey] =
+            platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
+        // BT.2020 primaries + SMPTE ST 2084 (PQ) transfer + BT.2020 non-constant-luminance
+        // Y′CbCr matrix — the canonical HDR10 colour signature.
+        baseSettings[platform.AVFoundation.AVVideoColorPropertiesKey] = mapOf(
+            platform.AVFoundation.AVVideoColorPrimariesKey to
+                platform.AVFoundation.AVVideoColorPrimaries_ITU_R_2020,
+            platform.AVFoundation.AVVideoTransferFunctionKey to
+                platform.AVFoundation.AVVideoTransferFunction_SMPTE_ST_2084_PQ,
+            platform.AVFoundation.AVVideoYCbCrMatrixKey to
+                platform.AVFoundation.AVVideoYCbCrMatrix_ITU_R_2020,
+        )
+    }
 
     private fun startReaderWriter(reader: AVAssetReader, writer: AVAssetWriter) {
         if (!reader.startReading()) {
