@@ -47,6 +47,17 @@ class SupportedInputChannelCheckTest {
     }
 
     @Test
+    fun sevenChannelSource_rejectedWithTypedError() {
+        // 7-channel sources have neither a Media3 default matrix (createForConstantPower covers
+        // 1..6 → {1,2}) nor a hand-rolled `surroundDownmixMatrix` (which is 8-channel only),
+        // so they're rejected upfront alongside 9+-channel inputs.
+        val err = shouldThrow<AudioCompressionError.UnsupportedConfiguration> {
+            checkSupportedInputChannelCount(7)
+        }
+        err.details shouldContain "7 channels"
+    }
+
+    @Test
     fun nineChannelSource_rejectedWithTypedError() {
         // 9.1.x and beyond are not in our supported envelope (no AAC channel layout fits and
         // the mixer has no defined coefficients). Reject upfront with a typed error.

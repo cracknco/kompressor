@@ -82,9 +82,15 @@ internal class AndroidAudioCompressor(
         val probe = withContext(Dispatchers.IO) { probeInputFormat(inputPath) }
 
         // Reject configurations Media3's channel mixer cannot handle before kicking off an
-        // export. Check is extracted to `checkSupportedInputChannelCount` so the rule is
-        // covered by host tests without needing a real 5.1 / 7.1 fixture.
+        // export. Two complementary checks, both host-testable so the rules are covered without
+        // needing a real 5.1 / 7.1 fixture:
+        //  - `checkSupportedInputChannelCount`: rejects inputs outside our envelope (7-channel
+        //    or 9+-channel sources).
+        //  - `checkChannelMixSupported`: rejects (input, target) pairs the mixer can't satisfy
+        //    — primarily upmix attempts like stereo → 5.1 — so the caller sees the typed
+        //    `UnsupportedConfiguration` instead of a Media3 mid-pipeline crash.
         checkSupportedInputChannelCount(probe?.channels)
+        checkChannelMixSupported(probe?.channels, config.channels.count)
 
         deletingOutputOnFailure(outputPath) {
             runTransformer(inputPath, outputPath, config, probe, onProgress)

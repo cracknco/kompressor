@@ -34,18 +34,15 @@ internal data class AudioProcessorPlan(
         channelMixing?.let { spec ->
             add(
                 ChannelMixingAudioProcessor().apply {
-                    // Register one matrix per supported input-channel count. `ChannelMixingAudio
-                    // Processor` picks the right matrix from the actual input AudioFormat at
-                    // configure time, so pre-registering all supported input counts is safe.
-                    //
-                    // Sources for the matrices:
-                    // - 1..6 input channels into mono/stereo → Media3's
-                    //   `ChannelMixingMatrix.createForConstantPower` (BS.775-style coefficients).
-                    // - 7.1 (8 input channels) into mono / stereo / 5.1 → custom ITU-R BS.775
-                    //   matrices in `surroundDownmixMatrix`. Media3 1.10 doesn't ship defaults
-                    //   for 8-channel inputs so we provide them explicitly.
-                    // - same-count → identity matrix (passthrough).
-                    for (inputChannels in 1..MAX_SUPPORTED_INPUT_CHANNELS) {
+                    // Register matrices ONLY for input counts that we can actually mix down to
+                    // `spec.outputChannelCount`. Earlier revisions registered the full envelope
+                    // 1..MAX (including impossible combos like 7→2, 1→6) and relied on Media3's
+                    // own `ChannelMixingMatrix.createForConstantPower` to error on demand —
+                    // problem is `createForConstantPower` throws `UnsupportedOperationException`
+                    // *at construction time*, so even valid `compress()` calls crashed because
+                    // the loop instantiated an impossible matrix before Media3 ever inspected
+                    // the real input format. CodeRabbit #2 / failing FTL device tests.
+                    for (inputChannels in supportedInputCountsForOutput(spec.outputChannelCount)) {
                         putChannelMixingMatrix(
                             buildChannelMixingMatrix(inputChannels, spec.outputChannelCount),
                         )
@@ -128,16 +125,34 @@ internal fun planAudioProcessors(
     )
 }
 
-// We support up to 7.1 (8 channels) inputs via Media3's constant-power matrices for 1..6 →
-// {1,2} and our own ITU-R BS.775 coefficients for 7.1 → {mono, stereo, 5.1}.
-private const val MAX_SUPPORTED_INPUT_CHANNELS = 8
+// We support 1..6 (mono..5.1) and 8 (7.1) input channel counts. 7-channel inputs are NOT
+// supported: Media3's `createForConstantPower` doesn't ship 7→{1,2} coefficients and our
+// `surroundDownmixMatrix` only covers 8-channel sources.
+private val SUPPORTED_INPUT_CHANNELS = setOf(1, 2, 3, 4, 5, 6, 8)
 
 /**
- * Reject input files whose channel count exceeds what the mixer can handle.
+ * Map a target output-channel count to the set of input-channel counts the chain can downmix
+ * (or identity-passthrough) into it. Used both as a pre-flight gate (the public
+ * [checkChannelMixSupported]) and to drive [AudioProcessorPlan.toProcessors]'s matrix
+ * pre-registration loop so it never instantiates an impossible matrix.
  *
- * The supported envelope is 1..[MAX_SUPPORTED_INPUT_CHANNELS]. Genuinely exotic inputs (e.g.
- * 9.1.6) surface a typed [AudioCompressionError.UnsupportedConfiguration] upfront so callers
- * can `when`-branch instead of seeing an opaque Media3 mid-pipeline crash.
+ * Coverage matrix:
+ * - output ∈ {1, 2}: Media3 `createForConstantPower` handles inputs 1..6; our 8→{1,2}
+ *   surround matrices extend that to 7.1 sources.
+ * - output = 6 (5.1): identity for 6→6, our 8→6 surround matrix for 7.1 sources.
+ * - any other output count: identity-passthrough only (input must equal output).
+ */
+internal fun supportedInputCountsForOutput(outputChannels: Int): Set<Int> = when (outputChannels) {
+    1, 2 -> SUPPORTED_INPUT_CHANNELS
+    6 -> setOf(6, 8)
+    else -> setOf(outputChannels)
+}
+
+/**
+ * Reject input files whose channel count is outside the supported envelope. The envelope is
+ * [SUPPORTED_INPUT_CHANNELS] = {1..6, 8}; 7-channel and 9+-channel inputs surface a typed
+ * [AudioCompressionError.UnsupportedConfiguration] upfront so callers can `when`-branch
+ * instead of seeing an opaque Media3 mid-pipeline crash.
  *
  * `null` channel count (probe didn't report it) is treated as acceptable — the real pipeline
  * will surface its own error if the probe failure reflects a genuinely unreadable input.
@@ -146,10 +161,28 @@ private const val MAX_SUPPORTED_INPUT_CHANNELS = 8
  * host-testable without spinning up a multichannel device fixture.
  */
 internal fun checkSupportedInputChannelCount(inputChannels: Int?) {
-    if (inputChannels != null && inputChannels > MAX_SUPPORTED_INPUT_CHANNELS) {
+    if (inputChannels != null && inputChannels !in SUPPORTED_INPUT_CHANNELS) {
         throw AudioCompressionError.UnsupportedConfiguration(
-            "Input has $inputChannels channels; only up to $MAX_SUPPORTED_INPUT_CHANNELS " +
-                "(7.1 surround) is supported",
+            "Input has $inputChannels channels; supported counts are 1..6 and 8 (7.1 surround)",
+        )
+    }
+}
+
+/**
+ * Reject (input, output) channel-count pairs the mixer can't satisfy — primarily upmix attempts
+ * (e.g. stereo → 5.1) and 7-channel inputs into outputs that have no matrix for them. Throws a
+ * typed [AudioCompressionError.UnsupportedConfiguration] before [AudioProcessorPlan.toProcessors]
+ * runs, so callers see the contract-promised error class rather than a Media3 mid-pipeline
+ * `UnsupportedOperationException`.
+ *
+ * `null` input is treated as acceptable for the same reason as [checkSupportedInputChannelCount].
+ */
+internal fun checkChannelMixSupported(inputChannels: Int?, outputChannels: Int) {
+    if (inputChannels != null && inputChannels !in supportedInputCountsForOutput(outputChannels)) {
+        throw AudioCompressionError.UnsupportedConfiguration(
+            "Cannot mix $inputChannels-channel input into $outputChannels-channel output; " +
+                "supported inputs for $outputChannels-channel output are " +
+                supportedInputCountsForOutput(outputChannels).sorted(),
         )
     }
 }

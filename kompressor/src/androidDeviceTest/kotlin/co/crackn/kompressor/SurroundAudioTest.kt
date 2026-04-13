@@ -112,11 +112,13 @@ class SurroundAudioTest {
 
         assertTrue(result.isFailure, "Stereo→5.1 upmix must be rejected")
         val err = result.exceptionOrNull()
-        // Either UnsupportedConfiguration (preferred — typed contract) or a Media3 mid-pipeline
-        // error mapped to UnsupportedSourceFormat. Both are acceptable typed errors.
+        // Contract: upmix is rejected upfront via `checkChannelMixSupported` with the typed
+        // `UnsupportedConfiguration` subtype. Asserting the broader `AudioCompressionError`
+        // would let a regression to `UnsupportedSourceFormat` (or any other subtype) slip
+        // through silently, so we lock the exact subtype here.
         assertTrue(
-            err is AudioCompressionError,
-            "Expected typed AudioCompressionError, got ${err?.let { it::class.simpleName }}: ${err?.message}",
+            err is AudioCompressionError.UnsupportedConfiguration,
+            "Expected UnsupportedConfiguration, got ${err?.let { it::class.simpleName }}: ${err?.message}",
         )
     }
 
