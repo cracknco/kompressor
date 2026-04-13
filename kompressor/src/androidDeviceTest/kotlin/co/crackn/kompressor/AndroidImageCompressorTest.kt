@@ -54,6 +54,28 @@ class AndroidImageCompressorTest {
     }
 
     @Test
+    fun exifOrientation_rotatedInput_outputRespectsRotation() = runTest {
+        // Regression gate for `ExifInterface.TAG_ORIENTATION` handling in
+        // `AndroidImageCompressor`. Input is a 200×100 JPEG tagged with Orientation=6
+        // (ROTATE_90 CW); the compressor must swap dimensions so the output is 100×200.
+        // Without this test the full EXIF-rotation branch in `AndroidImageCompressor`
+        // (lines 49-59) had no device-side gate.
+        val input = co.crackn.kompressor.testutil.createExifRotatedJpeg(
+            tempDir, width = 200, height = 100,
+            exifOrientation = androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90,
+        )
+        val output = java.io.File(tempDir, "rotated_out.jpg")
+
+        val result = compressor.compress(input.absolutePath, output.absolutePath)
+
+        assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(output.absolutePath, options)
+        assertEquals(100, options.outWidth, "EXIF ROTATE_90: output width must be input height")
+        assertEquals(200, options.outHeight, "EXIF ROTATE_90: output height must be input width")
+    }
+
+    @Test
     fun compressImage_withResize_reducesDimensions() = runTest {
         val input = createTestImage(tempDir, 2000, 1000)
         val output = File(tempDir, "resized.jpg")
