@@ -75,7 +75,6 @@ object AudioInputFixtures {
         return output
     }
 
-    @Suppress("LongParameterList", "LongMethod")
     private fun encodeToAacContainer(
         output: File,
         pcm: ByteArray,
@@ -83,12 +82,44 @@ object AudioInputFixtures {
         channels: Int,
         bitrate: Int,
         outputFormat: Int,
+    ) = encodeToContainer(
+        output = output,
+        pcm = pcm,
+        mime = AAC_MIME,
+        sampleRate = sampleRate,
+        channels = channels,
+        bitrate = bitrate,
+        outputFormat = outputFormat,
+        configureFormat = { format ->
+            format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+        },
+    )
+
+    /**
+     * Shared PCM → encoded-container pipeline: drives a single MediaCodec encoder into a
+     * MediaMuxer of the requested [outputFormat], with sample-accurate PTS tracked via
+     * fractional accumulation so 44.1 kHz doesn't drift (`1_000_000 / 44_100 = 22 µs`
+     * truncates — >1 % error accumulates in seconds).
+     *
+     * The [configureFormat] lambda lets each codec-specific wrapper attach its own extra
+     * [MediaFormat] keys (AAC profile, AMR mode, …) without duplicating the buffer loop.
+     */
+    @Suppress("LongParameterList", "LongMethod")
+    private fun encodeToContainer(
+        output: File,
+        pcm: ByteArray,
+        mime: String,
+        sampleRate: Int,
+        channels: Int,
+        bitrate: Int,
+        outputFormat: Int,
+        configureFormat: (MediaFormat) -> Unit = {},
     ) {
-        val format = MediaFormat.createAudioFormat(AAC_MIME, sampleRate, channels).apply {
+        val format = MediaFormat.createAudioFormat(mime, sampleRate, channels).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            configureFormat(this)
         }
-        val encoder = MediaCodec.createEncoderByType(AAC_MIME)
+        val encoder = MediaCodec.createEncoderByType(mime)
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
@@ -99,9 +130,6 @@ object AudioInputFixtures {
 
         var srcOffset = 0
         val bytesPerFrame = channels * BYTES_PER_SAMPLE
-        // PTS tracked via fractional accumulation: ptsUs += (frames * 1_000_000) / sampleRate,
-        // with the integer-division remainder carried forward so 44.1 kHz doesn't drift
-        // (1_000_000 / 44_100 = 22 µs truncates — >1% error accumulates in seconds).
         var ptsUs = 0L
         var remainderNumerator = 0L
         var inputDone = false
@@ -190,9 +218,8 @@ object AudioInputFixtures {
     /**
      * Generate an AMR-NB `.3gp` file. AMR-NB is 8 kHz mono 16-bit PCM fed into the always-
      * available `audio/3gpp` MediaCodec encoder, muxed into a 3GPP container. The input PCM
-     * is resampled from the WAV generator's default by taking every Nth sample — good enough
-     * for a deterministic fixture that exercises Media3's AMR extractor; fidelity is
-     * irrelevant since we only round-trip to AAC.
+     * is generated directly at 8 kHz mono via [WavGenerator.generateWavBytes] — no
+     * post-resampling step. Fidelity is irrelevant since we only round-trip to AAC.
      */
     fun createAmrNb(output: File, durationSeconds: Int = 1): File {
         val amrSampleRate = AMR_NB_SAMPLE_RATE
@@ -206,74 +233,16 @@ object AudioInputFixtures {
         return output
     }
 
-    private fun encodeAmrNbToThreeGpp(output: File, pcm: ByteArray, sampleRate: Int) {
-        val format = MediaFormat.createAudioFormat(AMR_NB_MIME, sampleRate, 1).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, AMR_NB_BITRATE)
-        }
-        val encoder = MediaCodec.createEncoderByType(AMR_NB_MIME)
-        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
-
-        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP)
-        var muxerTrack = -1
-        var muxerStarted = false
-        val info = MediaCodec.BufferInfo()
-
-        var srcOffset = 0
-        val bytesPerFrame = BYTES_PER_SAMPLE // mono
-        var ptsUs = 0L
-        var remainderNumerator = 0L
-        var inputDone = false
-
-        try {
-            while (true) {
-                if (!inputDone) {
-                    val idx = encoder.dequeueInputBuffer(TIMEOUT_US)
-                    if (idx >= 0) {
-                        val buf = encoder.getInputBuffer(idx) ?: error("encoder input null")
-                        val remaining = pcm.size - srcOffset
-                        if (remaining < bytesPerFrame) {
-                            encoder.queueInputBuffer(
-                                idx, 0, 0, ptsUs,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                            )
-                            inputDone = true
-                        } else {
-                            var toCopy = minOf(buf.capacity(), remaining)
-                            toCopy -= toCopy % bytesPerFrame
-                            buf.put(pcm, srcOffset, toCopy)
-                            encoder.queueInputBuffer(idx, 0, toCopy, ptsUs, 0)
-                            srcOffset += toCopy
-                            val frames = (toCopy / bytesPerFrame).toLong()
-                            val deltaNum = frames * 1_000_000L + remainderNumerator
-                            ptsUs += deltaNum / sampleRate
-                            remainderNumerator = deltaNum % sampleRate
-                        }
-                    }
-                }
-
-                val status = encoder.dequeueOutputBuffer(info, TIMEOUT_US)
-                if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    muxerTrack = muxer.addTrack(encoder.outputFormat)
-                    muxer.start()
-                    muxerStarted = true
-                } else if (status >= 0) {
-                    val out = encoder.getOutputBuffer(status) ?: error("encoder output null")
-                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
-                    if (info.size > 0 && muxerStarted) {
-                        muxer.writeSampleData(muxerTrack, out, info)
-                    }
-                    encoder.releaseOutputBuffer(status, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
-                }
-            }
-        } finally {
-            runCatching { encoder.stop() }
-            encoder.release()
-            runCatching { if (muxerStarted) muxer.stop() }
-            muxer.release()
-        }
-    }
+    private fun encodeAmrNbToThreeGpp(output: File, pcm: ByteArray, sampleRate: Int) =
+        encodeToContainer(
+            output = output,
+            pcm = pcm,
+            mime = AMR_NB_MIME,
+            sampleRate = sampleRate,
+            channels = 1,
+            bitrate = AMR_NB_BITRATE,
+            outputFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP,
+        )
 
     private fun copyTrack(src: MediaExtractor, srcIdx: Int, dst: MediaMuxer, dstIdx: Int) {
         src.selectTrack(srcIdx)

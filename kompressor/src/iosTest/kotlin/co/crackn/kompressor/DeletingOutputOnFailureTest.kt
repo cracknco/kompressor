@@ -95,14 +95,21 @@ class DeletingOutputOnFailureTest {
         // CancellationException is specifically excluded from `runCatching`'s kotlinx-coroutines
         // behaviour but `deletingOutputOnFailure` must treat it like any other throw — partial
         // output is just as harmful whether the throw was "real error" or "user pressed cancel".
+        // Assert the specific exception type + message so a regression that silently wraps /
+        // swaps the exception doesn't slip through.
         val outputPath = tempDir + "cancelled.m4a"
         writeSmallBlob(outputPath)
 
-        assertFails {
+        val ex = kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> {
             deletingOutputOnFailure<Unit>(outputPath) {
                 throw kotlinx.coroutines.CancellationException("user cancelled")
             }
         }
+        assertEquals(
+            "user cancelled",
+            ex.message,
+            "CancellationException must be re-thrown with original message intact",
+        )
 
         assertFalse(
             NSFileManager.defaultManager.fileExistsAtPath(outputPath),

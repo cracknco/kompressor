@@ -261,19 +261,19 @@ class AndroidImageCompressorTest {
         job.cancel()
         kotlinx.coroutines.withTimeout(5_000L) { job.join() }
 
-        // Either the cancel landed before the write step (no output), OR the whole compress
-        // completed between launch and cancel — in which case output exists and is valid.
-        // Both outcomes are library-correct; what we refuse is "partial / malformed output".
-        if (job.isCancelled) {
-            // `AndroidImageCompressor` doesn't use `deletingOutputOnFailure`, so the output
-            // file may or may not exist depending on where the cancel landed — but if it
-            // does, it must be fully valid JPEG (not truncated).
-            if (output.exists()) {
-                assertTrue(
-                    OutputValidators.isValidJpeg(output.readBytes()),
-                    "If output exists after cancel, it must be complete JPEG, not truncated",
-                )
-            }
+        // After cancel + join, either:
+        //   (a) cancel landed before the write step — output doesn't exist, or
+        //   (b) compress completed before cancel was observed — output exists and must be
+        //       a fully-valid JPEG (a truncated / malformed output is the regression we're
+        //       guarding against — image compression doesn't use `deletingOutputOnFailure`,
+        //       so any file that does exist must have been produced by a complete write).
+        // `job.isCancelled` isn't useful as a discriminator here: it's always `true` after
+        // `job.cancel()` irrespective of whether the body had time to run to completion.
+        if (output.exists()) {
+            assertTrue(
+                OutputValidators.isValidJpeg(output.readBytes()),
+                "If output exists after cancel, it must be complete JPEG, not truncated",
+            )
         }
     }
 

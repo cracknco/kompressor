@@ -56,7 +56,10 @@ fun createExifTaggedJpeg(
     return file
 }
 
-/** Colour a test caller can identify in a rotated output to prove the pixels actually moved. */
+// Quadrant sentinel colours a test caller can identify in the rotated output to prove the
+// pixels actually moved. The RGB component literals are auto-documented by the trailing
+// colour name — `@Suppress("MagicNumber")` applied uniformly to all four for consistency.
+@Suppress("MagicNumber")
 val TOP_LEFT_COLOR: Int = Color.rgb(255, 0, 0) // red
 
 @Suppress("MagicNumber")

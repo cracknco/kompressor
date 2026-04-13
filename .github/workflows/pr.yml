@@ -240,17 +240,23 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
 
+      # `continue-on-error: true`: if FTL's upload step didn't run (quota hit, earlier
+       # failure, cancelled workflow), the artifact won't exist. Tolerate that so this job
+       # falls back to a host-only gate instead of blocking the merge on an infra hiccup.
       - name: Download FTL device coverage
+        id: dl-ftl
+        continue-on-error: true
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: ftl-device-coverage
           path: ftl-coverage/
 
       - name: Place device .ec where Kover expects it
+        id: place-coverage
         run: |
           # Kover wires JaCoCo coverage for androidDeviceTest via the
           # `enableCoverage = true` flag on `withDeviceTestBuilder`. The build normally writes
-          # the .ec file to kompressor/build/outputs/code_coverage/androidDeviceTest/
+          # the .ec file to kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/
           # after `connectedAndroidDeviceTest` runs. Since FTL runs the tests remotely, we
           # drop the downloaded .ec in the same spot so `koverXmlReport` includes it in the
           # merged report on the next invocation.
@@ -259,15 +265,27 @@ jobs:
           if [ -f ftl-coverage/coverage.ec ]; then
             cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
             echo "Merged: $(ls -la $target_dir)"
+            echo "merged=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::No FTL coverage.ec — gate will reflect host-only coverage."
+            echo "::warning::No FTL coverage.ec — falling back to host-only gate."
+            echo "merged=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Kover merged report
-        run: ./gradlew koverXmlReport
+        run: ./gradlew :kompressor:koverXmlReport
 
+      # Only run the tighter `-PkoverMergedGate=true` gate (90 %) when we actually have
+      # device `.ec` merged — otherwise the flag trims exclusions without the coverage data
+      # that justifies trimming them, and the job fails at ~52 % instead of ~90 %. Falling
+      # back to the same host-only 85 % gate as the `test` job keeps the signal honest
+      # without false-failing on infra issues.
       - name: Kover merged quality gate
-        run: ./gradlew -PkoverMergedGate=true :kompressor:koverVerify
+        run: |
+          if [ "${{ steps.place-coverage.outputs.merged }}" = "true" ]; then
+            ./gradlew -PkoverMergedGate=true :kompressor:koverVerify
+          else
+            ./gradlew :kompressor:koverVerify
+          fi
 
       - name: Upload merged Kover report
         if: always()

@@ -151,6 +151,11 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
 
     private val resolver by lazy { KompressorContext.appContext.contentResolver }
 
+    // `0L` on open-failure matches the library-wide contract in `resolveMediaInputSize`
+    // (audio + video paths use the same fallback): `inputSize` is a reported metric on
+    // `CompressionResult`, not an invariant the decode depends on. If the URI is genuinely
+    // unreadable the subsequent `decodeRawDimensions()` call will throw
+    // "Cannot decode image dimensions" with the full URI — the real error surfaces there.
     override fun size(): Long = resolver.openFileDescriptor(uri, "r")?.use { pfd ->
         pfd.statSize.coerceAtLeast(0L)
     } ?: 0L
@@ -177,6 +182,10 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         exifRotation: ExifRotation,
     ): Bitmap {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        // codebadger:suppress(resource-leak) InputStream is closed by `use { }` before return;
+        //   the returned Bitmap is owned by the caller (rotateOrRecycle → resizeAndWrite).
+        // codebadger:suppress(resource-leak) BitmapFactory.decodeStream does not itself own a
+        //   resource — false-positive from Joern's file-scope tracker.
         val decoded = openStream().use { stream ->
             BitmapFactory.decodeStream(stream, null, options) ?: error("Failed to decode image: $uri")
         }

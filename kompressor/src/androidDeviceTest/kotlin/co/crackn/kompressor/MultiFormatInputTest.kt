@@ -89,23 +89,17 @@ class MultiFormatInputTest {
     }
 
     @Test
-    fun amrNbInput_compressesToAac() = runTest {
+    fun amrNbInput_compressesToAacWithMatchingConfig() = runTest {
         // AMR-NB: 8 kHz mono phone-call codec. Our compressor must be able to transcode it
         // (Media3's AMR extractor + AAC encoder). The output config requests 22.05 kHz / mono
         // since re-upsampling beyond 8 kHz source is the practical "voice messaging" flow.
         val input = File(tempDir, "amr_fixture.3gp")
         AudioInputFixtures.createAmrNb(output = input, durationSeconds = 1)
-        val output = File(tempDir, "from_amr.m4a")
-        val config = AudioCompressionConfig(bitrate = 32_000, sampleRate = 22_050, channels = AudioChannels.MONO)
-
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
-
-        assertTrue(result.isSuccess, "AMR-NB → AAC must succeed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidM4a(output.readBytes()))
-        val track = readAudioTrackInfo(output)
-        assertEquals("audio/mp4a-latm", track.mime)
-        assertEquals(22_050, track.sampleRate)
-        assertEquals(1, track.channels)
+        assertRoundTripMatchesConfig(
+            input = input,
+            outputName = "from_amr.m4a",
+            config = AudioCompressionConfig(bitrate = 32_000, sampleRate = 22_050, channels = AudioChannels.MONO),
+        )
     }
 
     /**
@@ -117,13 +111,23 @@ class MultiFormatInputTest {
      * "valid M4A container with empty / garbage AAC track" — a class of failure our earlier
      * validators couldn't distinguish from success.
      */
-    private suspend fun assertRoundTripMatchesConfig(resourceName: String, config: AudioCompressionConfig) {
-        val input = copyResourceToCache(resourceName, tempDir)
-        val output = File(tempDir, "from_$resourceName.m4a")
+    private suspend fun assertRoundTripMatchesConfig(resourceName: String, config: AudioCompressionConfig) =
+        assertRoundTripMatchesConfig(
+            input = copyResourceToCache(resourceName, tempDir),
+            outputName = "from_$resourceName.m4a",
+            config = config,
+        )
+
+    private suspend fun assertRoundTripMatchesConfig(
+        input: File,
+        outputName: String,
+        config: AudioCompressionConfig,
+    ) {
+        val output = File(tempDir, outputName)
 
         val result = compressor.compress(input.absolutePath, output.absolutePath, config)
 
-        assertTrue(result.isSuccess, "$resourceName → AAC must succeed: ${result.exceptionOrNull()}")
+        assertTrue(result.isSuccess, "${input.name} → AAC must succeed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
 
         val track = readAudioTrackInfo(output)
