@@ -135,10 +135,15 @@ class IosVideoCompressorTest {
         val scope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
         )
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
         val job = scope.launch {
-            compressor.compress(longInputPath, outputPath)
+            compressor.compress(
+                inputPath = longInputPath,
+                outputPath = outputPath,
+                onProgress = { p -> if (p > 0f && !started.isCompleted) started.complete(Unit) },
+            )
         }
-        kotlinx.coroutines.delay(200L)
+        kotlinx.coroutines.withTimeout(5_000L) { started.await() }
         job.cancel()
         kotlinx.coroutines.withTimeout(15_000L) { job.join() }
 

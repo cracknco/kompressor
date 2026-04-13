@@ -14,7 +14,15 @@ import java.io.File
  * Asset Manager.
  */
 fun copyResourceToCache(resourceName: String, destDir: File): File {
+    require(destDir.exists() || destDir.mkdirs()) {
+        "Unable to create destination dir: ${destDir.absolutePath}"
+    }
     val target = File(destDir, resourceName)
+    target.parentFile?.let { parent ->
+        require(parent.exists() || parent.mkdirs()) {
+            "Unable to create parent dir: ${parent.absolutePath}"
+        }
+    }
     val loader = Thread.currentThread().contextClassLoader ?: error("No context ClassLoader")
     val input = loader.getResourceAsStream(resourceName)
         ?: error("Resource not found on classpath: $resourceName")
