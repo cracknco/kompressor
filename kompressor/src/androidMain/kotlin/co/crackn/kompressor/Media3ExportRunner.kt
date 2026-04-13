@@ -34,12 +34,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * expected to run the whole export on [kotlinx.coroutines.Dispatchers.Main]. Cancellation
  * callbacks (which may fire from arbitrary threads) are explicitly hopped to the Main looper
  * before touching the [Transformer].
- */
-/**
- * Composition overload of [awaitMedia3Export]. Used by the video pipeline when an HDR mode
- * needs to be set via [Composition.Builder.setHdrMode]. Internally identical to the
- * `EditedMediaItem` version — the only difference is `Transformer.start(Composition, …)` vs
- * `start(EditedMediaItem, …)`.
+ *
+ * Two overloads exist: one taking an [EditedMediaItem] (the default for audio + non-HDR video)
+ * and one taking a [Composition] (used by video paths that need [Composition.Builder.setHdrMode]).
+ * Both share the same listener / progress / cancellation glue.
  */
 internal suspend fun awaitMedia3Export(
     transformer: Transformer,

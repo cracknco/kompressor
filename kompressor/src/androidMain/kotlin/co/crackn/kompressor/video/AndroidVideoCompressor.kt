@@ -194,20 +194,26 @@ internal class AndroidVideoCompressor(
 /**
  * Returns true when the device's `MediaCodecList` advertises at least one HEVC encoder
  * supporting the Main10 or Main10HDR10 profile. Used to pre-flight HDR10 compression requests.
+ *
+ * Cached after the first probe — `MediaCodecList(REGULAR_CODECS)` enumerates every encoder on
+ * the device and is non-trivial; on hot HDR10 paths (re-encode loops) the result is invariant
+ * for the process lifetime so re-probing per call is wasted work.
  */
-internal fun deviceSupportsHdr10Hevc(): Boolean {
+private val hdr10HevcSupported: Boolean by lazy {
     val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
     val main10Profiles = setOf(
         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
     )
-    return codecs.any { info ->
+    codecs.any { info ->
         if (!info.isEncoder) return@any false
         val caps = runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull() ?: return@any false
         caps.profileLevels.any { pl -> pl.profile in main10Profiles }
     }
 }
+
+internal fun deviceSupportsHdr10Hevc(): Boolean = hdr10HevcSupported
 
 /**
  * Scale down to the shortest edge target; no effect when [MaxResolution.Original], and no effect
