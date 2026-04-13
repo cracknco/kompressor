@@ -85,14 +85,16 @@ internal class AndroidImageCompressor : ImageCompressor {
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
+    // Why: Bitmap ownership is the caller's responsibility (Android Bitmaps are GC-managed;
+    // explicit recycle is no-op since API 28+ and harmful on pre-28 if the caller still holds
+    // the reference). The throw exits this function but the caller's `try { … }` still owns the
+    // bitmap reference — Joern flags it as a leak because the reference doesn't close in a
+    // `finally` block, but that's the wrong model for GC-managed objects.
     private fun writeBitmapAsJpeg(bitmap: Bitmap, outputPath: String, quality: Int) {
         FileOutputStream(outputPath).use { stream ->
             val success = bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
-            // codebadger:suppress(resource-leak) Bitmap ownership is the caller's responsibility
-            //   (Android Bitmaps are GC-managed; explicit recycle is no-op since API 28+ and
-            //   harmful on pre-28 if the caller still holds the reference). The throw exits
-            //   this function but the caller's `try { … }` still owns the bitmap reference.
             if (!success) {
+                // codebadger:suppress(resource-leak) See Why: comment above.
                 throw ImageCompressionError.EncodingFailed(
                     "Bitmap.compress(JPEG, quality=$quality) returned false for: $outputPath",
                 )
