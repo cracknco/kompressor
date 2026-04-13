@@ -107,6 +107,11 @@ kotlin {
 //     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
 //     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
 //     before invoking `koverXmlReport`, so those classes show up in the merged report.
+//
+// LOCKSTEP: `koverExcludedClasses` below must stay in sync with the root `build.gradle.kts`'s
+// `rootKoverExcludes`. The root filters win over the module's for `:kompressor:koverVerify`,
+// so any drift silently changes what the quality gate evaluates. Only `sample.*` is allowed
+// to differ (root-only because the sample app isn't part of this module).
 val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
 
 // Kover 0.9.8 quirk: `reports.filters.excludes` is honoured by `koverXmlReport` but

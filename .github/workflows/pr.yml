@@ -204,13 +204,16 @@ jobs:
             build/ftl-coverage/ || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
 
+      # `if-no-files-found: error`: when FTL's device-side JaCoCo emission fails to produce
+      # /sdcard/coverage.ec, fail here where the root cause is obvious instead of letting the
+      # downstream `merged-coverage` job fail later with a cryptic "Artifact not found".
       - name: Upload FTL coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ftl-device-coverage
           path: build/ftl-coverage/
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # ── Merged coverage gate (host + FTL device) ────────────────
   # Runs *after* both `test` (host) and `android-device-tests-ftl` complete. Host tests are
@@ -273,8 +276,12 @@ jobs:
       - name: Run Kover merged report
         run: ./gradlew -PkoverMergedGate=true :kompressor:koverXmlReport
 
+      # Root `koverVerify` already declares a task dependency on `:kompressor:koverVerify`
+      # (and on `sample:koverVerify` — sample is excluded entirely so its gate always passes),
+      # so invoking the single root task is equivalent to running both explicitly while keeping
+      # the build-log output deduplicated.
       - name: Kover merged 90% gate (host + device)
-        run: ./gradlew -PkoverMergedGate=true :kompressor:koverVerify koverVerify
+        run: ./gradlew -PkoverMergedGate=true koverVerify
 
       - name: Upload merged Kover report
         if: always()

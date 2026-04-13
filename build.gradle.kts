@@ -19,11 +19,15 @@ dependencies {
     kover(project(":kompressor"))
 }
 
-// Mirrors `kompressor/build.gradle.kts`'s gate-aware exclude logic. The root `koverXmlReport`
-// filters win over the module's, so any class missing here leaks into the aggregate report
-// (`:kompressor:koverVerify` reads it). In merged mode (`-PkoverMergedGate=true`) the
-// device-only excludes are dropped because FTL device coverage covers them — same trim as the
-// module's gate so the two stay in lockstep.
+// LOCKSTEP: this exclude list must stay in sync with `kompressor/build.gradle.kts`'s
+// `koverExcludedClasses`. The root `koverXmlReport` filters win over the module's, so any class
+// excluded in one list but not the other silently leaks into or out of the aggregate report —
+// `:kompressor:koverVerify` reads the root's resolved set. The delta between them is intentional
+// and narrow: only `co.crackn.kompressor.sample.*` lives at the root level because the sample
+// app isn't part of the library module. Every other entry must match.
+//
+// In merged mode (`-PkoverMergedGate=true`) the device-only excludes are dropped because FTL
+// device coverage covers them — same trim as the module's gate so the two stay in lockstep.
 val rootMergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
 
 val rootKoverExcludes =
