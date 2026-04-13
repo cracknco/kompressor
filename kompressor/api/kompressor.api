@@ -176,7 +176,9 @@ public final class co/crackn/kompressor/Supportability$Unsupported : co/crackn/k
 }
 
 public final class co/crackn/kompressor/audio/AudioChannels : java/lang/Enum {
+	public static final field FIVE_POINT_ONE Lco/crackn/kompressor/audio/AudioChannels;
 	public static final field MONO Lco/crackn/kompressor/audio/AudioChannels;
+	public static final field SEVEN_POINT_ONE Lco/crackn/kompressor/audio/AudioChannels;
 	public static final field STEREO Lco/crackn/kompressor/audio/AudioChannels;
 	public final fun getCount ()I
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;

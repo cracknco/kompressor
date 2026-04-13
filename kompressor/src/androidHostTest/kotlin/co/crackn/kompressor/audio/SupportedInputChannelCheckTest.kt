@@ -5,10 +5,10 @@ import io.kotest.matchers.string.shouldContain
 import kotlin.test.Test
 
 /**
- * Host-side coverage for [checkSupportedInputChannelCount] — the upfront rejection of
- * multichannel (≥ 3 channel) inputs that Media3 1.10's built-in channel mixer cannot
- * handle. Extracting the rule to a pure function avoids the need for a 5.1 device fixture
- * and lets the regression gate run on every PR host CI job.
+ * Host-side coverage for [checkSupportedInputChannelCount] — the upfront rejection of inputs
+ * whose channel count exceeds what the mixer can handle (currently 7.1 / 8 channels). Pure
+ * function so the regression gate runs on every PR host CI job without a multichannel device
+ * fixture.
  */
 class SupportedInputChannelCheckTest {
 
@@ -23,6 +23,23 @@ class SupportedInputChannelCheckTest {
     }
 
     @Test
+    fun threeChannelSource_isAccepted() {
+        // 3-channel sources (e.g. LCR) are within the supported envelope; Media3's
+        // constant-power matrix handles them down to mono / stereo.
+        checkSupportedInputChannelCount(3) // does not throw
+    }
+
+    @Test
+    fun fiveOneSource_isAccepted() {
+        checkSupportedInputChannelCount(6) // 5.1 — does not throw
+    }
+
+    @Test
+    fun sevenOneSource_isAccepted() {
+        checkSupportedInputChannelCount(8) // 7.1 — does not throw
+    }
+
+    @Test
     fun nullChannelCount_isAccepted() {
         // A probe failure shouldn't block the pipeline — Media3 will surface its own error
         // if the file is genuinely unreadable.
@@ -30,26 +47,20 @@ class SupportedInputChannelCheckTest {
     }
 
     @Test
-    fun threeChannelSource_rejectedWithTypedError() {
+    fun nineChannelSource_rejectedWithTypedError() {
+        // 9.1.x and beyond are not in our supported envelope (no AAC channel layout fits and
+        // the mixer has no defined coefficients). Reject upfront with a typed error.
         val err = shouldThrow<AudioCompressionError.UnsupportedConfiguration> {
-            checkSupportedInputChannelCount(3)
+            checkSupportedInputChannelCount(9)
         }
-        err.details shouldContain "3 channels"
+        err.details shouldContain "9 channels"
     }
 
     @Test
-    fun sixChannelSource_rejectedWithTypedError() {
+    fun sixteenChannelSource_rejectedWithTypedError() {
         val err = shouldThrow<AudioCompressionError.UnsupportedConfiguration> {
-            checkSupportedInputChannelCount(6) // 5.1
+            checkSupportedInputChannelCount(16)
         }
-        err.details shouldContain "6 channels"
-    }
-
-    @Test
-    fun eightChannelSource_rejectedWithTypedError() {
-        val err = shouldThrow<AudioCompressionError.UnsupportedConfiguration> {
-            checkSupportedInputChannelCount(8) // 7.1
-        }
-        err.details shouldContain "8 channels"
+        err.details shouldContain "16 channels"
     }
 }

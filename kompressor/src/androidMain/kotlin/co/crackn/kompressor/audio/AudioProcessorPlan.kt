@@ -34,22 +34,20 @@ internal data class AudioProcessorPlan(
         channelMixing?.let { spec ->
             add(
                 ChannelMixingAudioProcessor().apply {
-                    // Register matrices for every input-channel count for which Media3 ships a
-                    // default constant-gain matrix. In Media3 1.10 that is limited to 1→{1,2}
-                    // and 2→{1,2} — `ChannelMixingMatrix.createForConstantGain` throws
-                    // `UnsupportedOperationException` for anything ≥ 3 input channels.
+                    // Register one matrix per supported input-channel count. `ChannelMixingAudio
+                    // Processor` picks the right matrix from the actual input AudioFormat at
+                    // configure time, so pre-registering all supported input counts is safe.
                     //
-                    // Multichannel inputs (5.1 / 7.1) will surface a Media3 configure-time
-                    // error with a clear message rather than a mysterious runtime crash.
-                    // The `ChannelMixingAudioProcessor` picks the right matrix from the actual
-                    // input AudioFormat at configure time, so pre-registering both supported
-                    // input counts is safe regardless of which the decoder emits.
+                    // Sources for the matrices:
+                    // - 1..6 input channels into mono/stereo → Media3's
+                    //   `ChannelMixingMatrix.createForConstantPower` (BS.775-style coefficients).
+                    // - 7.1 (8 input channels) into mono / stereo / 5.1 → custom ITU-R BS.775
+                    //   matrices in `surroundDownmixMatrix`. Media3 1.10 doesn't ship defaults
+                    //   for 8-channel inputs so we provide them explicitly.
+                    // - same-count → identity matrix (passthrough).
                     for (inputChannels in 1..MAX_SUPPORTED_INPUT_CHANNELS) {
                         putChannelMixingMatrix(
-                            ChannelMixingMatrix.createForConstantGain(
-                                inputChannels,
-                                spec.outputChannelCount,
-                            ),
+                            buildChannelMixingMatrix(inputChannels, spec.outputChannelCount),
                         )
                     }
                 },
@@ -59,6 +57,40 @@ internal data class AudioProcessorPlan(
             add(SonicAudioProcessor().apply { setOutputSampleRateHz(rateHz) })
         }
     }
+}
+
+/**
+ * Builds the [ChannelMixingMatrix] for one (input, output) channel-count combination. Falls
+ * back through three strategies in order:
+ *
+ * 1. Identity matrix when input == output (passthrough).
+ * 2. Media3's [ChannelMixingMatrix.createForConstantPower] when both counts are within its
+ *    supported defaults (input ∈ 1..6, output ∈ {1, 2}).
+ * 3. Hand-rolled ITU-R BS.775 matrix from [surroundDownmixMatrix] for 7.1 → mono / stereo /
+ *    5.1.
+ *
+ * Throws [UnsupportedOperationException] for genuinely unsupported combinations (e.g. upmix or
+ * 7.1 → 4.0); callers are expected to have already rejected these via the
+ * [AudioCompressionError.UnsupportedConfiguration] path before instantiating the chain.
+ */
+@Suppress("ReturnCount")
+internal fun buildChannelMixingMatrix(
+    inputChannels: Int,
+    outputChannels: Int,
+): ChannelMixingMatrix {
+    if (inputChannels == outputChannels) {
+        return ChannelMixingMatrix(inputChannels, outputChannels, identityCoefficients(inputChannels))
+    }
+    surroundDownmixMatrix(inputChannels, outputChannels)?.let { coefficients ->
+        return ChannelMixingMatrix(inputChannels, outputChannels, coefficients)
+    }
+    return ChannelMixingMatrix.createForConstantPower(inputChannels, outputChannels)
+}
+
+private fun identityCoefficients(channelCount: Int): FloatArray {
+    val matrix = FloatArray(channelCount * channelCount)
+    for (i in 0 until channelCount) matrix[i * channelCount + i] = 1f
+    return matrix
 }
 
 /**
@@ -96,29 +128,75 @@ internal fun planAudioProcessors(
     )
 }
 
-// Media3 1.10's `ChannelMixingMatrix.createForConstantGain` only ships default coefficients for
-// mono/stereo inputs. Higher input channel counts throw `UnsupportedOperationException`.
-private const val MAX_SUPPORTED_INPUT_CHANNELS = 2
+// We support up to 7.1 (8 channels) inputs via Media3's constant-power matrices for 1..6 →
+// {1,2} and our own ITU-R BS.775 coefficients for 7.1 → {mono, stereo, 5.1}.
+private const val MAX_SUPPORTED_INPUT_CHANNELS = 8
 
 /**
- * Reject input files whose channel count exceeds what Media3's built-in mixer can handle.
+ * Reject input files whose channel count exceeds what the mixer can handle.
  *
- * Media3 1.10 ships `ChannelMixingMatrix.createForConstantGain` default coefficients only for
- * 1..2 input channels — 5.1 / 7.1 sources throw [UnsupportedOperationException] mid-configure
- * with no actionable context. Rejecting upfront with a typed
- * [AudioCompressionError.UnsupportedConfiguration] lets callers `when`-branch and surface a
- * useful error (e.g. "please down-mix to stereo first").
+ * The supported envelope is 1..[MAX_SUPPORTED_INPUT_CHANNELS]. Genuinely exotic inputs (e.g.
+ * 9.1.6) surface a typed [AudioCompressionError.UnsupportedConfiguration] upfront so callers
+ * can `when`-branch instead of seeing an opaque Media3 mid-pipeline crash.
  *
  * `null` channel count (probe didn't report it) is treated as acceptable — the real pipeline
  * will surface its own error if the probe failure reflects a genuinely unreadable input.
  *
  * Pure function with no platform dependencies, exposed `internal` so the validation rule is
- * host-testable without spinning up a 5.1 device fixture.
+ * host-testable without spinning up a multichannel device fixture.
  */
 internal fun checkSupportedInputChannelCount(inputChannels: Int?) {
     if (inputChannels != null && inputChannels > MAX_SUPPORTED_INPUT_CHANNELS) {
         throw AudioCompressionError.UnsupportedConfiguration(
-            "Input has $inputChannels channels; only mono and stereo sources are supported",
+            "Input has $inputChannels channels; only up to $MAX_SUPPORTED_INPUT_CHANNELS " +
+                "(7.1 surround) is supported",
         )
+    }
+}
+
+/**
+ * Hand-rolled ITU-R BS.775-based downmix matrices for 7.1 (8-channel) inputs that Media3
+ * 1.10's `createForConstantPower` does not ship defaults for.
+ *
+ * 7.1 channel order (ISO/IEC 23001-8 Mpeg7_1_C):
+ *   0=FL, 1=FR, 2=FC, 3=LFE, 4=BL, 5=BR, 6=SL, 7=SR
+ *
+ * Matrices are returned in row-major order: `coefficients[outputChannel * 8 + inputChannel]`.
+ * Coefficients use the constant-power 0.7071 (≈ 1/√2) for diagonal mixes, the BS.775 0.5 for
+ * LFE / surround folding into stereo, and 1.0 for pass-through diagonals.
+ *
+ * Returns `null` for combinations not in this table — callers fall back to Media3's defaults
+ * via [buildChannelMixingMatrix].
+ */
+@Suppress("MagicNumber")
+internal fun surroundDownmixMatrix(inputChannels: Int, outputChannels: Int): FloatArray? {
+    if (inputChannels != 8) return null
+    return when (outputChannels) {
+        1 -> floatArrayOf(
+            // mono = (FL + FR)·0.7071 + FC + (BL + BR + SL + SR)·0.5 + LFE·0.7071
+            0.7071f, 0.7071f, 1.0f, 0.7071f, 0.5f, 0.5f, 0.5f, 0.5f,
+        )
+        2 -> floatArrayOf(
+            // L = FL + 0.7071·FC + 0.5·LFE + 0.7071·BL + 0.7071·SL
+            1.0f, 0.0f, 0.7071f, 0.5f, 0.7071f, 0.0f, 0.7071f, 0.0f,
+            // R = FR + 0.7071·FC + 0.5·LFE + 0.7071·BR + 0.7071·SR
+            0.0f, 1.0f, 0.7071f, 0.5f, 0.0f, 0.7071f, 0.0f, 0.7071f,
+        )
+        6 -> floatArrayOf(
+            // 7.1 → 5.1: fold side surrounds into back surrounds (BS.775 §3.5)
+            // FL = FL
+            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            // FR = FR
+            0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            // FC = FC
+            0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            // LFE = LFE
+            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            // BL = BL + 0.7071·SL
+            0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.7071f, 0.0f,
+            // BR = BR + 0.7071·SR
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.7071f,
+        )
+        else -> null
     }
 }
