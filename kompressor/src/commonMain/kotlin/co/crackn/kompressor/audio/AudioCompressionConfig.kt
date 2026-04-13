@@ -13,6 +13,13 @@ import co.crackn.kompressor.AudioCodec
  * multiple audio tracks. Defaults to the first track (`0`). If the source has fewer tracks than
  * `audioTrackIndex + 1`, compression fails with
  * [co.crackn.kompressor.audio.AudioCompressionError.UnsupportedSourceFormat].
+ *
+ * **Codec restriction (Android only):** when `audioTrackIndex > 0` (or the source has more than
+ * one audio track), the Android implementation pre-extracts the selected track to a temporary
+ * MP4 by bitstream-copy. MediaMuxer's MP4 container only accepts AAC / AMR-NB / AMR-WB, so
+ * multi-track inputs whose selected track is Opus / Vorbis / FLAC / PCM also fail with
+ * [co.crackn.kompressor.audio.AudioCompressionError.UnsupportedSourceFormat]. iOS has no such
+ * restriction.
  */
 public data class AudioCompressionConfig(
     val codec: AudioCodec = AudioCodec.AAC,

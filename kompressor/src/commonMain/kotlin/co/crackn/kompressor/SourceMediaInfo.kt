@@ -40,19 +40,22 @@ public data class SourceMediaInfo(
     /** Audio channel count (1 = mono, 2 = stereo). */
     public val audioChannels: Int? = null,
     /**
-     * Number of audio tracks detected in the source container. `0` when the source has no audio
-     * track (or the probe couldn't enumerate tracks). Callers pass an index in `[0, audioTrackCount)`
-     * as [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] to choose which track
-     * to compress.
-     */
-    public val audioTrackCount: Int = 0,
-    /**
      * Platform-level readability hint — true/false when the platform can
      * authoritatively say whether this file can be decoded. iOS populates this
      * via `AVAssetTrack.isPlayable`. Null on Android (the capability matrix is
      * the authoritative source there).
      */
     public val isPlayable: Boolean? = null,
+    /**
+     * Number of audio tracks detected in the source container. `0` when the source has no audio
+     * track (or the probe couldn't enumerate tracks). Callers pass an index in `[0, audioTrackCount)`
+     * as [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] to choose which track
+     * to compress.
+     *
+     * Appended last to keep the positional ABI of pre-existing fields stable for Java / non-Kotlin
+     * KMP consumers — Kotlin named-arg callers are unaffected either way.
+     */
+    public val audioTrackCount: Int = 0,
 )
 
 /**

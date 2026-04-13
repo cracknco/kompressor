@@ -307,7 +307,7 @@ internal data class AudioProbeResult(val format: InputAudioFormat?, val audioTra
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProbeResult = try {
-    openAudioExtractor(inputPath).use { extractor ->
+    openAudioExtractor(inputPath).useThenRelease { extractor ->
         val count = extractor.countAudioTracks()
         val format = findAudioTrackIndexInContainer(extractor, audioTrackIndex)
             ?.let { extractor.getTrackFormat(it).toInputAudioFormat() }

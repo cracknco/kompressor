@@ -189,7 +189,7 @@ class MultiTrackAudioSelectionTest {
         val n = samples.size
         val omega = 2.0 * PI * freq / sampleRate
         val coeff = 2.0 * cos(omega)
-        var q0: Double
+        var q0 = 0.0
         var q1 = 0.0
         var q2 = 0.0
         for (i in 0 until n) {

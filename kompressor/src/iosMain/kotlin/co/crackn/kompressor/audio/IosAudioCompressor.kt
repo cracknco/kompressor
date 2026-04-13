@@ -118,18 +118,18 @@ internal class IosAudioCompressor : AudioCompressor {
     /**
      * Bounds-check [audioTrackIndex] against the source's audio track count so callers get a
      * typed [AudioCompressionError.UnsupportedSourceFormat] rather than racing an opaque
-     * `AVAssetReader` / `AVAssetExportSession` failure. Probe failures are treated as "track 0
-     * is fine" — the real pipeline will surface an error later if the file is genuinely
-     * unreadable.
+     * `AVAssetReader` / `AVAssetExportSession` failure. Probe failures from `AVURLAsset.tracks*`
+     * are out-of-band: an unreadable file should propagate its own error from the real pipeline
+     * rather than be re-typed here, and a `default-index` caller (`audioTrackIndex == 0`) on a
+     * file that genuinely happens to have one audio track must not be blocked by a transient
+     * probe glitch. We therefore only enforce the bounds when the probe yielded a usable count;
+     * non-default indices on a probe-failed source still surface the real downstream error,
+     * which carries more diagnostic context than a generic "probe failed" wrapper would.
      */
-    @Suppress("TooGenericExceptionCaught")
     private fun validateAudioTrackIndex(inputPath: String, audioTrackIndex: Int) {
-        val count = try {
-            AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
-                .tracksWithMediaType(AVMediaTypeAudio).size
-        } catch (_: Throwable) {
-            return
-        }
+        val count = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+            .tracksWithMediaType(AVMediaTypeAudio)
+            .size
         if (audioTrackIndex >= count) {
             throw AudioCompressionError.UnsupportedSourceFormat(
                 "audioTrackIndex $audioTrackIndex out of bounds for $count audio track(s)",

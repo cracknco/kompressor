@@ -27,16 +27,22 @@ internal fun MediaExtractor.countAudioTracks(): Int =
  * Extract the [audioTrackIndex]-th audio track from [inputPath] into a freshly-created MP4
  * temporary file by bitstream-copying samples (no decode/encode). Returns the newly-created
  * temp [File]; caller is responsible for deletion.
+ *
+ * The file is created under the app's cache directory rather than `java.io.tmpdir` so that the
+ * OS can reclaim the space when the device is under storage pressure (Android's tmpdir is the
+ * same directory but documented contracts differ). For multi-GB sources the bitstream copy is
+ * still essentially full-file-sized — caller must call `delete()` on success too.
  */
 internal fun extractAudioTrackToTempFile(inputPath: String, audioTrackIndex: Int): File {
-    val tempFile = File.createTempFile("kompressor-audio-track-", ".mp4")
+    val cacheDir = KompressorContext.appContext.cacheDir
+    val tempFile = File.createTempFile("kompressor-audio-track-", ".mp4", cacheDir)
     // Why: We must clean up the freshly-created temp file on *any* failure — including
     // IllegalStateException from MediaMuxer, IOException from the extractor, or the "no such
     // track" precondition below. Narrowing the catch to each concrete type buries the cleanup
     // logic under a `when` ladder that would still miss future failure modes.
     @Suppress("TooGenericExceptionCaught")
     try {
-        openAudioExtractor(inputPath).use { extractor ->
+        openAudioExtractor(inputPath).useThenRelease { extractor ->
             val trackIndex = findAudioTrackIndexInContainer(extractor, audioTrackIndex)
                 ?: error("No audio track at index $audioTrackIndex")
             val format = extractor.getTrackFormat(trackIndex)
@@ -115,7 +121,13 @@ internal fun openAudioExtractor(inputPath: String): MediaExtractor = MediaExtrac
     }
 }
 
-internal inline fun <R> MediaExtractor.use(block: (MediaExtractor) -> R): R {
+/**
+ * Run [block] with this [MediaExtractor] and call [MediaExtractor.release] on exit. Named
+ * `useThenRelease` (rather than shadowing `kotlin.use`) because [MediaExtractor] is not
+ * `Closeable` — keeping the name distinct prevents IDE auto-imports from picking the wrong
+ * helper if `MediaExtractor` ever grows a `Closeable` overload upstream.
+ */
+internal inline fun <R> MediaExtractor.useThenRelease(block: (MediaExtractor) -> R): R {
     try {
         return block(this)
     } finally {

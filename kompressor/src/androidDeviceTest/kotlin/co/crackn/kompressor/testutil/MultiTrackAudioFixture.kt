@@ -17,6 +17,10 @@ import kotlin.math.sin
  * Approach: allocate one `MediaCodec` AAC encoder per requested tone, feed each its own PCM
  * stream, and mux every encoder's output into a dedicated track of a single `MediaMuxer`.
  * Encoders are driven in a round-robin loop so all tracks share the same wall-clock progress.
+ *
+ * Synchronous driver (no `MediaCodec.Callback`) is intentional: tests need deterministic
+ * sample counts and reproducible PTS sequences; an async callback model would couple test
+ * timing to scheduler latency and turn frequency-detection assertions flaky.
  */
 object MultiTrackAudioFixture {
 
