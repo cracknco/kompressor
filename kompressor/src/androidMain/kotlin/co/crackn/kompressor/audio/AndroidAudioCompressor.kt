@@ -90,7 +90,7 @@ internal class AndroidAudioCompressor(
 
         deletingOutputOnFailure(outputPath) {
             runTransformerWithTrackSelection(
-                inputPath, outputPath, config, probeResult.format, probeResult.audioTrackCount, onProgress,
+                inputPath, outputPath, config, probeResult.format, onProgress,
             )
         }
 
@@ -107,16 +107,20 @@ internal class AndroidAudioCompressor(
      * temporary MP4 via MediaExtractor+MediaMuxer (bitstream copy, preserves codec so the AAC
      * passthrough fast path still qualifies), then feed that to Transformer.
      */
-    @Suppress("LongParameterList")
     private suspend fun runTransformerWithTrackSelection(
         inputPath: String,
         outputPath: String,
         config: AudioCompressionConfig,
         probe: InputAudioFormat?,
-        trackCount: Int,
         onProgress: suspend (Float) -> Unit,
     ) {
-        val transformerInputPath = if (trackCount > 1 || config.audioTrackIndex > 0) {
+        // Only pre-extract when the caller explicitly asks for a non-default track. Media3
+        // Transformer already picks the first audio track on its own, so routing every
+        // multi-track source through `extractAudioTrackToTempFile` just to land on index 0
+        // would regress multi-track inputs whose first track uses a non-MP4-muxable codec
+        // (Opus / Vorbis / FLAC / PCM) — `requireMp4MuxableCodec` would reject them even
+        // though Media3 would have transcoded them cleanly without the extraction step.
+        val transformerInputPath = if (config.audioTrackIndex > 0) {
             withContext(Dispatchers.IO) {
                 extractAudioTrackToTempFile(inputPath, config.audioTrackIndex)
             }
@@ -319,7 +323,10 @@ internal fun probeAudioInput(inputPath: String, audioTrackIndex: Int): AudioProb
     throw AudioCompressionError.IoFailed("Audio input not found: $inputPath", e)
 } catch (e: SecurityException) {
     throw AudioCompressionError.IoFailed("Permission denied probing audio input: $inputPath", e)
-} catch (_: Throwable) {
+} catch (_: Exception) {
+    // Catch `Exception` (not `Throwable`): non-recoverable JVM `Error`s — `OutOfMemoryError`,
+    // `LinkageError`, `StackOverflowError` — must propagate so the caller's runtime sees them
+    // instead of being silently demoted to an `UnsupportedSourceFormat` error downstream.
     AudioProbeResult(null, 0)
 }
 
