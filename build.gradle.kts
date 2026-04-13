@@ -25,9 +25,21 @@ kover {
             excludes {
                 // Exclude the same platform-specific classes as :kompressor does,
                 // plus all sample-app UI/DI code which has no unit tests.
+                // Must mirror `:kompressor`'s host-only exclude list in kompressor/build.gradle.kts
+                // — when the root `koverXmlReport` runs, its filters win over the module's, so any
+                // class missing here leaks back into `:kompressor:koverVerify`'s aggregate report
+                // (e.g. `FilePathSource`, `ContentUriSource`, `ImageSource` were dragging the gate
+                // down to 80.7 % even though `:kompressor` excluded them).
                 classes(
                     "co.crackn.kompressor.*.Android*",
                     "co.crackn.kompressor.*.Ios*",
+                    "co.crackn.kompressor.image.ImageSource",
+                    "co.crackn.kompressor.image.ImageSource\$*",
+                    "co.crackn.kompressor.image.FilePathSource",
+                    "co.crackn.kompressor.image.FilePathSource\$*",
+                    "co.crackn.kompressor.image.ContentUriSource",
+                    "co.crackn.kompressor.image.ContentUriSource\$*",
+                    "co.crackn.kompressor.image.AndroidImageCompressorKt",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
                     "co.crackn.kompressor.Media3ExportRunnerKt",
@@ -43,8 +55,6 @@ kover {
                     "co.crackn.kompressor.IosKompressorKt",
                     "co.crackn.kompressor.IosDeviceCapabilitiesKt",
                     "co.crackn.kompressor.IosFileUtils*",
-                    // KompressorInitializer / KompressorContext are now host-tested by
-                    // KompressorInitializerTest under androidHostTest.
                     "co.crackn.kompressor.sample.*",
                 )
             }
