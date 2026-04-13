@@ -1,8 +1,8 @@
 package co.crackn.kompressor.video
 
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.Presentation
@@ -94,23 +94,20 @@ internal class AndroidVideoCompressor(
         // Pre-flight HDR10: if the device cannot encode HEVC Main10 HDR10, fail fast with a
         // typed error rather than crashing deep in the Media3 encoder selection.
         if (config.dynamicRange == DynamicRange.HDR10) {
-            withContext(Dispatchers.IO) { requireHdr10Hevc(config) }
+            withContext(Dispatchers.IO) { requireHdr10Hevc(config.codec) }
         }
-        // Probe source short side off-Main so [toPresentationOrNull] can skip scaling when the
-        // source already satisfies the target (preventing unintended upscale — e.g. 1280×720
-        // input with `HIGH_QUALITY` preset targeting 1080p).
-        val sourceShortSide = withContext(Dispatchers.IO) { probeVideoShortSide(inputPath) }
-        // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error.
-        // Without this check Media3 surfaces an opaque `ERROR_CODE_IO_UNSPECIFIED` or decoder
-        // init failure mid-export; the typed `UnsupportedSourceFormat` lets callers `when`-branch
-        // cleanly. A null probe result (file unreadable) falls through so Media3's existing
-        // error reporting wins for genuinely broken inputs.
-        val probe = withContext(Dispatchers.IO) { probeVideoTracks(inputPath) }
+        // Single probe pass — opening two separate MediaExtractor / MediaMetadataRetriever
+        // sessions on the same source was doing the same native setDataSource work twice.
+        // `probeVideo` folds the "has video track?" and "what's the shortest edge?" questions
+        // into one MediaMetadataRetriever pass so SAF content:// and file:// URIs are handled
+        // uniformly (both via the Context + Uri overload).
+        val probe = withContext(Dispatchers.IO) { probeVideo(inputPath) }
         if (probe != null && !probe.hasVideoTrack) {
             throw VideoCompressionError.UnsupportedSourceFormat(
                 "Input has no video track (only audio): $inputPath",
             )
         }
+        val sourceShortSide = probe?.shortSide
         try {
             withContext(Dispatchers.Main) {
                 val context = KompressorContext.appContext
@@ -158,11 +155,9 @@ internal class AndroidVideoCompressor(
         // Use the addItem(...) builder API — the vararg/List Builder constructors are
         // @Deprecated in Media3 1.10 (the trackTypes-based constructor + addItem is the
         // forward-compatible path).
-        val trackTypes = setOf(
-            androidx.media3.common.C.TRACK_TYPE_AUDIO,
-            androidx.media3.common.C.TRACK_TYPE_VIDEO,
-        )
-        val sequence = EditedMediaItemSequence.Builder(trackTypes).addItem(item).build()
+        val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
+            .addItem(item)
+            .build()
         val builder = Composition.Builder(sequence)
         if (config.dynamicRange == DynamicRange.SDR) {
             builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
@@ -190,11 +185,11 @@ internal class AndroidVideoCompressor(
      * fails fast with a typed error instead of letting Media3 surface a generic encoder-init
      * failure deep in the export pipeline.
      */
-    private fun requireHdr10Hevc(config: VideoCompressionConfig) {
+    private fun requireHdr10Hevc(codec: VideoCodec) {
         if (!deviceSupportsHdr10Hevc()) {
             throw VideoCompressionError.UnsupportedSourceFormat(
                 details = "HEVC Main10 HDR10 encoder unavailable on this device " +
-                    "(requested DynamicRange.HDR10 with codec=${config.codec})",
+                    "(requested DynamicRange.HDR10 with codec=$codec)",
             )
         }
     }
@@ -252,50 +247,46 @@ private fun MaxResolution.toPresentationOrNull(sourceShortSide: Int?): Presentat
             }
     }
 
-/** Summary of the track layout in the input container. */
-internal data class VideoTrackProbe(val hasVideoTrack: Boolean)
+/** Combined probe result: whether a video track exists and the source's shortest edge. */
+internal data class VideoProbe(val hasVideoTrack: Boolean, val shortSide: Int?)
 
 /**
- * Best-effort probe of the input container to determine whether a video track is present.
- * Returns `null` when the file can't be opened; callers should treat that as "unknown, let the
- * downstream pipeline report its own error" rather than a hard pre-flight rejection.
+ * Best-effort single-pass probe: whether the container has a video track AND what its shortest
+ * edge is, from one [MediaMetadataRetriever] open. Returns `null` when the source can't be
+ * read at all — callers should treat that as "unknown, let the downstream pipeline report its
+ * own error" rather than a hard pre-flight rejection.
+ *
+ * Handles `content://` (SAF) and `file://` URIs via the `setDataSource(Context, Uri)` overload;
+ * plain `setDataSource(String)` silently fails on content URIs, which would nil out
+ * [VideoProbe.hasVideoTrack] and let audio-only SAF inputs slip past the pre-flight.
  */
 @Suppress("TooGenericExceptionCaught")
-internal fun probeVideoTracks(inputPath: String): VideoTrackProbe? = try {
-    val extractor = MediaExtractor().apply { setDataSource(inputPath) }
-    try {
-        val hasVideo = (0 until extractor.trackCount).any { i ->
-            extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-        }
-        VideoTrackProbe(hasVideoTrack = hasVideo)
-    } finally {
-        extractor.release()
-    }
-} catch (_: Throwable) {
-    null
-}
-
-/**
- * Best-effort probe of a video's shortest edge via [MediaMetadataRetriever]. Returns `null`
- * when the file can't be opened or either dimension is missing / zero.
- */
-@Suppress("TooGenericExceptionCaught")
-internal fun probeVideoShortSide(inputPath: String): Int? = try {
+internal fun probeVideo(inputPath: String): VideoProbe? = try {
     val mmr = MediaMetadataRetriever()
     try {
-        mmr.setDataSource(inputPath)
+        mmr.applyDataSource(inputPath)
+        val hasVideo = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
         val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
         val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
-        if (w != null && h != null) minOf(w, h) else null
+        val shortSide = if (w != null && h != null) minOf(w, h) else null
+        VideoProbe(hasVideoTrack = hasVideo, shortSide = shortSide)
     } finally {
         mmr.release()
     }
 } catch (_: Throwable) {
     null
+}
+
+private fun MediaMetadataRetriever.applyDataSource(inputPath: String) {
+    if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
+        setDataSource(KompressorContext.appContext, Uri.parse(inputPath))
+    } else {
+        setDataSource(inputPath)
+    }
 }
 
 /**

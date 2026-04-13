@@ -77,7 +77,7 @@ class IosHdrCompressionTest {
     }
 
     @Test
-    fun hdr10Config_canBeProbed() {
+    fun hdr10Config_probeReturnsDeterministicBoolean() {
         // We deliberately do NOT call `compressor.compress(HDR10)` from the iOS simulator.
         // The simulator's AVFoundation HEVC encoder reports `canApplyOutputSettings = true`
         // for HDR10 settings but crashes the host process at AVAssetWriterInput init with an
@@ -86,11 +86,14 @@ class IosHdrCompressionTest {
         // and the compress path works; the device-side round-trip is validated by manual
         // smoke / Xcode UI test rather than by `iosSimulatorArm64Test`.
         //
-        // What we CAN assert here without crashing the test process: probing HDR10 capability
-        // via the public AVAssetWriter API doesn't crash and reports a deterministic boolean.
-        val supported = simulatorHasHevcMain10Encoder()
-        // Boolean range only — this is a probe assertion that the call returns at all.
-        assertTrue(supported || !supported, "Probe call must complete cleanly")
+        // What we CAN assert here: `canApplyOutputSettings` answers the HDR10 settings
+        // dictionary without throwing *and* returns a boolean (not null). That's the contract
+        // `requireHdr10HevcCapability` relies on to decide whether to raise the typed
+        // `UnsupportedSourceFormat` — if that ever regresses (crash, nil return), this test
+        // catches it before production callers see a mid-pipeline Obj-C NSException.
+        val first = simulatorHasHevcMain10Encoder()
+        val second = simulatorHasHevcMain10Encoder()
+        assertEquals(first, second, "HDR10 probe must be deterministic across repeated calls")
     }
 
     @Test

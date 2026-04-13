@@ -52,7 +52,7 @@ class HdrVideoCompressionTest {
     fun hevcSdrConfig_compressesSdrInput_producesHevcOutput() = runTest {
         val input = File(testDir, "in.mp4")
         val output = File(testDir, "out.mp4")
-        Mp4Generator.generateMp4(input.absolutePath, width = 32, height = 32, frameCount = 8, fps = 8)
+        Mp4Generator.generateMp4(input, width = 32, height = 32, frameCount = 8, fps = 8)
 
         val result = compressor.compress(
             inputPath = input.absolutePath,
@@ -69,7 +69,7 @@ class HdrVideoCompressionTest {
         val supported = deviceSupportsHdr10Hevc()
         val input = File(testDir, "in.mp4")
         val output = File(testDir, "out.mp4")
-        Mp4Generator.generateMp4(input.absolutePath, width = 32, height = 32, frameCount = 8, fps = 8)
+        Mp4Generator.generateMp4(input, width = 32, height = 32, frameCount = 8, fps = 8)
 
         val result = compressor.compress(
             inputPath = input.absolutePath,
