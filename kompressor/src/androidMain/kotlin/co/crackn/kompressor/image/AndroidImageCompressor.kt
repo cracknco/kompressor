@@ -3,13 +3,16 @@ package co.crackn.kompressor.image
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
 internal class AndroidImageCompressor : ImageCompressor {
@@ -22,9 +25,10 @@ internal class AndroidImageCompressor : ImageCompressor {
         require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         val startNanos = System.nanoTime()
 
-        val inputSize = File(inputPath).length()
-        val exifRotation = readExifRotation(inputPath)
-        val rawDims = decodeRawDimensions(inputPath)
+        val source = ImageSource.of(inputPath)
+        val inputSize = source.size()
+        val exifRotation = source.readExifRotation()
+        val rawDims = source.decodeRawDimensions()
         val orientedDims = applyRotationToDimensions(rawDims, exifRotation)
         currentCoroutineContext().ensureActive()
 
@@ -32,7 +36,7 @@ internal class AndroidImageCompressor : ImageCompressor {
             orientedDims.width, orientedDims.height,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        val bitmap = decodeSampledBitmap(inputPath, rawDims, target, exifRotation)
+        val bitmap = source.decodeSampledBitmap(rawDims, target, exifRotation)
         try {
             currentCoroutineContext().ensureActive()
             resizeAndWrite(bitmap, target, outputPath, config.quality)
@@ -45,20 +49,6 @@ internal class AndroidImageCompressor : ImageCompressor {
         CompressionResult(inputSize, outputSize, durationMs)
     }
 
-    private fun readExifRotation(path: String): ExifRotation {
-        val exif = ExifInterface(path)
-        return when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> ExifRotation(degrees = 90f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> ExifRotation(degrees = 180f)
-            ExifInterface.ORIENTATION_ROTATE_270 -> ExifRotation(degrees = 270f)
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifRotation(scaleX = -1f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifRotation(scaleY = -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> ExifRotation(degrees = 90f, scaleX = -1f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> ExifRotation(degrees = 270f, scaleX = -1f)
-            else -> ExifRotation()
-        }
-    }
-
     private fun applyRotationToDimensions(dims: ImageDimensions, rotation: ExifRotation): ImageDimensions =
         if (rotation.swapsDimensions) ImageDimensions(dims.height, dims.width) else dims
 
@@ -69,50 +59,6 @@ internal class AndroidImageCompressor : ImageCompressor {
         } finally {
             if (scaled !== bitmap) scaled.recycle()
         }
-    }
-
-    private fun decodeRawDimensions(path: String): ImageDimensions {
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
-        BitmapFactory.decodeFile(path, options)
-        require(options.outWidth > 0 && options.outHeight > 0) {
-            "Cannot decode image dimensions: $path"
-        }
-        return ImageDimensions(options.outWidth, options.outHeight)
-    }
-
-    private fun decodeSampledBitmap(
-        path: String,
-        rawDims: ImageDimensions,
-        target: ImageDimensions,
-        exifRotation: ExifRotation,
-    ): Bitmap {
-        val orientedRawDims = applyRotationToDimensions(rawDims, exifRotation)
-        val rawW = orientedRawDims.width
-        val rawH = orientedRawDims.height
-        val targetW = target.width
-        val targetH = target.height
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(rawW, rawH, targetW, targetH)
-        }
-        val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
-        return try {
-            applyExifRotation(decoded, exifRotation)
-        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-            decoded.recycle()
-            throw e
-        }
-    }
-
-    private fun applyExifRotation(bitmap: Bitmap, rotation: ExifRotation): Bitmap {
-        if (rotation.isIdentity) return bitmap
-        val matrix = Matrix().apply {
-            postRotate(rotation.degrees)
-            postScale(rotation.scaleX, rotation.scaleY)
-        }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        if (rotated !== bitmap) bitmap.recycle()
-        return rotated
     }
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
@@ -144,4 +90,146 @@ private data class ExifRotation(
 ) {
     val isIdentity: Boolean get() = degrees == 0f && scaleX == 1f && scaleY == 1f
     val swapsDimensions: Boolean get() = degrees == 90f || degrees == 270f
+}
+
+/**
+ * Abstracts the two input-path forms the compressor accepts — filesystem paths (`/sdcard/…`,
+ * `file://…`) and `content://` URIs delivered by share sheets / the photo picker / SAF. Both
+ * code paths need the same four operations (`size()`, `readExifRotation()`,
+ * `decodeRawDimensions()`, `decodeSampledBitmap(...)`); dispatching through a sealed interface
+ * keeps the compressor body linear while the two file-access layers (java.io.File vs
+ * ContentResolver) stay isolated.
+ */
+private sealed interface ImageSource {
+
+    fun size(): Long
+    fun readExifRotation(): ExifRotation
+    fun decodeRawDimensions(): ImageDimensions
+    fun decodeSampledBitmap(
+        rawDims: ImageDimensions,
+        target: ImageDimensions,
+        exifRotation: ExifRotation,
+    ): Bitmap
+
+    companion object {
+        fun of(inputPath: String): ImageSource =
+            if (inputPath.startsWith("content://")) ContentUriSource(Uri.parse(inputPath))
+            else FilePathSource(inputPath.removePrefix("file://"))
+    }
+}
+
+/** File-path source: mirrors the pre-refactor behaviour exactly so existing paths are untouched. */
+private class FilePathSource(private val path: String) : ImageSource {
+
+    override fun size(): Long = File(path).length()
+
+    override fun readExifRotation(): ExifRotation = decodeExifOrientation(ExifInterface(path))
+
+    override fun decodeRawDimensions(): ImageDimensions {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
+        BitmapFactory.decodeFile(path, options)
+        require(options.outWidth > 0 && options.outHeight > 0) {
+            "Cannot decode image dimensions: $path"
+        }
+        return ImageDimensions(options.outWidth, options.outHeight)
+    }
+
+    override fun decodeSampledBitmap(
+        rawDims: ImageDimensions,
+        target: ImageDimensions,
+        exifRotation: ExifRotation,
+    ): Bitmap {
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val decoded = BitmapFactory.decodeFile(path, options) ?: error("Failed to decode image: $path")
+        return rotateOrRecycle(decoded, exifRotation)
+    }
+}
+
+/** `content://` URI source — goes through [android.content.ContentResolver]. */
+private class ContentUriSource(private val uri: Uri) : ImageSource {
+
+    private val resolver by lazy { KompressorContext.appContext.contentResolver }
+
+    override fun size(): Long = resolver.openFileDescriptor(uri, "r")?.use { pfd ->
+        pfd.statSize.coerceAtLeast(0L)
+    } ?: 0L
+
+    override fun readExifRotation(): ExifRotation = openStream().use { stream ->
+        decodeExifOrientation(ExifInterface(stream))
+    }
+
+    override fun decodeRawDimensions(): ImageDimensions {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        openStream().use { stream ->
+            // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        require(options.outWidth > 0 && options.outHeight > 0) {
+            "Cannot decode image dimensions: $uri"
+        }
+        return ImageDimensions(options.outWidth, options.outHeight)
+    }
+
+    override fun decodeSampledBitmap(
+        rawDims: ImageDimensions,
+        target: ImageDimensions,
+        exifRotation: ExifRotation,
+    ): Bitmap {
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val decoded = openStream().use { stream ->
+            BitmapFactory.decodeStream(stream, null, options) ?: error("Failed to decode image: $uri")
+        }
+        return rotateOrRecycle(decoded, exifRotation)
+    }
+
+    private fun openStream(): InputStream =
+        resolver.openInputStream(uri) ?: error("ContentResolver returned null input stream for $uri")
+}
+
+private fun decodeExifOrientation(exif: ExifInterface): ExifRotation =
+    when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> ExifRotation(degrees = 90f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> ExifRotation(degrees = 180f)
+        ExifInterface.ORIENTATION_ROTATE_270 -> ExifRotation(degrees = 270f)
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> ExifRotation(scaleX = -1f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> ExifRotation(scaleY = -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> ExifRotation(degrees = 90f, scaleX = -1f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> ExifRotation(degrees = 270f, scaleX = -1f)
+        else -> ExifRotation()
+    }
+
+private fun buildSampledDecodeOptions(
+    rawDims: ImageDimensions,
+    target: ImageDimensions,
+    exifRotation: ExifRotation,
+): BitmapFactory.Options {
+    // Apply EXIF rotation to raw dims so the sample-size heuristic targets the post-rotation
+    // visible bitmap dimensions. Without this, a 4000×3000 JPEG tagged ROTATE_90 would be
+    // sample-sized as if it were 4000×3000 even though the visible image is 3000×4000.
+    val oriented = if (exifRotation.swapsDimensions) {
+        ImageDimensions(rawDims.height, rawDims.width)
+    } else {
+        rawDims
+    }
+    return BitmapFactory.Options().apply {
+        inSampleSize = calculateInSampleSize(oriented.width, oriented.height, target.width, target.height)
+    }
+}
+
+private fun rotateOrRecycle(decoded: Bitmap, rotation: ExifRotation): Bitmap = try {
+    if (rotation.isIdentity) {
+        decoded
+    } else {
+        val matrix = Matrix().apply {
+            postRotate(rotation.degrees)
+            postScale(rotation.scaleX, rotation.scaleY)
+        }
+        val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        if (rotated !== decoded) decoded.recycle()
+        rotated
+    }
+} catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+    decoded.recycle()
+    throw e
 }

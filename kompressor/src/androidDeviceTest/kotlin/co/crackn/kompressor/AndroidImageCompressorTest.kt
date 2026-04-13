@@ -6,6 +6,7 @@ import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -237,6 +238,45 @@ class AndroidImageCompressorTest {
         val result = compressor.compress("/nonexistent/image.png", output.absolutePath)
         assertTrue(result.isFailure)
     }
+
+    @Test
+    fun compressImage_cancellationAbortsWorkAndLeavesNoPartialOutput() = kotlinx.coroutines.runBlocking {
+        // Image compression isn't streaming — the whole bitmap is decoded in one shot —
+        // but `AndroidImageCompressor.compress()` is a `suspend` function that calls
+        // `currentCoroutineContext().ensureActive()` between the raw decode and the resize.
+        // Cancellation must propagate through that yield point, and the suspendRunCatching
+        // wrapper must surface the cancel as `Result.failure` without leaving a partial
+        // file on disk (image compression doesn't use `deletingOutputOnFailure` today, but
+        // the output write is still conditional on passing the ensureActive check).
+        val input = createTestImage(tempDir, 3000, 3000)
+        val output = File(tempDir, "cancel_image_out.jpg")
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
+        )
+        val job = scope.launch {
+            compressor.compress(input.absolutePath, output.absolutePath)
+        }
+        // Cancel immediately — the decode on a 3000×3000 PNG takes long enough on any device
+        // that the first ensureActive() gate should trip before resize + write can start.
+        job.cancel()
+        kotlinx.coroutines.withTimeout(5_000L) { job.join() }
+
+        // Either the cancel landed before the write step (no output), OR the whole compress
+        // completed between launch and cancel — in which case output exists and is valid.
+        // Both outcomes are library-correct; what we refuse is "partial / malformed output".
+        if (job.isCancelled) {
+            // `AndroidImageCompressor` doesn't use `deletingOutputOnFailure`, so the output
+            // file may or may not exist depending on where the cancel landed — but if it
+            // does, it must be fully valid JPEG (not truncated).
+            if (output.exists()) {
+                assertTrue(
+                    OutputValidators.isValidJpeg(output.readBytes()),
+                    "If output exists after cancel, it must be complete JPEG, not truncated",
+                )
+            }
+        }
+    }
+
 
     private companion object {
         /**

@@ -121,6 +121,15 @@ kover {
                 classes(
                     "co.crackn.kompressor.*.Android*",
                     "co.crackn.kompressor.*.Ios*",
+                    // `AndroidImageCompressor`'s ImageSource sealed hierarchy — file-path vs
+                    // content:// URI dispatching. Both implementations depend on
+                    // `BitmapFactory` / `ContentResolver`, which only exist on-device.
+                    // Exercised by `AndroidImageCompressorTest` + `ContentUriInputTest`.
+                    "co.crackn.kompressor.image.ImageSource",
+                    "co.crackn.kompressor.image.ImageSource\$*",
+                    "co.crackn.kompressor.image.FilePathSource",
+                    "co.crackn.kompressor.image.ContentUriSource",
+                    "co.crackn.kompressor.image.AndroidImageCompressorKt",
                     "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
                     "co.crackn.kompressor.video.AndroidVideoCompressorKt",
                     // Shared Media3 → coroutines glue. The Transformer listener + progress
