@@ -17,6 +17,7 @@ import platform.UIKit.UIGraphicsEndImageContext
 import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageJPEGRepresentation
+import platform.Foundation.NSFileManager
 
 /** iOS image compressor backed by [UIImage] and Core Graphics. */
 @OptIn(ExperimentalForeignApi::class)
@@ -28,6 +29,22 @@ internal class IosImageCompressor : ImageCompressor {
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
         require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
+        try {
+            doCompress(inputPath, outputPath, config)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
+    }
+
+    private suspend fun doCompress(
+        inputPath: String,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
         val startTime = CFAbsoluteTimeGetCurrent()
 
         val inputSize = nsFileSize(inputPath)
@@ -47,7 +64,7 @@ internal class IosImageCompressor : ImageCompressor {
         val outputSize = nsFileSize(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
 
-        CompressionResult(inputSize, outputSize, durationMs)
+        return CompressionResult(inputSize, outputSize, durationMs)
     }
 
     /**
@@ -65,8 +82,13 @@ internal class IosImageCompressor : ImageCompressor {
     }
 
     @Suppress("USELESS_ELVIS")
-    private fun loadImage(path: String): UIImage =
-        UIImage(contentsOfFile = path) ?: error("Failed to decode image: $path")
+    private fun loadImage(path: String): UIImage {
+        if (!NSFileManager.defaultManager.fileExistsAtPath(path)) {
+            throw ImageCompressionError.IoFailed("Input file not found: $path")
+        }
+        return UIImage(contentsOfFile = path)
+            ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $path")
+    }
 
     private fun resizeImageIfNeeded(
         image: UIImage,
@@ -87,7 +109,7 @@ internal class IosImageCompressor : ImageCompressor {
         try {
             image.drawInRect(CGRectMake(0.0, 0.0, width, height))
             return UIGraphicsGetImageFromCurrentImageContext()
-                ?: error("Failed to draw image into context")
+                ?: throw ImageCompressionError.EncodingFailed("Failed to draw image into context")
         } finally {
             UIGraphicsEndImageContext()
         }
@@ -96,10 +118,14 @@ internal class IosImageCompressor : ImageCompressor {
     private fun writeJpeg(image: UIImage, path: String, quality: Int) {
         val compressionQuality = quality.toDouble() / MAX_QUALITY
         val data = UIImageJPEGRepresentation(image, compressionQuality)
-            ?: error("Failed to create JPEG data")
+            ?: throw ImageCompressionError.EncodingFailed("UIImageJPEGRepresentation returned nil")
         val url = NSURL.fileURLWithPath(path)
         val written = data.writeToURL(url, atomically = true)
-        check(written) { "Failed to write JPEG to: $path (quality=$quality)" }
+        if (!written) {
+            throw ImageCompressionError.EncodingFailed(
+                "Failed to write JPEG to: $path (quality=$quality)",
+            )
+        }
     }
 
     private companion object {

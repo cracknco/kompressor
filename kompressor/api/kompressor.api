@@ -285,6 +285,41 @@ public final class co/crackn/kompressor/image/ImageCompressionConfig {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract class co/crackn/kompressor/image/ImageCompressionError : java/lang/RuntimeException {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$DecodingFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$EncodingFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$IoFailed : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$Unknown : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
 public abstract interface class co/crackn/kompressor/image/ImageCompressor {
 	public abstract fun compress-BWLJW6A (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
