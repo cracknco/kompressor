@@ -184,24 +184,23 @@ jobs:
             --no-performance-metrics \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ci-${RUN_ID}" \
-            --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
-            --directories-to-pull /sdcard
+            --environment-variables coverage=true,coverageFile=/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec \
+            --directories-to-pull /sdcard/Android/data/co.crackn.kompressor.test/files
 
-      # Download the JaCoCo `.ec` coverage file FTL pulled from `/sdcard/` so it can be
-      # merged into the Kover report in a later iteration (see TODO in `kompressor/build.gradle.kts`
-      # — unlocks raising the Kover gate from 85 → 90 % by covering device-only classes like
-      # `AndroidAudioCompressor`, `AndroidVideoCompressor`, `Media3ExportRunner`).
+      # Download the JaCoCo `.ec` coverage file FTL pulled from app-scoped external storage.
+      # FTL preserves the relative path under `<results-dir>/<device-id>/artifacts/`, so the
+      # pulled `coverage.ec` lands at `artifacts/Android/data/<pkg>/files/coverage.ec`. We
+      # copy it to a flat `build/ftl-coverage/coverage.ec` regardless so the downstream
+      # merged-coverage job doesn't need to know the path shape.
       - name: Download FTL device coverage
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p build/ftl-coverage
-          # FTL deposits the pulled artifacts under <results-dir>/<device-id>/artifacts/
-          # `coverage.ec` keeps that exact filename.
-          gcloud storage cp -r \
-            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
-            build/ftl-coverage/ || echo "No coverage.ec produced (likely a validation-time failure)"
+          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/Android/data/co.crackn.kompressor.test/files/coverage.ec"
+          gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
+            || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
 
       # `if-no-files-found: error`: when FTL's device-side JaCoCo emission fails to produce
