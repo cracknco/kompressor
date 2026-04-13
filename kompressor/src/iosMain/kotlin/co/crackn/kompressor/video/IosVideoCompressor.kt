@@ -46,6 +46,8 @@ import platform.AVFoundation.AVVideoWidthKey
 import platform.AVFoundation.AVVideoYCbCrMatrixKey
 import platform.AVFoundation.AVVideoYCbCrMatrix_ITU_R_2020
 import platform.AVFoundation.naturalSize
+import platform.AVFoundation.preferredTransform
+import platform.AVFoundation.setTransform
 import platform.AVFoundation.tracksWithMediaType
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreFoundation.CFRelease
@@ -236,7 +238,7 @@ private class IosVideoTranscodePipeline(
         currentCoroutineContext().ensureActive()
 
         val (reader, videoOutput, audioOutput) = createReader(videoTrack, audioTrack)
-        val (writer, videoInput, audioInput) = createWriter(targetW, targetH, audioTrack)
+        val (writer, videoInput, audioInput) = createWriter(targetW, targetH, audioTrack, videoTrack)
 
         try {
             startReaderWriter(reader, writer)
@@ -293,6 +295,7 @@ private class IosVideoTranscodePipeline(
         targetW: Int,
         targetH: Int,
         audioTrack: AVAssetTrack?,
+        videoTrack: AVAssetTrack,
     ): Triple<AVAssetWriter, AVAssetWriterInput, AVAssetWriterInput?> {
         val writer = AVAssetWriter.assetWriterWithURL(
             outputUrl, fileType = AVFileTypeMPEG4, error = null,
@@ -303,6 +306,14 @@ private class IosVideoTranscodePipeline(
             outputSettings = buildVideoSettings(targetW, targetH),
         )
         videoInput.expectsMediaDataInRealTime = false
+        // Preserve source orientation. `preferredTransform` is an affine matrix that
+        // maps the decoded buffer coordinates to display coordinates (e.g. a portrait
+        // recording captured as a 1920x1080 landscape buffer has a 90° transform so
+        // players render it upright). AVAssetWriterInput.transform carries this onto
+        // the output container's `tkhd` matrix, so the encoded frames stay in the raw
+        // buffer orientation (targetW x targetH = naturalSize scaled) while the
+        // displayed orientation matches the source. Must be set before addInput.
+        videoInput.setTransform(videoTrack.preferredTransform)
         writer.addInput(videoInput)
 
         val audioInput = audioTrack?.let {

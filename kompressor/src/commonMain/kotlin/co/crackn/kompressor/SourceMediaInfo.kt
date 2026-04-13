@@ -3,6 +3,10 @@ package co.crackn.kompressor
 /**
  * Describes the media tracks inside a source file. Fields are nullable because
  * not every field is available for every container / codec / platform probe API.
+ *
+ * [audioTrackCount] reflects the total number of audio tracks detected in the source container.
+ * Callers can use it to decide whether to surface a multi-track picker before invoking audio
+ * compression with a non-default [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex].
  */
 public data class SourceMediaInfo(
     /** Container MIME (e.g. `video/mp4`, `video/x-matroska`). */
@@ -42,6 +46,16 @@ public data class SourceMediaInfo(
      * the authoritative source there).
      */
     public val isPlayable: Boolean? = null,
+    /**
+     * Number of audio tracks detected in the source container. `0` when the source has no audio
+     * track (or the probe couldn't enumerate tracks). Callers pass an index in `[0, audioTrackCount)`
+     * as [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] to choose which track
+     * to compress.
+     *
+     * Appended last to keep the positional ABI of pre-existing fields stable for Java / non-Kotlin
+     * KMP consumers — Kotlin named-arg callers are unaffected either way.
+     */
+    public val audioTrackCount: Int = 0,
 )
 
 /**

@@ -54,6 +54,7 @@ private fun probeAndroidSource(inputPath: String): SourceMediaInfo {
 private fun buildSourceInfo(mmr: MediaMetadataRetriever, extractor: MediaExtractor): SourceMediaInfo {
     val videoFormat = findTrack(extractor, "video/")
     val audioFormat = findTrack(extractor, "audio/")
+    val audioTrackCount = countTracks(extractor, "audio/")
     val videoMime = videoFormat?.getString(MediaFormat.KEY_MIME)
     val videoProfile = videoFormat?.getIntOrNull(MediaFormat.KEY_PROFILE)
     val bitDepth = readProbeBitDepth(
@@ -83,6 +84,7 @@ private fun buildSourceInfo(mmr: MediaMetadataRetriever, extractor: MediaExtract
         audioCodec = audioFormat?.getString(MediaFormat.KEY_MIME),
         audioSampleRate = audioFormat?.getIntOrNull(MediaFormat.KEY_SAMPLE_RATE),
         audioChannels = audioFormat?.getIntOrNull(MediaFormat.KEY_CHANNEL_COUNT),
+        audioTrackCount = audioTrackCount,
     )
 }
 
@@ -93,6 +95,15 @@ private fun findTrack(extractor: MediaExtractor, mimePrefix: String): MediaForma
         if (mime != null && mime.startsWith(mimePrefix)) return fmt
     }
     return null
+}
+
+private fun countTracks(extractor: MediaExtractor, mimePrefix: String): Int {
+    var count = 0
+    for (i in 0 until extractor.trackCount) {
+        val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)
+        if (mime != null && mime.startsWith(mimePrefix)) count++
+    }
+    return count
 }
 
 private fun MediaFormat.getIntOrNull(key: String): Int? =
