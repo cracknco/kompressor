@@ -77,6 +77,13 @@ internal class AndroidAudioCompressor(
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error instead of letting
+        // Media3 surface an opaque decoder-init failure. `resolveMediaInputSize` returns 0 for
+        // unreadable sources as well, so we only reject when the file exists and is zero bytes;
+        // a genuinely missing file will surface its own error downstream.
+        if (inputPath.startsWith("/") && inputSize == 0L && File(inputPath).exists()) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
 
         rejectNonFileOutputPath(outputPath)
         val probeResult = probeAndValidateInput(inputPath, config)
@@ -213,7 +220,14 @@ internal class AndroidAudioCompressor(
                     "${probeResult.audioTrackCount} audio track(s)",
             )
         }
+        // Two complementary channel-count gates (both host-testable):
+        //  - `checkSupportedInputChannelCount` rejects inputs outside the envelope (7-channel
+        //    or 9+-channel sources have no mix path).
+        //  - `checkChannelMixSupported` rejects (input, target) pairs the mixer can't satisfy —
+        //    primarily upmix attempts like stereo → 5.1 — so the caller sees the typed
+        //    `UnsupportedConfiguration` instead of a Media3 mid-pipeline crash.
         checkSupportedInputChannelCount(probeResult.format?.channels)
+        checkChannelMixSupported(probeResult.format?.channels, config.channels.count)
         return probeResult
     }
 
@@ -340,7 +354,7 @@ private fun Int?.qualifiesForPassthrough(targetBitrate: Int): Boolean {
 
 /**
  * Build a short human-readable description of the source using [MediaMetadataRetriever].
- * Invoked only on the error path and only when [probeInputFormat] returned `null` (so the
+ * Invoked only on the error path and only when [probeAudioInput] returned `null` (so the
  * cheap in-memory probe wasn't available). Best-effort — returns null on any failure other
  * than cancellation.
  */
