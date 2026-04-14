@@ -184,22 +184,21 @@ jobs:
             --no-performance-metrics \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ci-${RUN_ID}" \
-            --environment-variables coverage=true,coverageFile=/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec \
-            --directories-to-pull /sdcard/Android/data/co.crackn.kompressor.test/files
+            --environment-variables coverage=true,coverageFile=/data/local/tmp/coverage.ec \
+            --directories-to-pull /data/local/tmp
 
-      # Download the JaCoCo `.ec` coverage file FTL pulled from app-scoped external storage.
-      # FTL preserves the relative path under `<results-dir>/<device-id>/artifacts/`, so the
-      # pulled `coverage.ec` lands at `artifacts/Android/data/<pkg>/files/coverage.ec`. We
-      # copy it to a flat `build/ftl-coverage/coverage.ec` regardless so the downstream
-      # merged-coverage job doesn't need to know the path shape.
+      # FTL preserves the pulled path's structure under `artifacts/` minus the root. Pulling
+      # `/data/local/tmp/coverage.ec` lands at `artifacts/coverage.ec` (the `/data/local/tmp`
+      # prefix is stripped, just like `/sdcard` was in earlier iterations).
       - name: Download FTL device coverage
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p build/ftl-coverage
-          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/Android/data/co.crackn.kompressor.test/files/coverage.ec"
-          gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
+          gcloud storage cp \
+            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
+            build/ftl-coverage/coverage.ec \
             || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
 
