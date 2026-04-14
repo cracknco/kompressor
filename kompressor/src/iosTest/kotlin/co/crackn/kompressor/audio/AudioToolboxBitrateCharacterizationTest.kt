@@ -3,6 +3,7 @@
 package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -32,6 +33,7 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMTimeMake
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
@@ -43,12 +45,20 @@ import kotlin.test.Test
 /**
  * Characterization test that empirically discovers which bitrate / channel-count combinations
  * Apple's AudioToolbox AAC-LC encoder accepts via [AVAssetWriterInput]. Sweeps the grid
- * {channels: 1, 2} x {bitrate: 32k-1280k, step 32k} at 44.1 kHz on the iOS simulator.
+ * {channels × bitrate: 32k–1280k, step 32k} at 44.1 kHz.
  * Surround (6, 8) is gated to hardware runs — see [CHANNEL_COUNTS] for why.
  *
- * This is a **discovery tool**, not a regression gate -- it always passes. Results are printed
- * to stdout and written to a UUID-suffixed file under `NSTemporaryDirectory()` (the path is
- * logged) for manual review and incorporation into `docs/audio-bitrate-matrix.md`.
+ * This is a **discovery tool**, not a regression gate — it always passes. Results are printed
+ * to stdout. When the `KOMPRESSOR_DOCS_DIR` environment variable is set, the matrix is also
+ * written to `$KOMPRESSOR_DOCS_DIR/audio-bitrate-matrix.md`; otherwise it falls back to a
+ * UUID-suffixed file in `NSTemporaryDirectory()`.
+ *
+ * Hardware run with surround + repo write-back:
+ * ```
+ * KOMPRESSOR_DOCS_DIR=/path/to/kompressor/docs \
+ *   xcodebuild test -scheme kompressor -destination 'platform=iOS,name=<device>' \
+ *   -only-testing:AudioToolboxBitrateCharacterizationTest
+ * ```
  */
 class AudioToolboxBitrateCharacterizationTest {
 
@@ -77,11 +87,38 @@ class AudioToolboxBitrateCharacterizationTest {
         }
         val markdown = formatMatrix(results)
         println(markdown)
-        // UUID-suffixed so parallel runs don't collide, and written outside `testDir` so the
-        // file survives `tearDown()` for manual inspection.
-        val matrixPath = NSTemporaryDirectory() + "audio-bitrate-matrix-${NSUUID().UUIDString}.md"
-        writeBytes(matrixPath, markdown.encodeToByteArray())
-        println("Matrix written to: $matrixPath")
+        writeMatrixFile(markdown, results)
+    }
+
+    private fun writeMatrixFile(
+        markdown: String,
+        results: Map<Pair<Int, Int>, Boolean>,
+    ) {
+        val docsDir = NSProcessInfo.processInfo.environment[DOCS_DIR_ENV_KEY] as? String
+        if (docsDir != null) {
+            val repoPath = "$docsDir/audio-bitrate-matrix.md"
+            spliceAcceptanceMatrix(repoPath, formatDocTable(results))
+            println("Matrix spliced into repo: $repoPath")
+        }
+        val tempPath = NSTemporaryDirectory() + "audio-bitrate-matrix-${NSUUID().UUIDString}.md"
+        writeBytes(tempPath, markdown.encodeToByteArray())
+        println("Matrix written to temp: $tempPath")
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun spliceAcceptanceMatrix(docPath: String, table: String) {
+        val existing = try {
+            readBytes(docPath).decodeToString()
+        } catch (_: Throwable) {
+            return
+        }
+        val start = existing.indexOf(SPLICE_START_MARKER)
+        val end = existing.indexOf(SPLICE_END_MARKER)
+        if (start < 0 || end < 0 || end <= start) return
+        val updated = existing.substring(0, start + SPLICE_START_MARKER.length) +
+            "\n" + table.trimEnd() + "\n" +
+            existing.substring(end)
+        writeBytes(docPath, updated.encodeToByteArray())
     }
 
     private fun generateFixture(channelCount: Int): String {
@@ -203,12 +240,11 @@ class AudioToolboxBitrateCharacterizationTest {
 
     @Suppress("MagicNumber")
     private fun channelLayoutData(channelCount: Int): NSData {
-        // Only mono/stereo are swept on the simulator — see [CHANNEL_COUNTS]. Extend this
-        // `when` (5.1 → tag 121, 7.1 → tag 128) when re-enabling the surround sweep on
-        // hardware.
         val tag: UInt = when (channelCount) {
             1 -> (100u shl 16) or 1u  // kAudioChannelLayoutTag_Mono
             2 -> (101u shl 16) or 2u  // kAudioChannelLayoutTag_Stereo
+            6 -> (121u shl 16) or 6u  // kAudioChannelLayoutTag_MPEG_5_1_A
+            8 -> (128u shl 16) or 8u  // kAudioChannelLayoutTag_MPEG_7_1_C
             else -> error("Unsupported channel count: $channelCount")
         }
         val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_SIZE)
@@ -219,6 +255,32 @@ class AudioToolboxBitrateCharacterizationTest {
         return bytes.usePinned { pinned ->
             NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
         }
+    }
+
+    private fun formatDocTable(results: Map<Pair<Int, Int>, Boolean>): String = buildString {
+        appendLine("| Bitrate (bps) | Mono (1ch) | Stereo (2ch) | 5.1 (6ch) | 7.1 (8ch) |")
+        appendLine("|---------------|:----------:|:------------:|:---------:|:---------:|")
+        for (bitrate in BITRATE_START..BITRATE_END step BITRATE_STEP) {
+            val cols = ALL_CHANNELS.joinToString(" | ") { ch ->
+                when {
+                    ch !in CHANNEL_COUNTS -> "?"
+                    results[ch to bitrate] == true -> "Y"
+                    else -> "N"
+                }
+            }
+            appendLine("| ${formatWithCommas(bitrate)} | $cols |")
+        }
+    }
+
+    @Suppress("MagicNumber")
+    private fun formatWithCommas(value: Int): String {
+        val s = value.toString()
+        return buildString {
+            s.reversed().forEachIndexed { i, c ->
+                if (i > 0 && i % 3 == 0) append(',')
+                append(c)
+            }
+        }.reversed()
     }
 
     private fun formatMatrix(results: Map<Pair<Int, Int>, Boolean>): String = buildString {
@@ -251,6 +313,10 @@ class AudioToolboxBitrateCharacterizationTest {
         const val BITRATE_END = 1_280_000
         const val BITRATE_STEP = 32_000
         const val AUDIO_CHANNEL_LAYOUT_SIZE = 12
+        const val DOCS_DIR_ENV_KEY = "KOMPRESSOR_DOCS_DIR"
+        const val SPLICE_START_MARKER = "<!-- ACCEPTANCE_MATRIX -->"
+        const val SPLICE_END_MARKER = "<!-- /ACCEPTANCE_MATRIX -->"
+        val ALL_CHANNELS = listOf(1, 2, 6, 8)
         // Surround (6, 8) excluded: iOS simulator's AAC encoder rejects surround channel
         // layouts with an uncatchable NSInvalidArgumentException. Run on a real device (A10+)
         // to probe surround caps — add 6 and 8 back to this list when running on hardware.
