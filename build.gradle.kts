@@ -19,51 +19,88 @@ dependencies {
     kover(project(":kompressor"))
 }
 
+// LOCKSTEP: this exclude list must stay in sync with `kompressor/build.gradle.kts`'s
+// `koverExcludedClasses`. The root `koverXmlReport` filters win over the module's, so any class
+// excluded in one list but not the other silently leaks into or out of the aggregate report —
+// `:kompressor:koverVerify` reads the root's resolved set. The delta between them is intentional
+// and narrow: only `co.crackn.kompressor.sample.*` lives at the root level because the sample
+// app isn't part of the library module. Every other entry must match.
+//
+// In merged mode (`-PkoverMergedGate=true`) the device-only excludes are dropped because FTL
+// device coverage covers them — same trim as the module's gate so the two stay in lockstep.
+val rootMergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
+
+val rootKoverExcludes =
+    buildList {
+        // Native-only platform glue — no host-side equivalent on either platform. Excluded in
+        // every mode because no test job can ever exercise these classes.
+        add("co.crackn.kompressor.AndroidKompressor")
+        add("co.crackn.kompressor.AndroidKompressor\$*")
+        add("co.crackn.kompressor.AndroidKompressorKt")
+        add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
+        add("co.crackn.kompressor.MediaCodecUtilsKt")
+        add("co.crackn.kompressor.IosKompressor")
+        add("co.crackn.kompressor.IosKompressorKt")
+        add("co.crackn.kompressor.IosDeviceCapabilitiesKt")
+        add("co.crackn.kompressor.IosFileUtils*")
+        // Sample app — no unit tests. Excluded irrespective of mode.
+        add("co.crackn.kompressor.sample.*")
+        if (!rootMergedCoverageGate) {
+            // Host-only mode: drop everything that needs a real codec stack. In merged mode
+            // device tests cover these so they are *included* in the gate.
+            add("co.crackn.kompressor.*.Android*")
+            add("co.crackn.kompressor.*.Ios*")
+            add("co.crackn.kompressor.image.ImageSource")
+            add("co.crackn.kompressor.image.ImageSource\$*")
+            add("co.crackn.kompressor.image.FilePathSource")
+            add("co.crackn.kompressor.image.FilePathSource\$*")
+            add("co.crackn.kompressor.image.ContentUriSource")
+            add("co.crackn.kompressor.image.ContentUriSource\$*")
+            add("co.crackn.kompressor.image.AndroidImageCompressorKt")
+            add("co.crackn.kompressor.image.ExifRotation")
+            add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
+            add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
+            add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor")
+            add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*")
+            add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
+            add("co.crackn.kompressor.video.VideoProbe")
+            add("co.crackn.kompressor.Media3ExportRunnerKt")
+            add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
+            add("co.crackn.kompressor.DeletingOutputOnFailureKt")
+            add("co.crackn.kompressor.SuspendRunCatchingKt")
+            add("co.crackn.kompressor.audio.InputAudioFormat")
+            add("co.crackn.kompressor.audio.AudioProbeResult")
+            add("co.crackn.kompressor.audio.AudioProcessorPlan")
+            add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
+        }
+    }
+
 kover {
+    // AGP's `enableCoverage = true` on `withDeviceTestBuilder` produces JaCoCo `.ec` files for
+    // connectedAndroidDeviceTest — there is no on-device IntelliJ-Coverage instrumentation. If
+    // Kover stays on its default IC tool, it produces `.ic` for the host test and can't read
+    // the device `.ec`, so the Android* compressor classes stay at 0% in the merged report.
+    // Switching globally to JaCoCo aligns both host and device binary-report formats (both
+    // produce `.ec`) and lets the merged-coverage job actually see device coverage.
+    useJacoco()
     reports {
         filters {
-            excludes {
-                // Exclude the same platform-specific classes as :kompressor does,
-                // plus all sample-app UI/DI code which has no unit tests.
-                // Must mirror `:kompressor`'s host-only exclude list in kompressor/build.gradle.kts
-                // — when the root `koverXmlReport` runs, its filters win over the module's, so any
-                // class missing here leaks back into `:kompressor:koverVerify`'s aggregate report
-                // (e.g. `FilePathSource`, `ContentUriSource`, `ImageSource` were dragging the gate
-                // down to 80.7 % even though `:kompressor` excluded them).
-                classes(
-                    "co.crackn.kompressor.*.Android*",
-                    "co.crackn.kompressor.*.Ios*",
-                    "co.crackn.kompressor.image.ImageSource",
-                    "co.crackn.kompressor.image.ImageSource\$*",
-                    "co.crackn.kompressor.image.FilePathSource",
-                    "co.crackn.kompressor.image.FilePathSource\$*",
-                    "co.crackn.kompressor.image.ContentUriSource",
-                    "co.crackn.kompressor.image.ContentUriSource\$*",
-                    "co.crackn.kompressor.image.AndroidImageCompressorKt",
-                    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-                    "co.crackn.kompressor.audio.AudioTrackExtractionKt",
-                    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
-                    "co.crackn.kompressor.Media3ExportRunnerKt",
-                    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
-                    "co.crackn.kompressor.audio.InputAudioFormat",
-                    "co.crackn.kompressor.audio.AudioProcessorPlan",
-                    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
-                    "co.crackn.kompressor.AndroidKompressor",
-                    "co.crackn.kompressor.AndroidKompressorKt",
-                    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.MediaCodecUtilsKt",
-                    "co.crackn.kompressor.IosKompressor",
-                    "co.crackn.kompressor.IosKompressorKt",
-                    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
-                    "co.crackn.kompressor.IosFileUtils*",
-                    "co.crackn.kompressor.sample.*",
-                )
-            }
+            // `reports.filters` cascades to all report variants including `verify`, per
+            // `KoverReportsConfig` docs. Empirically confirmed: with `rootKoverExcludes`
+            // declared only here, host-only mode passes at 85 % and merged-mode fails at
+            // ~52 % — exactly what you'd expect if the excludes were being honoured by
+            // `koverVerify`. Repeating the excludes inside `verify.rule` is unnecessary and
+            // not supported by Kover 0.9.8's `KoverVerifyRule` DSL anyway (no `filters { }`
+            // member — only `bound`/`minBound`/`maxBound`/`groupBy`/`disabled`).
+            excludes { classes(rootKoverExcludes) }
         }
         verify {
             rule {
                 bound {
-                    minValue = 70
+                    // Keep the root gate in lockstep with the module's two-mode gate so
+                    // `./gradlew koverVerify` (root) and `./gradlew :kompressor:koverVerify`
+                    // both signal the same regression at the same threshold.
+                    minValue = if (rootMergedCoverageGate) 90 else 85
                 }
             }
         }

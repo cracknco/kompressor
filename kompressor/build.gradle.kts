@@ -107,12 +107,18 @@ kotlin {
 //     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
 //     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
 //     before invoking `koverXmlReport`, so those classes show up in the merged report.
+//
+// LOCKSTEP: `koverExcludedClasses` below must stay in sync with the root `build.gradle.kts`'s
+// `rootKoverExcludes`. The root filters win over the module's for `:kompressor:koverVerify`,
+// so any drift silently changes what the quality gate evaluates. Only `sample.*` is allowed
+// to differ (root-only because the sample app isn't part of this module).
 val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
 
-// Kover 0.9.8 quirk: `reports.filters.excludes` is honoured by `koverXmlReport` but
-// `koverVerify` / `koverCachedVerify` read their filter set from `reports.verify.rule.filters`
-// and do NOT inherit from `reports.filters`. Apply the exclude list in both places so the
-// quality gate evaluates the same coverage as the XML report.
+// `reports.filters` cascades to every variant including `verify` per Kover 0.9.8's
+// `KoverReportsConfig` docs — `KoverVerifyRule` exposes no `filters { }` DSL of its own, so
+// declaring the excludes once here is both correct and the only option. Empirical check:
+// host-only mode passes 85 % and `-PkoverMergedGate=true` fails at ~52 % locally, which is
+// only possible if `koverVerify` is reading the `reports.filters` excludes.
 val koverExcludedClasses = buildList {
     // Platform glue — device or simulator only, no equivalent pure logic available
     // host-side. Excluded irrespective of host-only vs merged mode.
@@ -123,6 +129,7 @@ val koverExcludedClasses = buildList {
     add("co.crackn.kompressor.IosKompressor")
     add("co.crackn.kompressor.IosKompressorKt")
     add("co.crackn.kompressor.AndroidKompressor")
+    add("co.crackn.kompressor.AndroidKompressor\$*")
     add("co.crackn.kompressor.AndroidKompressorKt")
     if (!mergedCoverageGate) {
         // Host-only mode: add all classes that require a real codec stack / native
@@ -136,18 +143,28 @@ val koverExcludedClasses = buildList {
         add("co.crackn.kompressor.image.ContentUriSource")
         add("co.crackn.kompressor.image.ContentUriSource\$*")
         add("co.crackn.kompressor.image.AndroidImageCompressorKt")
+        add("co.crackn.kompressor.image.ExifRotation")
         add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
         add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
+        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor")
+        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*")
         add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
+        add("co.crackn.kompressor.video.VideoProbe")
         add("co.crackn.kompressor.Media3ExportRunnerKt")
         add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
+        add("co.crackn.kompressor.DeletingOutputOnFailureKt")
+        add("co.crackn.kompressor.SuspendRunCatchingKt")
         add("co.crackn.kompressor.audio.InputAudioFormat")
+        add("co.crackn.kompressor.audio.AudioProbeResult")
         add("co.crackn.kompressor.audio.AudioProcessorPlan")
         add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
     }
 }
 
 kover {
+    // Match the root: JaCoCo for both host and device so `connectedAndroidDeviceTest`'s `.ec`
+    // merges cleanly with `testAndroidHostTest`'s `.ec` in the aggregate report.
+    useJacoco()
     reports {
         filters {
             excludes { classes(koverExcludedClasses) }
@@ -159,6 +176,28 @@ kover {
                     minValue = if (mergedCoverageGate) 90 else 85
                 }
             }
+        }
+    }
+}
+
+// Inject the on-device JaCoCo `.exec` from `connectedAndroidDeviceTest` into Kover's artifact
+// generator. Kover 0.9.8's Android locator (`AbstractVariantArtifacts.fromOrigin`) filters its
+// per-variant test-task list to `AndroidUnitTest` subclasses only, so `connectedAndroidDeviceTest`
+// (a `DeviceProviderInstrumentTestTask`) is invisible to the auto-locator. The binary report
+// file already sits at `build/kover/bin-reports/connectedAndroidDeviceTest.exec` (the CI places
+// it there after FTL pulls it) and JaCoCo can read it; Kover just needs to be told the file is
+// part of its `reports` FileCollection. Reflection is necessary because `KoverArtifactGenerationTask`
+// is declared `internal` in the plugin and we can't reference its type directly.
+if (mergedCoverageGate) {
+    afterEvaluate {
+        val deviceExec = layout.buildDirectory.file("kover/bin-reports/connectedAndroidDeviceTest.exec")
+        tasks.matching { it.name.startsWith("koverGenerateArtifact") }.configureEach {
+            val task = this
+            @Suppress("UNCHECKED_CAST")
+            val reports = task.javaClass.getMethod("getReports")
+                .invoke(task) as org.gradle.api.file.ConfigurableFileCollection
+            reports.from(deviceExec)
+            task.inputs.file(deviceExec).optional(true).withPropertyName("deviceBinaryReport")
         }
     }
 }

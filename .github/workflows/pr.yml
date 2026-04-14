@@ -169,6 +169,19 @@ jobs:
       # at API 33 on FTL — the model/version matrix only supports redfin up to API 31.
       # Pixel 6 @ API 33 is a solid modern representative that exercises the real
       # MediaCodec stack Kompressor consumers will hit.
+      # Coverage emission: we want JaCoCo's `coverage.ec` to land somewhere that is
+      #   (a) writable by the app process (no storage permissions on the test APK, target SDK 36
+      #       rules out arbitrary /sdcard writes via scoped storage);
+      #   (b) pullable by FTL via `--directories-to-pull` (only /sdcard, /storage, /data/local/tmp
+      #       are supported).
+      # The only intersection is the app-scoped external files dir:
+      # `/sdcard/Android/data/<pkg>/files/`. It's not auto-created for an instrumentation-only
+      # APK install — `AACoverageBootstrapTest` (androidDeviceTest sources) runs first
+      # alphabetically and calls `getExternalFilesDir(null)` which creates the directory before
+      # `instrumentationRunFinished` dumps coverage. Using a `@BeforeClass`-style bootstrap
+      # test rather than a custom `AndroidJUnitRunner` because AGP's KMP Android library
+      # plugin overwrites any `<instrumentation>` declared in the test manifest with its
+      # auto-generated default — the custom-runner path is unreachable.
       - name: Run on Firebase Test Lab (Pixel 6 API 33)
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -184,33 +197,36 @@ jobs:
             --no-performance-metrics \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ci-${RUN_ID}" \
-            --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
-            --directories-to-pull /sdcard
+            --environment-variables coverage=true,coverageFile=/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec \
+            --directories-to-pull /sdcard/Android/data/co.crackn.kompressor.test/files
 
-      # Download the JaCoCo `.ec` coverage file FTL pulled from `/sdcard/` so it can be
-      # merged into the Kover report in a later iteration (see TODO in `kompressor/build.gradle.kts`
-      # — unlocks raising the Kover gate from 85 → 90 % by covering device-only classes like
-      # `AndroidAudioCompressor`, `AndroidVideoCompressor`, `Media3ExportRunner`).
+      # FTL preserves the full absolute path under `artifacts/` — empirically `/sdcard/...`
+      # lands as `artifacts/sdcard/...`. (Earlier comments claimed the `/sdcard` prefix was
+      # stripped; dumping the bucket after a successful run showed it isn't.) Copy the file to
+      # a flat `build/ftl-coverage/coverage.ec` so the downstream merged-coverage job doesn't
+      # need to know the path shape.
       - name: Download FTL device coverage
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p build/ftl-coverage
-          # FTL deposits the pulled artifacts under <results-dir>/<device-id>/artifacts/
-          # `coverage.ec` keeps that exact filename.
-          gcloud storage cp -r \
-            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
-            build/ftl-coverage/ || echo "No coverage.ec produced (likely a validation-time failure)"
+          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec"
+          gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
+            || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
 
+      # `if-no-files-found: error`: when FTL's device-side JaCoCo emission fails to produce
+      # the coverage file at `/sdcard/Android/data/<pkg>/files/coverage.ec`, fail here where
+      # the root cause is obvious instead of letting the downstream `merged-coverage` job fail
+      # later with a cryptic "Artifact not found".
       - name: Upload FTL coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ftl-device-coverage
           path: build/ftl-coverage/
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # ── Merged coverage gate (host + FTL device) ────────────────
   # Runs *after* both `test` (host) and `android-device-tests-ftl` complete. Host tests are
@@ -224,9 +240,12 @@ jobs:
     name: Merged coverage (host + device)
     runs-on: ubuntu-latest
     needs: [test, android-device-tests-ftl]
-    # Don't fail the CI if FTL itself failed for a transient reason (quota, network) — device
-    # coverage being missing is a lesser harm than blocking a merge on an unrelated infra issue.
-    if: always() && needs.test.result == 'success'
+    # Hard gate: requires both host tests AND FTL device tests to have succeeded. If FTL is
+    # quota-blocked or transiently failing the gate fails — by design. The user explicitly
+    # chose this trade-off ("no shortcut, going to prod") because a soft fallback would let
+    # coverage regressions slip through under FTL incidents. To unblock a release during a
+    # confirmed FTL outage, gate the PR via repository administrator override rather than
+    # weakening the workflow.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
@@ -240,52 +259,42 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
 
-      # `continue-on-error: true`: if FTL's upload step didn't run (quota hit, earlier
-       # failure, cancelled workflow), the artifact won't exist. Tolerate that so this job
-       # falls back to a host-only gate instead of blocking the merge on an infra hiccup.
+      # No `continue-on-error`: if the FTL upload step didn't run, this download fails, the
+      # job fails, and the merge is blocked. Honest signal beats a soft fallback that hides
+      # coverage regressions during infra incidents.
       - name: Download FTL device coverage
-        id: dl-ftl
-        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ftl-device-coverage
           path: ftl-coverage/
 
-      - name: Place device .ec where Kover expects it
-        id: place-coverage
+      - name: Place device .exec where Kover expects it
         run: |
-          # Kover wires JaCoCo coverage for androidDeviceTest via the
-          # `enableCoverage = true` flag on `withDeviceTestBuilder`. The build normally writes
-          # the .ec file to kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/
-          # after `connectedAndroidDeviceTest` runs. Since FTL runs the tests remotely, we
-          # drop the downloaded .ec in the same spot so `koverXmlReport` includes it in the
-          # merged report on the next invocation.
-          target_dir="kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest"
+          # Kover's Android variant locator only ingests `AndroidUnitTest`-subclass test tasks,
+          # so `connectedAndroidDeviceTest`'s coverage file is NOT auto-merged. The module's
+          # build.gradle.kts adds a reflection-based injection (`afterEvaluate {}`) that appends
+          # any `.exec` at `build/kover/bin-reports/connectedAndroidDeviceTest.exec` to Kover's
+          # artifact-generation task. We drop the FTL-pulled file there so that injection picks
+          # it up on `koverXmlReport` / `koverVerify`.
+          target_dir="kompressor/build/kover/bin-reports"
           mkdir -p "$target_dir"
-          if [ -f ftl-coverage/coverage.ec ]; then
-            cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
-            echo "Merged: $(ls -la $target_dir)"
-            echo "merged=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::No FTL coverage.ec — falling back to host-only gate."
-            echo "merged=false" >> "$GITHUB_OUTPUT"
+          if [ ! -f ftl-coverage/coverage.ec ]; then
+            echo "::error::FTL device coverage.ec missing — cannot enforce the merged 90% gate."
+            exit 1
           fi
+          cp ftl-coverage/coverage.ec "$target_dir/connectedAndroidDeviceTest.exec"
+          echo "Merged device coverage placed at $target_dir/connectedAndroidDeviceTest.exec"
+          ls -la "$target_dir"
 
       - name: Run Kover merged report
-        run: ./gradlew :kompressor:koverXmlReport
+        run: ./gradlew -PkoverMergedGate=true :kompressor:koverXmlReport
 
-      # Only run the tighter `-PkoverMergedGate=true` gate (90 %) when we actually have
-      # device `.ec` merged — otherwise the flag trims exclusions without the coverage data
-      # that justifies trimming them, and the job fails at ~52 % instead of ~90 %. Falling
-      # back to the same host-only 85 % gate as the `test` job keeps the signal honest
-      # without false-failing on infra issues.
-      - name: Kover merged quality gate
-        run: |
-          if [ "${{ steps.place-coverage.outputs.merged }}" = "true" ]; then
-            ./gradlew -PkoverMergedGate=true :kompressor:koverVerify
-          else
-            ./gradlew :kompressor:koverVerify
-          fi
+      # Root `koverVerify` already declares a task dependency on `:kompressor:koverVerify`
+      # (and on `sample:koverVerify` — sample is excluded entirely so its gate always passes),
+      # so invoking the single root task is equivalent to running both explicitly while keeping
+      # the build-log output deduplicated.
+      - name: Kover merged 90% gate (host + device)
+        run: ./gradlew -PkoverMergedGate=true koverVerify
 
       - name: Upload merged Kover report
         if: always()
