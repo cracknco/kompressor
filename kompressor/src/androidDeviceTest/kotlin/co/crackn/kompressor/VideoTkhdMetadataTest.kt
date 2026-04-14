@@ -14,16 +14,17 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Asserts the output MP4's `tkhd` rotation metadata is 0 after Media3 Transformer normalises
- * frames upright.
+ * Asserts the output MP4's `tkhd` rotation metadata is preserved through Media3 Transformer
+ * compression.
  *
  * This test complements [VideoRotationPreservationTest], which checks the *behavioural* invariant:
- * "displayed (post-rotation) dimensions match the source." That test allows Media3 to either keep
- * the rotation tag with raw W/H or bake rotation into frames with swapped W/H — both are visually
- * identical to players. This test pins the *structural* invariant: after normalisation the container
- * must report `rotation-degrees == 0`, because the encoded frames are already upright. Catching a
- * regression where Media3 writes a non-zero `tkhd` rotation despite producing upright frames would
- * confuse downstream tooling that trusts the container metadata over the pixel content.
+ * "displayed (post-rotation) dimensions match the source." That test is agnostic to *how* Media3
+ * achieves correct display — it allows either keeping the rotation tag with raw W/H or baking
+ * rotation into frames with swapped W/H. This test pins the *structural* invariant: Media3
+ * Transformer preserves the source `tkhd` rotation tag in the output container, keeping frames in
+ * their original orientation and relying on the player to apply rotation at display time. A change
+ * in this behaviour (e.g. zeroing rotation and baking it into frames) would alter the container
+ * metadata contract that downstream tooling may depend on.
  */
 class VideoTkhdMetadataTest {
 
@@ -42,26 +43,26 @@ class VideoTkhdMetadataTest {
     }
 
     @Test
-    fun rotation0_tkhdRotationIsZero() = runTest {
-        assertTkhdRotationZeroAfterCompression(inputRotation = 0)
+    fun rotation0_tkhdRotationPreserved() = runTest {
+        assertTkhdRotationPreserved(inputRotation = 0)
     }
 
     @Test
-    fun rotation90_tkhdRotationIsZero() = runTest {
-        assertTkhdRotationZeroAfterCompression(inputRotation = 90)
+    fun rotation90_tkhdRotationPreserved() = runTest {
+        assertTkhdRotationPreserved(inputRotation = 90)
     }
 
     @Test
-    fun rotation180_tkhdRotationIsZero() = runTest {
-        assertTkhdRotationZeroAfterCompression(inputRotation = 180)
+    fun rotation180_tkhdRotationPreserved() = runTest {
+        assertTkhdRotationPreserved(inputRotation = 180)
     }
 
     @Test
-    fun rotation270_tkhdRotationIsZero() = runTest {
-        assertTkhdRotationZeroAfterCompression(inputRotation = 270)
+    fun rotation270_tkhdRotationPreserved() = runTest {
+        assertTkhdRotationPreserved(inputRotation = 270)
     }
 
-    private suspend fun assertTkhdRotationZeroAfterCompression(inputRotation: Int) {
+    private suspend fun assertTkhdRotationPreserved(inputRotation: Int) {
         val input = Mp4Generator.generateMp4(
             output = File(tempDir, "input-$inputRotation.mp4"),
             width = INPUT_WIDTH,
@@ -81,9 +82,9 @@ class VideoTkhdMetadataTest {
 
         val tkhdRotation = readTkhdRotation(output)
         assertEquals(
-            0,
+            inputRotation,
             tkhdRotation,
-            "Expected tkhd rotation=0 after normalisation (input had rotation=$inputRotation)",
+            "Expected tkhd rotation=$inputRotation preserved after compression but was $tkhdRotation",
         )
     }
 
