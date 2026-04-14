@@ -204,7 +204,9 @@ jobs:
       # lands as `artifacts/sdcard/...`. (Earlier comments claimed the `/sdcard` prefix was
       # stripped; dumping the bucket after a successful run showed it isn't.) Copy the file to
       # a flat `build/ftl-coverage/coverage.ec` so the downstream merged-coverage job doesn't
-      # need to know the path shape.
+      # need to know the path shape. Fails fast with a proper error annotation if the pull
+      # fails — the previous `|| echo …` pattern swallowed the gcloud error and left the
+      # downstream `upload-artifact` step to surface an opaque "No files were found".
       - name: Download FTL device coverage
         if: always()
         env:
@@ -212,9 +214,11 @@ jobs:
         run: |
           mkdir -p build/ftl-coverage
           COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec"
-          gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
-            || echo "No coverage.ec produced (likely a validation-time failure)"
-          ls -la build/ftl-coverage/ || true
+          if ! gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec; then
+            echo "::error::No coverage.ec produced at $COV_PATH — FTL may have failed before the coverage dump, or AACoverageBootstrapTest did not run."
+            exit 1
+          fi
+          ls -la build/ftl-coverage/
 
       # `if-no-files-found: error`: when FTL's device-side JaCoCo emission fails to produce
       # the coverage file at `/sdcard/Android/data/<pkg>/files/coverage.ec`, fail here where
