@@ -43,11 +43,12 @@ import kotlin.test.Test
 /**
  * Characterization test that empirically discovers which bitrate / channel-count combinations
  * Apple's AudioToolbox AAC-LC encoder accepts via [AVAssetWriterInput]. Sweeps the grid
- * {channels: 1, 2, 6, 8} x {bitrate: 32k-512k, step 32k} at 44.1 kHz.
+ * {channels: 1, 2} x {bitrate: 32k-1280k, step 32k} at 44.1 kHz on the iOS simulator.
+ * Surround (6, 8) is gated to hardware runs — see [CHANNEL_COUNTS] for why.
  *
  * This is a **discovery tool**, not a regression gate -- it always passes. Results are printed
- * to stdout and written to `NSTemporaryDirectory()/audio-bitrate-matrix.md` for manual review
- * and incorporation into `docs/audio-bitrate-matrix.md`.
+ * to stdout and written to a UUID-suffixed file under `NSTemporaryDirectory()` (the path is
+ * logged) for manual review and incorporation into `docs/audio-bitrate-matrix.md`.
  */
 class AudioToolboxBitrateCharacterizationTest {
 
@@ -76,10 +77,11 @@ class AudioToolboxBitrateCharacterizationTest {
         }
         val markdown = formatMatrix(results)
         println(markdown)
-        writeBytes(
-            NSTemporaryDirectory() + "audio-bitrate-matrix.md",
-            markdown.encodeToByteArray(),
-        )
+        // UUID-suffixed so parallel runs don't collide, and written outside `testDir` so the
+        // file survives `tearDown()` for manual inspection.
+        val matrixPath = NSTemporaryDirectory() + "audio-bitrate-matrix-${NSUUID().UUIDString}.md"
+        writeBytes(matrixPath, markdown.encodeToByteArray())
+        println("Matrix written to: $matrixPath")
     }
 
     private fun generateFixture(channelCount: Int): String {
@@ -201,11 +203,12 @@ class AudioToolboxBitrateCharacterizationTest {
 
     @Suppress("MagicNumber")
     private fun channelLayoutData(channelCount: Int): NSData {
+        // Only mono/stereo are swept on the simulator — see [CHANNEL_COUNTS]. Extend this
+        // `when` (5.1 → tag 121, 7.1 → tag 128) when re-enabling the surround sweep on
+        // hardware.
         val tag: UInt = when (channelCount) {
             1 -> (100u shl 16) or 1u  // kAudioChannelLayoutTag_Mono
             2 -> (101u shl 16) or 2u  // kAudioChannelLayoutTag_Stereo
-            6 -> (121u shl 16) or 6u  // kAudioChannelLayoutTag_MPEG_5_1_D
-            8 -> (128u shl 16) or 8u  // kAudioChannelLayoutTag_MPEG_7_1_C
             else -> error("Unsupported channel count: $channelCount")
         }
         val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_SIZE)
