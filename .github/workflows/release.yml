@@ -21,13 +21,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
+      # Konan (Kotlin/Native) toolchain is not managed by setup-gradle; cache
+      # separately so iOS sim tests don't re-download the compiler each run.
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.konan
-          key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
       - name: Run tests (iOS simulator)
         run: ./gradlew :kompressor:iosSimulatorArm64Test
 
@@ -67,12 +69,7 @@ jobs:
         with:
           ruby-version: '4.0.2'
           bundler-cache: true
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
       - name: Publish to Maven Central
         run: bundle exec fastlane publish
         env:
