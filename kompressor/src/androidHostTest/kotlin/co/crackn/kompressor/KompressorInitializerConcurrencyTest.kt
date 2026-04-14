@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -39,7 +40,7 @@ class KompressorInitializerConcurrencyTest {
         val threads = List(threadCount) { index ->
             Thread {
                 try {
-                    barrier.await()
+                    barrier.await(5, TimeUnit.SECONDS)
                     KompressorInitializer().create(mockContext)
                     results[index] = KompressorContext.appContext
                 } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -51,7 +52,7 @@ class KompressorInitializerConcurrencyTest {
         }
 
         threads.forEach { it.start() }
-        latch.await()
+        latch.await(10, TimeUnit.SECONDS) shouldBe true
 
         errors.get() shouldBe 0
         KompressorContext.initCount shouldBe 1
