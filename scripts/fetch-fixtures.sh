@@ -128,7 +128,16 @@ fetch_fixture() {
             if [ -n "$source_url" ] && [ "$source_url" != "null" ]; then
                 log_info "Trying source URL: $source_url"
                 if curl -fsSL --retry 3 --retry-delay 2 -o "$target_file" "$source_url"; then
-                    log_ok "$name (downloaded from source)"
+                    local actual_sha256
+                    actual_sha256="$(sha256_check "$target_file")"
+                    if [ "$actual_sha256" != "$sha256" ]; then
+                        log_err "$name (SHA-256 mismatch from source URL)"
+                        log_info "Expected: $sha256"
+                        log_info "Got:      $actual_sha256"
+                        rm -f "$target_file"
+                        return 1
+                    fi
+                    log_ok "$name (downloaded from source, checksum verified)"
                 else
                     log_err "$name (all download attempts failed)"
                     return 1
