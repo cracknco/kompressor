@@ -116,7 +116,7 @@ class AudioToolboxBitrateCharacterizationTest {
         val end = existing.indexOf(SPLICE_END_MARKER)
         if (start < 0 || end < 0 || end <= start) return
         val updated = existing.substring(0, start + SPLICE_START_MARKER.length) +
-            "\n" + table + "\n\n" +
+            "\n" + table.trimEnd() + "\n" +
             existing.substring(end)
         writeBytes(docPath, updated.encodeToByteArray())
     }
@@ -243,8 +243,8 @@ class AudioToolboxBitrateCharacterizationTest {
         val tag: UInt = when (channelCount) {
             1 -> (100u shl 16) or 1u  // kAudioChannelLayoutTag_Mono
             2 -> (101u shl 16) or 2u  // kAudioChannelLayoutTag_Stereo
-            6 -> (121u shl 16) or 6u  // kAudioChannelLayoutTag_MPEG_5_1_D
-            8 -> (128u shl 16) or 8u  // kAudioChannelLayoutTag_MPEG_7_1_A
+            6 -> (121u shl 16) or 6u  // kAudioChannelLayoutTag_MPEG_5_1_A
+            8 -> (128u shl 16) or 8u  // kAudioChannelLayoutTag_MPEG_7_1_C
             else -> error("Unsupported channel count: $channelCount")
         }
         val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_SIZE)
