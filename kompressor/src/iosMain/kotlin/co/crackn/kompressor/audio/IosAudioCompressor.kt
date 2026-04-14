@@ -204,40 +204,56 @@ internal class IosAudioCompressor : AudioCompressor {
  * Per-channel caps derived from Apple's AudioToolbox AAC-LC documentation and empirically
  * confirmed by property-test shrinks (32 kHz mono @ 131 kbps, 22.05 kHz stereo @ 145 kbps
  * both reproduce the opaque "failed to append sample buffer" above their respective cap).
+ * Surround (5.1 / 7.1) caps use linear per-channel scaling as a starting point — run
+ * `AudioToolboxBitrateCharacterizationTest` to discover whether AudioToolbox imposes
+ * nonlinear total-bitrate caps for multichannel layouts, then update the table below.
  */
 internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
-    val maxPerChannel = when {
-        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
-        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
-        config.sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
-        else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
-    }
-    val maxBitrate = maxPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    val maxBitrate = iosAacMaxBitrate(config.sampleRate, config.channels)
     if (config.bitrate > maxBitrate) {
-        throw AudioCompressionError.UnsupportedConfiguration(
+        throw AudioCompressionError.UnsupportedBitrate(
             "iOS AAC encoder does not support ${config.bitrate} bps at " +
                 "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
                 "max supported is $maxBitrate bps",
         )
     }
-    // Apple's AAC-LC encoder also rejects bitrates below a per-sample-rate **minimum**.
-    // The surrounding failure mode is identical to the over-cap case ("failed to append
-    // sample buffer") so we fail fast with the same typed error. Minimums empirically
-    // determined from Apple AudioToolbox AAC-LC parameters and confirmed by property-test
-    // shrinks (32 kHz stereo @ 42 kbps fails; 32 kHz stereo @ 48 kbps succeeds).
-    val minPerChannel = when {
-        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
-        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
-        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
-    }
-    val minBitrate = minPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    val minBitrate = iosAacMinBitrate(config.sampleRate, config.channels)
     if (config.bitrate < minBitrate) {
-        throw AudioCompressionError.UnsupportedConfiguration(
+        throw AudioCompressionError.UnsupportedBitrate(
             "iOS AAC encoder does not support ${config.bitrate} bps at " +
                 "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
                 "minimum supported is $minBitrate bps",
         )
     }
+}
+
+/**
+ * Maximum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
+ * [sampleRate] and [channels]. The table is structured per (sample-rate tier, channel count)
+ * so that nonlinear surround caps can be encoded directly — see `docs/audio-bitrate-matrix.md`.
+ */
+internal fun iosAacMaxBitrate(sampleRate: Int, channels: AudioChannels): Int {
+    val maxPerChannelKbps = when {
+        sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
+        sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
+        sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
+        else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
+    }
+    return maxPerChannelKbps * IOS_KBPS_TO_BPS * channels.count
+}
+
+/**
+ * Minimum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
+ * [sampleRate] and [channels]. Below this floor, `AVAssetWriterInput` fails mid-encode
+ * with the same opaque error as the over-cap case.
+ */
+internal fun iosAacMinBitrate(sampleRate: Int, channels: AudioChannels): Int {
+    val minPerChannelKbps = when {
+        sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
+        sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
+        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
+    }
+    return minPerChannelKbps * IOS_KBPS_TO_BPS * channels.count
 }
 
 private const val IOS_KBPS_TO_BPS = 1_000

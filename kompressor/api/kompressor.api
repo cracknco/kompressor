@@ -238,6 +238,12 @@ public final class co/crackn/kompressor/audio/AudioCompressionError$Unknown : co
 	public final fun getDetails ()Ljava/lang/String;
 }
 
+public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedBitrate : co/crackn/kompressor/audio/AudioCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDetails ()Ljava/lang/String;
+}
+
 public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedConfiguration : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

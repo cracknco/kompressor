@@ -30,6 +30,18 @@ class AudioCompressionErrorTest {
     }
 
     @Test
+    fun unsupportedBitrateCarriesDetailsAndCause() {
+        val cause = RuntimeException("over cap")
+        val error = AudioCompressionError.UnsupportedBitrate(
+            "128000 bps exceeds max 64000 bps at 22050 Hz x 1 channel(s)",
+            cause,
+        )
+        error.details shouldBe "128000 bps exceeds max 64000 bps at 22050 Hz x 1 channel(s)"
+        error.cause shouldBe cause
+        checkNotNull(error.message) shouldContain "Unsupported bitrate"
+    }
+
+    @Test
     fun subtypesAreDistinguishableViaWhen() {
         val errors = listOf(
             AudioCompressionError.UnsupportedSourceFormat("a"),
@@ -37,14 +49,16 @@ class AudioCompressionErrorTest {
             AudioCompressionError.EncodingFailed("c"),
             AudioCompressionError.IoFailed("d"),
             AudioCompressionError.UnsupportedConfiguration("e"),
-            AudioCompressionError.Unknown("f"),
+            AudioCompressionError.UnsupportedBitrate("f"),
+            AudioCompressionError.Unknown("g"),
         )
         errors[0].shouldBeInstanceOf<AudioCompressionError.UnsupportedSourceFormat>()
         errors[1].shouldBeInstanceOf<AudioCompressionError.DecodingFailed>()
         errors[2].shouldBeInstanceOf<AudioCompressionError.EncodingFailed>()
         errors[3].shouldBeInstanceOf<AudioCompressionError.IoFailed>()
         errors[4].shouldBeInstanceOf<AudioCompressionError.UnsupportedConfiguration>()
-        errors[5].shouldBeInstanceOf<AudioCompressionError.Unknown>()
+        errors[5].shouldBeInstanceOf<AudioCompressionError.UnsupportedBitrate>()
+        errors[6].shouldBeInstanceOf<AudioCompressionError.Unknown>()
     }
 
     @Test
@@ -54,6 +68,7 @@ class AudioCompressionErrorTest {
         checkNotNull(AudioCompressionError.EncodingFailed("x").message) shouldContain "Encoding"
         checkNotNull(AudioCompressionError.IoFailed("x").message) shouldContain "IO"
         checkNotNull(AudioCompressionError.UnsupportedConfiguration("x").message) shouldContain "Unsupported configuration"
+        checkNotNull(AudioCompressionError.UnsupportedBitrate("x").message) shouldContain "Unsupported bitrate"
         checkNotNull(AudioCompressionError.Unknown("x").message) shouldContain "Compression failed"
     }
 }

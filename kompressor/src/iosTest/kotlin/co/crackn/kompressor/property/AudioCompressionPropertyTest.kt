@@ -92,7 +92,8 @@ class AudioCompressionPropertyTest {
                 )
             } else {
                 assertTrue(
-                    error is AudioCompressionError.UnsupportedConfiguration,
+                    error is AudioCompressionError.UnsupportedConfiguration ||
+                        error is AudioCompressionError.UnsupportedBitrate,
                     "Compression failed for $config with unexpected error: $error",
                 )
             }
