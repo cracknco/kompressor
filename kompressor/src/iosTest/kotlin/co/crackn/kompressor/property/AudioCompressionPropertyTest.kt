@@ -78,9 +78,9 @@ class AudioCompressionPropertyTest {
             val result = compressor.compress(inputPath, outputPath, config)
 
             // Either the compressor succeeds and produces a valid M4A, or it rejects the
-            // configuration with a typed `UnsupportedConfiguration` — both are well-defined
-            // library outcomes. Any other failure mode (opaque `Exception`, crash, silent
-            // wrong-format output) is a regression worth catching.
+            // configuration with a typed `UnsupportedConfiguration` (e.g. upmix) or
+            // `UnsupportedBitrate` (bitrate out of range) — both are well-defined library
+            // outcomes. Any other failure mode is a regression worth catching.
             val error = result.exceptionOrNull()
             if (result.isSuccess) {
                 val compression = result.getOrThrow()

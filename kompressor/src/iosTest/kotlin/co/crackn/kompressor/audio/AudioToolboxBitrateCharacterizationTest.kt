@@ -245,7 +245,7 @@ class AudioToolboxBitrateCharacterizationTest {
         const val SAMPLE_RATE = 44_100
         const val PCM_BIT_DEPTH = 16
         const val BITRATE_START = 32_000
-        const val BITRATE_END = 512_000
+        const val BITRATE_END = 1_280_000
         const val BITRATE_STEP = 32_000
         const val AUDIO_CHANNEL_LAYOUT_SIZE = 12
         // Surround (6, 8) excluded: iOS simulator's AAC encoder rejects surround channel

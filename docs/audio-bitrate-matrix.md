@@ -1,13 +1,14 @@
 # iOS AAC Encoder Bitrate Matrix
 
 Empirically discovered bitrate acceptance ranges for Apple's AudioToolbox AAC-LC encoder,
-reached via `AVAssetWriterInput` with `kAudioFormatMPEG4AAC`. Updated automatically by
-`AudioToolboxBitrateCharacterizationTest`.
+reached via `AVAssetWriterInput` with `kAudioFormatMPEG4AAC`. The characterization test
+(`AudioToolboxBitrateCharacterizationTest`) writes results to `NSTemporaryDirectory()` —
+copy them here after reviewing.
 
 ## Test Parameters
 
 - **Sample rate**: 44,100 Hz (standard; other rates tested in `IosAudioBitrateValidationTest`)
-- **Bitrate sweep**: 32,000 – 512,000 bps, step 32,000
+- **Bitrate sweep**: 32,000 – 1,280,000 bps, step 32,000
 - **Channel layouts**: Mono (1), Stereo (2), 5.1 (6), 7.1 (8)
 
 ## Acceptance Matrix

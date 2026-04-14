@@ -167,7 +167,7 @@ internal class IosAudioCompressor : AudioCompressor {
      * rejects bitrates above a per-sample-rate / per-channel ceiling. Crossing the ceiling
      * surfaces as an opaque `AVAssetWriterInput.appendSampleBuffer` failure mid-export. Rather
      * than let callers chase that, we reject the configuration upfront with a typed
-     * [AudioCompressionError.UnsupportedConfiguration].
+     * [AudioCompressionError.UnsupportedBitrate].
      *
      * The per-channel caps below were determined empirically by binary-searching the property
      * test (see `AudioCompressionPropertyTest`). The table mirrors Apple's published AAC-LC
