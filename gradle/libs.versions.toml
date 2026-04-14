@@ -27,6 +27,7 @@ lifecycleViewmodelCompose = "2.10.0"
 gadulka = "1.11.0"
 composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
+mockk = "1.14.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -56,6 +57,7 @@ navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-co
 lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 gadulka = { module = "eu.iamkonstantin.kotlin:gadulka", version.ref = "gadulka" }
 compose-multiplatform-media-player = { module = "network.chaintech:compose-multiplatform-media-player", version.ref = "composeMultiplatformMediaPlayer" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
