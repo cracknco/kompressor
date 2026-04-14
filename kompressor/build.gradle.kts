@@ -91,6 +91,10 @@ kotlin {
             implementation(libs.androidx.media3.common)
         }
 
+        getByName("androidHostTest").dependencies {
+            implementation(libs.mockk)
+        }
+
         getByName("androidDeviceTest").dependencies {
             implementation(libs.junit)
             implementation(libs.androidx.test.runner)
