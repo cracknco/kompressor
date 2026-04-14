@@ -78,20 +78,25 @@ fetch_fixture() {
 
     mkdir -p "$target_dir"
 
-    if [ -f "$target_file" ]; then
-        if [ -n "$sha256" ] && [ "$sha256" != "" ]; then
-            local actual_sha256
-            actual_sha256="$(sha256_check "$target_file")"
-            if [ "$actual_sha256" = "$sha256" ]; then
-                log_ok "$name (cached, checksum verified)"
-                return 0
-            else
-                log_warn "$name (checksum mismatch, re-downloading)"
-                rm -f "$target_file"
-            fi
-        else
+    # Fixtures with empty sha256 are planned but not yet available — skip gracefully.
+    if [ -z "$sha256" ] || [ "$sha256" = "" ]; then
+        if [ -f "$target_file" ]; then
             log_ok "$name (cached, no checksum to verify)"
+        else
+            log_warn "$name (planned — no sha256 yet, skipping)"
+        fi
+        return 0
+    fi
+
+    if [ -f "$target_file" ]; then
+        local actual_sha256
+        actual_sha256="$(sha256_check "$target_file")"
+        if [ "$actual_sha256" = "$sha256" ]; then
+            log_ok "$name (cached, checksum verified)"
             return 0
+        else
+            log_warn "$name (checksum mismatch, re-downloading)"
+            rm -f "$target_file"
         fi
     fi
 
@@ -107,16 +112,14 @@ fetch_fixture() {
         log_info "Downloading $name from R2..."
 
         if curl -fsSL --retry 3 --retry-delay 2 -o "$target_file" "$url"; then
-            if [ -n "$sha256" ] && [ "$sha256" != "" ]; then
-                local actual_sha256
-                actual_sha256="$(sha256_check "$target_file")"
-                if [ "$actual_sha256" != "$sha256" ]; then
-                    log_err "$name (SHA-256 mismatch after download)"
-                    log_info "Expected: $sha256"
-                    log_info "Got:      $actual_sha256"
-                    rm -f "$target_file"
-                    return 1
-                fi
+            local actual_sha256
+            actual_sha256="$(sha256_check "$target_file")"
+            if [ "$actual_sha256" != "$sha256" ]; then
+                log_err "$name (SHA-256 mismatch after download)"
+                log_info "Expected: $sha256"
+                log_info "Got:      $actual_sha256"
+                rm -f "$target_file"
+                return 1
             fi
             log_ok "$name (downloaded, checksum verified)"
         else
