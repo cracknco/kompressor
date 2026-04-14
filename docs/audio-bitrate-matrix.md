@@ -2,8 +2,8 @@
 
 Empirically discovered bitrate acceptance ranges for Apple's AudioToolbox AAC-LC encoder,
 reached via `AVAssetWriterInput` with `kAudioFormatMPEG4AAC`. The characterization test
-(`AudioToolboxBitrateCharacterizationTest`) writes results to `NSTemporaryDirectory()` —
-copy them here after reviewing.
+(`AudioToolboxBitrateCharacterizationTest`) prints results to stdout and, when the
+`KOMPRESSOR_DOCS_DIR` environment variable is set, writes directly to this file.
 
 ## Test Parameters
 
@@ -14,27 +14,53 @@ copy them here after reviewing.
 ## Acceptance Matrix
 
 > Run `AudioToolboxBitrateCharacterizationTest` on an iOS simulator or device to populate
-> this table with empirical results. The test prints the matrix to stdout and writes it to
-> `NSTemporaryDirectory()/audio-bitrate-matrix.md`.
+> this table with empirical results. Set `KOMPRESSOR_DOCS_DIR` to the repo's `docs/`
+> directory to auto-update this file; otherwise check `NSTemporaryDirectory()` for output.
 
+<!-- ACCEPTANCE_MATRIX -->
 | Bitrate (bps) | Mono (1ch) | Stereo (2ch) | 5.1 (6ch) | 7.1 (8ch) |
 |---------------|:----------:|:------------:|:---------:|:---------:|
-| 32,000        | ?          | ?            | ?         | ?         |
-| 64,000        | ?          | ?            | ?         | ?         |
-| 96,000        | ?          | ?            | ?         | ?         |
-| 128,000       | ?          | ?            | ?         | ?         |
-| 160,000       | ?          | ?            | ?         | ?         |
-| 192,000       | ?          | ?            | ?         | ?         |
-| 224,000       | ?          | ?            | ?         | ?         |
-| 256,000       | ?          | ?            | ?         | ?         |
-| 288,000       | ?          | ?            | ?         | ?         |
-| 320,000       | ?          | ?            | ?         | ?         |
-| 352,000       | ?          | ?            | ?         | ?         |
-| 384,000       | ?          | ?            | ?         | ?         |
-| 416,000       | ?          | ?            | ?         | ?         |
-| 448,000       | ?          | ?            | ?         | ?         |
-| 480,000       | ?          | ?            | ?         | ?         |
-| 512,000       | ?          | ?            | ?         | ?         |
+| 32,000        | Y          | N            | ?         | ?         |
+| 64,000        | Y          | Y            | ?         | ?         |
+| 96,000        | Y          | Y            | ?         | ?         |
+| 128,000       | Y          | Y            | ?         | ?         |
+| 160,000       | Y          | Y            | ?         | ?         |
+| 192,000       | Y          | Y            | ?         | ?         |
+| 224,000       | Y          | Y            | ?         | ?         |
+| 256,000       | Y          | Y            | ?         | ?         |
+| 288,000       | N          | Y            | ?         | ?         |
+| 320,000       | N          | Y            | ?         | ?         |
+| 352,000       | N          | N            | ?         | ?         |
+| 384,000       | N          | N            | ?         | ?         |
+| 416,000       | N          | N            | ?         | ?         |
+| 448,000       | N          | N            | ?         | ?         |
+| 480,000       | N          | N            | ?         | ?         |
+| 512,000       | N          | N            | ?         | ?         |
+| 544,000       | N          | N            | ?         | ?         |
+| 576,000       | N          | N            | ?         | ?         |
+| 608,000       | N          | N            | ?         | ?         |
+| 640,000       | N          | N            | ?         | ?         |
+| 672,000       | N          | N            | ?         | ?         |
+| 704,000       | N          | N            | ?         | ?         |
+| 736,000       | N          | N            | ?         | ?         |
+| 768,000       | N          | N            | ?         | ?         |
+| 800,000       | N          | N            | ?         | ?         |
+| 832,000       | N          | N            | ?         | ?         |
+| 864,000       | N          | N            | ?         | ?         |
+| 896,000       | N          | N            | ?         | ?         |
+| 928,000       | N          | N            | ?         | ?         |
+| 960,000       | N          | N            | ?         | ?         |
+| 992,000       | N          | N            | ?         | ?         |
+| 1,024,000     | N          | N            | ?         | ?         |
+| 1,056,000     | N          | N            | ?         | ?         |
+| 1,088,000     | N          | N            | ?         | ?         |
+| 1,120,000     | N          | N            | ?         | ?         |
+| 1,152,000     | N          | N            | ?         | ?         |
+| 1,184,000     | N          | N            | ?         | ?         |
+| 1,216,000     | N          | N            | ?         | ?         |
+| 1,248,000     | N          | N            | ?         | ?         |
+| 1,280,000     | N          | N            | ?         | ?         |
+<!-- /ACCEPTANCE_MATRIX -->
 
 ## Current Validation Table
 
