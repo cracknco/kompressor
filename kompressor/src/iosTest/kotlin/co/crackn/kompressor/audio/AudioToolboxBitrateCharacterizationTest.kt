@@ -248,6 +248,9 @@ class AudioToolboxBitrateCharacterizationTest {
         const val BITRATE_END = 512_000
         const val BITRATE_STEP = 32_000
         const val AUDIO_CHANNEL_LAYOUT_SIZE = 12
-        val CHANNEL_COUNTS = listOf(1, 2, 6, 8)
+        // Surround (6, 8) excluded: iOS simulator's AAC encoder rejects surround channel
+        // layouts with an uncatchable NSInvalidArgumentException. Run on a real device (A10+)
+        // to probe surround caps — add 6 and 8 back to this list when running on hardware.
+        val CHANNEL_COUNTS = listOf(1, 2)
     }
 }
