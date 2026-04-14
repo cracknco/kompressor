@@ -176,10 +176,12 @@ jobs:
       #       are supported).
       # The only intersection is the app-scoped external files dir:
       # `/sdcard/Android/data/<pkg>/files/`. It's not auto-created for an instrumentation-only
-      # APK install, so `CoverageReadyRunner` (see androidDeviceTest sources) pre-creates it in
-      # `onCreate` via `getExternalFilesDir(null)` before any test — and thus before the
-      # `instrumentationRunFinished` coverage dump — runs. `--test-runner-class` tells FTL to
-      # invoke that runner instead of the default `androidx.test.runner.AndroidJUnitRunner`.
+      # APK install — `AACoverageBootstrapTest` (androidDeviceTest sources) runs first
+      # alphabetically and calls `getExternalFilesDir(null)` which creates the directory before
+      # `instrumentationRunFinished` dumps coverage. Using a `@BeforeClass`-style bootstrap
+      # test rather than a custom `AndroidJUnitRunner` because AGP's KMP Android library
+      # plugin overwrites any `<instrumentation>` declared in the test manifest with its
+      # auto-generated default — the custom-runner path is unreachable.
       - name: Run on Firebase Test Lab (Pixel 6 API 33)
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -189,7 +191,6 @@ jobs:
             --project kompressor-library \
             --app "${{ steps.apk.outputs.path }}" \
             --test "${{ steps.apk.outputs.path }}" \
-            --test-runner-class co.crackn.kompressor.CoverageReadyRunner \
             --device model=oriole,version=33,locale=en,orientation=portrait \
             --timeout 15m \
             --no-record-video \
