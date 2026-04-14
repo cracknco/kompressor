@@ -84,7 +84,11 @@ Derived from the characterization test results and encoded in
 | ≤ 32,000 Hz   | 24 kbps    | 48 kbps      | 144 kbps  | 192 kbps  |
 | > 32,000 Hz   | 32 kbps    | 64 kbps      | 192 kbps  | 256 kbps  |
 
-> **Note**: Surround (5.1/7.1) values above use linear per-channel scaling as a starting
-> point. Run the characterization test to discover whether AudioToolbox imposes nonlinear
-> total-bitrate caps for multichannel layouts. Update this document and
-> `iosAacMaxBitrate()`/`iosAacMinBitrate()` with the empirical findings.
+> **Note on surround**: 5.1/7.1 values above use linear per-channel scaling as a starting
+> point. Run the characterization test on a real device (A10+) to discover whether
+> AudioToolbox imposes nonlinear total-bitrate caps for multichannel layouts.
+>
+> **Note on mono headroom**: At 44.1 kHz, mono empirically accepts up to 256 kbps while
+> the per-channel model predicts 160 kbps (160 kbps/ch × 1). Stereo matches exactly
+> (160 kbps/ch × 2 = 320 kbps). The current cap is conservatively safe — it rejects
+> valid mono bitrates (161–256k) but never accepts invalid ones.
