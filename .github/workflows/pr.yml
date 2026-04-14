@@ -200,18 +200,18 @@ jobs:
             --environment-variables coverage=true,coverageFile=/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec \
             --directories-to-pull /sdcard/Android/data/co.crackn.kompressor.test/files
 
-      # FTL preserves the pulled path's structure under `artifacts/` minus the `/sdcard` root.
-      # Pulling `/sdcard/Android/data/<pkg>/files/coverage.ec` lands at
-      # `artifacts/Android/data/<pkg>/files/coverage.ec`. Copy it to a flat
-      # `build/ftl-coverage/coverage.ec` so the downstream merged-coverage job doesn't need to
-      # know the path shape.
+      # FTL preserves the full absolute path under `artifacts/` — empirically `/sdcard/...`
+      # lands as `artifacts/sdcard/...`. (Earlier comments claimed the `/sdcard` prefix was
+      # stripped; dumping the bucket after a successful run showed it isn't.) Copy the file to
+      # a flat `build/ftl-coverage/coverage.ec` so the downstream merged-coverage job doesn't
+      # need to know the path shape.
       - name: Download FTL device coverage
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p build/ftl-coverage
-          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/Android/data/co.crackn.kompressor.test/files/coverage.ec"
+          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec"
           gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
             || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
