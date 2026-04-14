@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/fetch-fixtures.sh          # Fetch all missing fixtures
 #   ./scripts/fetch-fixtures.sh --verify # Verify checksums only (no downloads)
-#   ./scripts/fetch-fixtures.sh --clean  # Remove all downloaded fixtures
+#   ./scripts/fetch-fixtures.sh --clean  # Remove downloaded R2 fixtures (LFS untouched)
 #
 # See docs/adr/001-fixture-storage.md for the storage strategy.
 
@@ -79,13 +79,15 @@ fetch_fixture() {
     mkdir -p "$target_dir"
 
     # Fixtures with empty sha256 are planned but not yet available — skip gracefully.
+    # Return 2 = "planned/skipped" (distinct from 0 = success, 1 = failure).
     if [ -z "$sha256" ] || [ "$sha256" = "" ]; then
         if [ -f "$target_file" ]; then
             log_ok "$name (cached, no checksum to verify)"
+            return 0
         else
             log_warn "$name (planned — no sha256 yet, skipping)"
+            return 2
         fi
-        return 0
     fi
 
     if [ -f "$target_file" ]; then
@@ -101,8 +103,9 @@ fetch_fixture() {
     fi
 
     if [ "$storage" = "lfs" ]; then
-        if command -v git-lfs >/dev/null 2>&1; then
-            log_info "LFS fixture $name — run 'git lfs pull' to fetch"
+        if [ ! -f "$target_file" ]; then
+            log_err "$name (LFS file missing — run 'git lfs pull')"
+            return 1
         fi
         return 0
     fi
@@ -146,6 +149,9 @@ fetch_fixture() {
                 return 1
             fi
         fi
+    else
+        log_err "$name (unknown storage type: $storage)"
+        return 1
     fi
 }
 
@@ -209,7 +215,7 @@ clean_fixtures() {
 }
 
 fetch_all() {
-    local total=0 fetched=0 failed=0
+    local total=0 fetched=0 failed=0 planned=0
 
     # Pull LFS files first
     if command -v git-lfs >/dev/null 2>&1; then
@@ -228,15 +234,17 @@ fetch_all() {
 
         total=$((total + 1))
 
-        if fetch_fixture "$name" "$source_url" "$sha256" "$size" "$storage" "$category"; then
-            fetched=$((fetched + 1))
-        else
-            failed=$((failed + 1))
-        fi
+        local rc=0
+        fetch_fixture "$name" "$source_url" "$sha256" "$size" "$storage" "$category" || rc=$?
+        case $rc in
+            0) fetched=$((fetched + 1)) ;;
+            2) planned=$((planned + 1)) ;;
+            *) failed=$((failed + 1)) ;;
+        esac
     done < <(parse_manifest)
 
     echo ""
-    echo "Fixtures: $fetched ready, $failed failed (of $total total)"
+    echo "Fixtures: $fetched ready, $planned planned, $failed failed (of $total total)"
     [ "$failed" -eq 0 ]
 }
 

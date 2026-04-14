@@ -69,7 +69,9 @@ Fields:
 **LFS fixtures** (<=2 MB):
 ```bash
 cp my-new-fixture.mp4 fixtures/happy-path/video/
-git add fixtures/happy-path/video/my-new-fixture.mp4
+# -f is required because fixtures/.gitignore ignores media extensions by default
+# (to prevent R2 files from polluting git status). LFS files must be force-added.
+git add -f fixtures/happy-path/video/my-new-fixture.mp4
 ```
 
 **R2 fixtures** (>2 MB):

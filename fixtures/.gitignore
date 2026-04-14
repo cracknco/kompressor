@@ -1,0 +1,40 @@
+# R2-downloaded fixtures — not tracked by git.
+# LFS-tracked files are already committed and unaffected by .gitignore.
+# See docs/adr/001-fixture-storage.md for the storage strategy.
+
+# Audio
+*.aac
+*.mp3
+*.flac
+*.ogg
+*.opus
+*.wav
+*.m4a
+*.aiff
+*.amr
+*.3gp
+
+# Image
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+*.heif
+*.avif
+*.tiff
+*.bmp
+*.gif
+*.dng
+*.cr2
+*.nef
+*.exr
+
+# Video
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.m4v
+*.avi
+*.ts
