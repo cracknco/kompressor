@@ -268,22 +268,22 @@ jobs:
           name: ftl-device-coverage
           path: ftl-coverage/
 
-      - name: Place device .ec where Kover expects it
+      - name: Place device .exec where Kover expects it
         run: |
-          # Kover wires JaCoCo coverage for androidDeviceTest via the
-          # `enableCoverage = true` flag on `withDeviceTestBuilder`. The build normally writes
-          # the .ec file to kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/
-          # after `connectedAndroidDeviceTest` runs. Since FTL runs the tests remotely, we
-          # drop the downloaded .ec in the same spot so `koverXmlReport` includes it in the
-          # merged report on the next invocation.
-          target_dir="kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest"
+          # Kover's Android variant locator only ingests `AndroidUnitTest`-subclass test tasks,
+          # so `connectedAndroidDeviceTest`'s coverage file is NOT auto-merged. The module's
+          # build.gradle.kts adds a reflection-based injection (`afterEvaluate {}`) that appends
+          # any `.exec` at `build/kover/bin-reports/connectedAndroidDeviceTest.exec` to Kover's
+          # artifact-generation task. We drop the FTL-pulled file there so that injection picks
+          # it up on `koverXmlReport` / `koverVerify`.
+          target_dir="kompressor/build/kover/bin-reports"
           mkdir -p "$target_dir"
           if [ ! -f ftl-coverage/coverage.ec ]; then
             echo "::error::FTL device coverage.ec missing — cannot enforce the merged 90% gate."
             exit 1
           fi
-          cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
-          echo "Merged device coverage placed at $target_dir/connected-coverage.ec"
+          cp ftl-coverage/coverage.ec "$target_dir/connectedAndroidDeviceTest.exec"
+          echo "Merged device coverage placed at $target_dir/connectedAndroidDeviceTest.exec"
           ls -la "$target_dir"
 
       - name: Run Kover merged report

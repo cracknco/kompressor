@@ -35,6 +35,7 @@ val rootKoverExcludes =
         // Native-only platform glue — no host-side equivalent on either platform. Excluded in
         // every mode because no test job can ever exercise these classes.
         add("co.crackn.kompressor.AndroidKompressor")
+        add("co.crackn.kompressor.AndroidKompressor\$*")
         add("co.crackn.kompressor.AndroidKompressorKt")
         add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
         add("co.crackn.kompressor.MediaCodecUtilsKt")
@@ -56,18 +57,32 @@ val rootKoverExcludes =
             add("co.crackn.kompressor.image.ContentUriSource")
             add("co.crackn.kompressor.image.ContentUriSource\$*")
             add("co.crackn.kompressor.image.AndroidImageCompressorKt")
+            add("co.crackn.kompressor.image.ExifRotation")
             add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
             add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
+            add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor")
+            add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*")
             add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
+            add("co.crackn.kompressor.video.VideoProbe")
             add("co.crackn.kompressor.Media3ExportRunnerKt")
             add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
+            add("co.crackn.kompressor.DeletingOutputOnFailureKt")
+            add("co.crackn.kompressor.SuspendRunCatchingKt")
             add("co.crackn.kompressor.audio.InputAudioFormat")
+            add("co.crackn.kompressor.audio.AudioProbeResult")
             add("co.crackn.kompressor.audio.AudioProcessorPlan")
             add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
         }
     }
 
 kover {
+    // AGP's `enableCoverage = true` on `withDeviceTestBuilder` produces JaCoCo `.ec` files for
+    // connectedAndroidDeviceTest — there is no on-device IntelliJ-Coverage instrumentation. If
+    // Kover stays on its default IC tool, it produces `.ic` for the host test and can't read
+    // the device `.ec`, so the Android* compressor classes stay at 0% in the merged report.
+    // Switching globally to JaCoCo aligns both host and device binary-report formats (both
+    // produce `.ec`) and lets the merged-coverage job actually see device coverage.
+    useJacoco()
     reports {
         filters {
             // `reports.filters` cascades to all report variants including `verify`, per
