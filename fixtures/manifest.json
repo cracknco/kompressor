@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "_comment": "Kompressor test fixture manifest. Source of truth for all fixture metadata. See docs/adr/001-fixture-storage.md for the storage strategy and docs/contributing-fixtures.md for how to add entries.",
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "sample_mono_22k.flac",
+      "source_url": null,
+      "license": "Internal (generated)",
+      "sha256": "",
+      "size": 15360,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["flac", "mono", "22050hz", "16-bit"],
+      "test_cases": ["AndroidAudioCompressorTest.compressFlac"]
+    },
+    {
+      "name": "sample_mono_22k.mp3",
+      "source_url": null,
+      "license": "Internal (generated)",
+      "sha256": "",
+      "size": 8704,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["mp3", "cbr", "mono", "22050hz"],
+      "test_cases": ["AndroidAudioCompressorTest.compressMp3"]
+    },
+    {
+      "name": "sample_mono_24k.ogg",
+      "source_url": null,
+      "license": "Internal (generated)",
+      "sha256": "",
+      "size": 4864,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["ogg", "vorbis", "mono", "24000hz"],
+      "test_cases": ["AndroidAudioCompressorTest.compressOgg"]
+    },
+    {
+      "name": "sample_mono_44k.aac",
+      "source_url": null,
+      "license": "Internal (generated)",
+      "sha256": "",
+      "size": 8704,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["aac-lc", "mono", "44100hz"],
+      "test_cases": ["AndroidAudioCompressorTest.compressAac"]
+    },
+    {
+      "name": "kodim01.png",
+      "source_url": "https://r0k.us/graphics/kodak/kodak/kodim01.png",
+      "license": "Unrestricted",
+      "sha256": "",
+      "size": 0,
+      "storage": "r2",
+      "category": "happy-path/image",
+      "tags": ["png", "lossless", "768x512", "24-bit", "kodak"],
+      "test_cases": ["ImageCompressionTest.compressPngBaseline"]
+    },
+    {
+      "name": "kodim23.png",
+      "source_url": "https://r0k.us/graphics/kodak/kodak/kodim23.png",
+      "license": "Unrestricted",
+      "sha256": "",
+      "size": 0,
+      "storage": "r2",
+      "category": "happy-path/image",
+      "tags": ["png", "lossless", "768x512", "24-bit", "kodak"],
+      "test_cases": ["ImageCompressionTest.compressPngBaseline"]
+    },
+    {
+      "name": "exif-orientation-1.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_1.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-1", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation1"]
+    },
+    {
+      "name": "exif-orientation-2.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_2.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-2", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation2"]
+    },
+    {
+      "name": "exif-orientation-3.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_3.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-3", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation3"]
+    },
+    {
+      "name": "exif-orientation-4.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_4.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-4", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation4"]
+    },
+    {
+      "name": "exif-orientation-5.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_5.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-5", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation5"]
+    },
+    {
+      "name": "exif-orientation-6.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_6.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-6", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation6"]
+    },
+    {
+      "name": "exif-orientation-7.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_7.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-7", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation7"]
+    },
+    {
+      "name": "exif-orientation-8.jpg",
+      "source_url": "https://github.com/recurser/exif-orientation-examples/raw/main/Landscape_8.jpg",
+      "license": "Public domain",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "edge-cases/image",
+      "tags": ["jpeg", "exif", "orientation-8", "landscape"],
+      "test_cases": ["ExifOrientationTest.orientation8"]
+    },
+    {
+      "name": "webp-lossy.webp",
+      "source_url": "https://www.gstatic.com/webp/gallery/1.webp",
+      "license": "BSD/Apache 2.0",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/image",
+      "tags": ["webp", "lossy"],
+      "test_cases": ["ImageCompressionTest.compressWebpLossy"]
+    },
+    {
+      "name": "webp-lossless.webp",
+      "source_url": "https://www.gstatic.com/webp/gallery2/1.png",
+      "license": "BSD/Apache 2.0",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/image",
+      "tags": ["webp", "lossless"],
+      "test_cases": ["ImageCompressionTest.compressWebpLossless"]
+    },
+    {
+      "name": "bbb-h264-baseline-360p.mp4",
+      "source_url": "https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4",
+      "license": "CC BY 3.0",
+      "sha256": "",
+      "size": 0,
+      "storage": "r2",
+      "category": "happy-path/video",
+      "tags": ["h264", "baseline", "mp4", "360p", "30fps"],
+      "test_cases": ["VideoCompressionTest.compressH264Baseline"]
+    },
+    {
+      "name": "bbb-h264-main-720p.mp4",
+      "source_url": "https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4",
+      "license": "CC BY 3.0",
+      "sha256": "",
+      "size": 0,
+      "storage": "r2",
+      "category": "happy-path/video",
+      "tags": ["h264", "main", "mp4", "720p", "30fps"],
+      "test_cases": ["VideoCompressionTest.compressH264Main"]
+    },
+    {
+      "name": "ebu-sqam-speech.wav",
+      "source_url": "https://tech.ebu.ch/docs/tech/tech3253.htm",
+      "license": "EBU (non-commercial technical use)",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["wav", "pcm", "16-bit", "44100hz", "stereo", "speech"],
+      "test_cases": ["AudioCompressionTest.compressWavSpeech"]
+    },
+    {
+      "name": "ebu-sqam-castanets.wav",
+      "source_url": "https://tech.ebu.ch/docs/tech/tech3253.htm",
+      "license": "EBU (non-commercial technical use)",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/audio",
+      "tags": ["wav", "pcm", "16-bit", "44100hz", "stereo", "transients"],
+      "test_cases": ["AudioCompressionTest.compressWavTransients"]
+    }
+  ]
+}
