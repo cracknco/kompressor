@@ -169,6 +169,17 @@ jobs:
       # at API 33 on FTL — the model/version matrix only supports redfin up to API 31.
       # Pixel 6 @ API 33 is a solid modern representative that exercises the real
       # MediaCodec stack Kompressor consumers will hit.
+      # Coverage emission: we want JaCoCo's `coverage.ec` to land somewhere that is
+      #   (a) writable by the app process (no storage permissions on the test APK, target SDK 36
+      #       rules out arbitrary /sdcard writes via scoped storage);
+      #   (b) pullable by FTL via `--directories-to-pull` (only /sdcard, /storage, /data/local/tmp
+      #       are supported).
+      # The only intersection is the app-scoped external files dir:
+      # `/sdcard/Android/data/<pkg>/files/`. It's not auto-created for an instrumentation-only
+      # APK install, so `CoverageReadyRunner` (see androidDeviceTest sources) pre-creates it in
+      # `onCreate` via `getExternalFilesDir(null)` before any test — and thus before the
+      # `instrumentationRunFinished` coverage dump — runs. `--test-runner-class` tells FTL to
+      # invoke that runner instead of the default `androidx.test.runner.AndroidJUnitRunner`.
       - name: Run on Firebase Test Lab (Pixel 6 API 33)
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -178,33 +189,36 @@ jobs:
             --project kompressor-library \
             --app "${{ steps.apk.outputs.path }}" \
             --test "${{ steps.apk.outputs.path }}" \
+            --test-runner-class co.crackn.kompressor.CoverageReadyRunner \
             --device model=oriole,version=33,locale=en,orientation=portrait \
             --timeout 15m \
             --no-record-video \
             --no-performance-metrics \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ci-${RUN_ID}" \
-            --environment-variables coverage=true,coverageFile=/data/local/tmp/coverage.ec \
-            --directories-to-pull /data/local/tmp
+            --environment-variables coverage=true,coverageFile=/sdcard/Android/data/co.crackn.kompressor.test/files/coverage.ec \
+            --directories-to-pull /sdcard/Android/data/co.crackn.kompressor.test/files
 
-      # FTL preserves the pulled path's structure under `artifacts/` minus the root. Pulling
-      # `/data/local/tmp/coverage.ec` lands at `artifacts/coverage.ec` (the `/data/local/tmp`
-      # prefix is stripped, just like `/sdcard` was in earlier iterations).
+      # FTL preserves the pulled path's structure under `artifacts/` minus the `/sdcard` root.
+      # Pulling `/sdcard/Android/data/<pkg>/files/coverage.ec` lands at
+      # `artifacts/Android/data/<pkg>/files/coverage.ec`. Copy it to a flat
+      # `build/ftl-coverage/coverage.ec` so the downstream merged-coverage job doesn't need to
+      # know the path shape.
       - name: Download FTL device coverage
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p build/ftl-coverage
-          gcloud storage cp \
-            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
-            build/ftl-coverage/coverage.ec \
+          COV_PATH="gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/Android/data/co.crackn.kompressor.test/files/coverage.ec"
+          gcloud storage cp "$COV_PATH" build/ftl-coverage/coverage.ec \
             || echo "No coverage.ec produced (likely a validation-time failure)"
           ls -la build/ftl-coverage/ || true
 
       # `if-no-files-found: error`: when FTL's device-side JaCoCo emission fails to produce
-      # /sdcard/coverage.ec, fail here where the root cause is obvious instead of letting the
-      # downstream `merged-coverage` job fail later with a cryptic "Artifact not found".
+      # the coverage file at `/sdcard/Android/data/<pkg>/files/coverage.ec`, fail here where
+      # the root cause is obvious instead of letting the downstream `merged-coverage` job fail
+      # later with a cryptic "Artifact not found".
       - name: Upload FTL coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

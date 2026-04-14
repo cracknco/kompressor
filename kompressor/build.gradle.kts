@@ -114,10 +114,11 @@ kotlin {
 // to differ (root-only because the sample app isn't part of this module).
 val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
 
-// Kover 0.9.8 quirk: `reports.filters.excludes` is honoured by `koverXmlReport` but
-// `koverVerify` / `koverCachedVerify` read their filter set from `reports.verify.rule.filters`
-// and do NOT inherit from `reports.filters`. Apply the exclude list in both places so the
-// quality gate evaluates the same coverage as the XML report.
+// `reports.filters` cascades to every variant including `verify` per Kover 0.9.8's
+// `KoverReportsConfig` docs — `KoverVerifyRule` exposes no `filters { }` DSL of its own, so
+// declaring the excludes once here is both correct and the only option. Empirical check:
+// host-only mode passes 85 % and `-PkoverMergedGate=true` fails at ~52 % locally, which is
+// only possible if `koverVerify` is reading the `reports.filters` excludes.
 val koverExcludedClasses = buildList {
     // Platform glue — device or simulator only, no equivalent pure logic available
     // host-side. Excluded irrespective of host-only vs merged mode.

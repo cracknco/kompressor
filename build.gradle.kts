@@ -70,6 +70,13 @@ val rootKoverExcludes =
 kover {
     reports {
         filters {
+            // `reports.filters` cascades to all report variants including `verify`, per
+            // `KoverReportsConfig` docs. Empirically confirmed: with `rootKoverExcludes`
+            // declared only here, host-only mode passes at 85 % and merged-mode fails at
+            // ~52 % — exactly what you'd expect if the excludes were being honoured by
+            // `koverVerify`. Repeating the excludes inside `verify.rule` is unnecessary and
+            // not supported by Kover 0.9.8's `KoverVerifyRule` DSL anyway (no `filters { }`
+            // member — only `bound`/`minBound`/`maxBound`/`groupBy`/`disabled`).
             excludes { classes(rootKoverExcludes) }
         }
         verify {
