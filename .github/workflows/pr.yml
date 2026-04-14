@@ -3,6 +3,16 @@ name: PR checks
 on:
   pull_request:
     branches: [ main ]
+    # Skip heavy CI for doc-only changes. GitHub treats path-skipped workflows
+    # as "skipped" — which counts as success for branch-protection required
+    # checks — so this is safe even with required-check rules configured.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,12 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
       - name: Run Ktlint
         run: ./gradlew ktlintCheck
 
@@ -39,12 +44,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
       # `--no-configuration-cache`: Detekt's Gradle plugin currently can't serialise its
       # `__detektClasspath__` through Gradle 9.4's configuration cache and intermittently
       # fails with `error writing value of type 'DefaultConfigurableFileCollection'`. Until
@@ -84,12 +84,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
       - name: Run tests (Android host)
         run: ./gradlew testAndroidHostTest
       - name: API binary compatibility check
@@ -127,12 +122,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
 
       - name: Assemble device-test APK
         run: ./gradlew :kompressor:assembleAndroidDeviceTest
@@ -256,12 +246,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
 
       # No `continue-on-error`: if the FTL upload step didn't run, this download fails, the
       # job fails, and the merge is blocked. Honest signal beats a soft fallback that hides
@@ -321,13 +306,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.1.0
+      # Konan (Kotlin/Native) toolchain is not managed by setup-gradle; cache
+      # separately so iOS sim tests don't re-download the compiler each run.
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.konan
-          key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
       - name: Run iOS simulator tests
         run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
       - name: Upload iOS test report
