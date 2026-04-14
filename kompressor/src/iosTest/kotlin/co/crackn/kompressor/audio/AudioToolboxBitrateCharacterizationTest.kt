@@ -1,10 +1,14 @@
-@file:OptIn(ExperimentalForeignApi::class)
+@file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 
 package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.writeBytes
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
+import platform.AVFAudio.AVChannelLayoutKey
 import platform.AVFAudio.AVEncoderBitRateKey
 import platform.AVFAudio.AVFormatIDKey
 import platform.AVFAudio.AVLinearPCMBitDepthKey
@@ -26,10 +30,12 @@ import platform.CoreAudioTypes.kAudioFormatLinearPCM
 import platform.CoreAudioTypes.kAudioFormatMPEG4AAC
 import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMTimeMake
+import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
+import platform.Foundation.create
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -185,12 +191,32 @@ class AudioToolboxBitrateCharacterizationTest {
         AVNumberOfChannelsKey to channelCount,
     )
 
-    private fun encodingSettings(channelCount: Int, bitrate: Int): Map<Any?, *> = mapOf(
-        AVFormatIDKey to kAudioFormatMPEG4AAC,
-        AVEncoderBitRateKey to bitrate,
-        AVSampleRateKey to SAMPLE_RATE,
-        AVNumberOfChannelsKey to channelCount,
-    )
+    private fun encodingSettings(channelCount: Int, bitrate: Int): Map<Any?, *> = buildMap {
+        put(AVFormatIDKey, kAudioFormatMPEG4AAC)
+        put(AVEncoderBitRateKey, bitrate)
+        put(AVSampleRateKey, SAMPLE_RATE)
+        put(AVNumberOfChannelsKey, channelCount)
+        put(AVChannelLayoutKey, channelLayoutData(channelCount))
+    }
+
+    @Suppress("MagicNumber")
+    private fun channelLayoutData(channelCount: Int): NSData {
+        val tag: UInt = when (channelCount) {
+            1 -> (100u shl 16) or 1u  // kAudioChannelLayoutTag_Mono
+            2 -> (101u shl 16) or 2u  // kAudioChannelLayoutTag_Stereo
+            6 -> (121u shl 16) or 6u  // kAudioChannelLayoutTag_MPEG_5_1_D
+            8 -> (128u shl 16) or 8u  // kAudioChannelLayoutTag_MPEG_7_1_C
+            else -> error("Unsupported channel count: $channelCount")
+        }
+        val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_SIZE)
+        bytes[0] = (tag and 0xFFu).toByte()
+        bytes[1] = ((tag shr 8) and 0xFFu).toByte()
+        bytes[2] = ((tag shr 16) and 0xFFu).toByte()
+        bytes[3] = ((tag shr 24) and 0xFFu).toByte()
+        return bytes.usePinned { pinned ->
+            NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+        }
+    }
 
     private fun formatMatrix(results: Map<Pair<Int, Int>, Boolean>): String = buildString {
         appendLine("# AudioToolbox AAC-LC Bitrate Acceptance Matrix")
@@ -221,6 +247,7 @@ class AudioToolboxBitrateCharacterizationTest {
         const val BITRATE_START = 32_000
         const val BITRATE_END = 512_000
         const val BITRATE_STEP = 32_000
+        const val AUDIO_CHANNEL_LAYOUT_SIZE = 12
         val CHANNEL_COUNTS = listOf(1, 2, 6, 8)
     }
 }
