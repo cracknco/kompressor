@@ -100,17 +100,38 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
+      - name: Discover available FTL iOS devices
+        run: |
+          echo "::group::Available iOS models and versions"
+          gcloud firebase test ios models list --project kompressor-library
+          echo "::endgroup::"
+
       # Device: iPhone 14 Pro (A16 Bionic) — above the A10+ minimum for
       # HEVC Main10 + multi-channel AAC. iphone13pro deprecated from FTL 2024-04.
-      # Using iOS 17.4 — 16.6 removed from FTL pool, 17.5 not in FTL catalog.
+      - name: Select FTL device
+        id: ftl-device
+        run: |
+          # Pick the highest available iOS version for iphone14pro
+          VERSION=$(gcloud firebase test ios models list \
+            --project kompressor-library \
+            --filter="modelId=iphone14pro" \
+            --format="value(supportedVersionIds)" | tr ';' '\n' | sort -V | tail -1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::No iOS versions found for iphone14pro in FTL catalog"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "::notice::Selected FTL device: iphone14pro @ iOS ${VERSION}"
+
       - name: Run on Firebase Test Lab
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           TEST_ZIP: ${{ steps.package.outputs.zip }}
+          FTL_IOS_VERSION: ${{ steps.ftl-device.outputs.version }}
         run: |
           gcloud firebase test ios run \
             --test "${TEST_ZIP}" \
-            --device model=iphone14pro,version=17.4 \
+            --device model=iphone14pro,version=${FTL_IOS_VERSION} \
             --project kompressor-library \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ios-smoke-${RUN_ID}" \
