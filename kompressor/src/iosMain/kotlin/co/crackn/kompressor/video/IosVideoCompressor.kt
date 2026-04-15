@@ -188,11 +188,9 @@ internal class IosVideoCompressor : VideoCompressor {
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
 
-        // Settings matrix the runtime pre-flight uses to probe HDR10 support via
-        // `AVAssetWriter.canApplyOutputSettings`. 16×16 keeps the dictionary minimal — the
-        // dimensions are irrelevant to the capability check, only the codec/color/profile keys
-        // drive the answer.
-        private const val HDR10_PROBE_DIM = 16
+        // Minimum probe dimension for `canApplyOutputSettings` HDR10 pre-flight.
+        // 16×16 returns false on some devices; 64×64 matches the fixture and works reliably.
+        private const val HDR10_PROBE_DIM = 64
         private val HDR10_PROBE_SETTINGS: Map<Any?, Any?> = mapOf(
             AVVideoCodecKey to AVVideoCodecHEVC,
             AVVideoWidthKey to HDR10_PROBE_DIM,
