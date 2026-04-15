@@ -16,8 +16,9 @@ xcuserdata
 *firebase-adminsdk*.json
 *-service-account*.json
 
-# XcodeGen-generated project — regenerated from project.yml in CI.
+# XcodeGen-generated artifacts — regenerated from project.yml in CI.
 iosDeviceSmokeTests/*.xcodeproj
+iosDeviceSmokeTests/SmokeTests/
 
 # Local planning + agent worktree state — not part of the repo contract.
 .claude/

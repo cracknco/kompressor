@@ -91,7 +91,7 @@ jobs:
           fi
           zip -r "${GITHUB_WORKSPACE}/ios-smoke-tests.zip" \
             "${XCTESTRUN}" \
-            Release-iphoneos/
+            Debug-iphoneos/
           echo "zip=${GITHUB_WORKSPACE}/ios-smoke-tests.zip" >> "${GITHUB_OUTPUT}"
           ls -lh "${GITHUB_WORKSPACE}/ios-smoke-tests.zip"
 
