@@ -34,7 +34,7 @@ jobs:
   # the PR is blocked — use repository admin override for confirmed outages
   # rather than weakening the gate. Rachid explicitly mandated this.
   ios-device-smoke:
-    name: iOS device smoke (FTL — iPhone 14 Pro iOS 16)
+    name: iOS device smoke (FTL — iPhone 14 Pro iOS 17)
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -102,6 +102,7 @@ jobs:
 
       # Device: iPhone 14 Pro (A16 Bionic) — above the A10+ minimum for
       # HEVC Main10 + multi-channel AAC. iphone13pro deprecated from FTL 2024-04.
+      # Using iOS 17.5 — 16.6 was removed from FTL device pool (Infrastructure failure).
       - name: Run on Firebase Test Lab
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -109,7 +110,7 @@ jobs:
         run: |
           gcloud firebase test ios run \
             --test "${TEST_ZIP}" \
-            --device model=iphone14pro,version=16.6 \
+            --device model=iphone14pro,version=17.5 \
             --project kompressor-library \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ios-smoke-${RUN_ID}" \
