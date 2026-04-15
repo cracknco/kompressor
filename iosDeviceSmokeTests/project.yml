@@ -29,7 +29,7 @@ targets:
           CODE_SIGN_IDENTITY: "iPhone Developer"
     dependencies:
       - framework: ../kompressor/build/bin/iosArm64/releaseFramework/Kompressor.framework
-        embed: true
+        embed: false
 
   SmokeTests:
     type: bundle.unit-test
