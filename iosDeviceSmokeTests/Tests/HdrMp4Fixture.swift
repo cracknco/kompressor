@@ -3,6 +3,10 @@ import CoreVideo
 import Foundation
 import VideoToolbox
 
+enum HdrMp4FixtureError: Error {
+    case unsupportedDevice(String)
+}
+
 enum HdrMp4Fixture {
     static func generate(at url: URL, width: Int = 64, height: Int = 64, frameCount: Int = 8, fps: Int = 8) throws {
         let writer = try AVAssetWriter(url: url, fileType: .mp4)
@@ -19,6 +23,11 @@ enum HdrMp4Fixture {
                 AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main10_AutoLevel as String,
             ],
         ]
+        guard writer.canApply(outputSettings: settings, forMediaType: .video) else {
+            throw HdrMp4FixtureError.unsupportedDevice(
+                "HEVC Main10 BT.2020/PQ writer input not supported at \(width)x\(height)"
+            )
+        }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
