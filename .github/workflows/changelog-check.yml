@@ -1,0 +1,33 @@
+name: Changelog check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kompressor/src/**'
+
+jobs:
+  changelog-entry:
+    name: Unreleased entry required
+    runs-on: ubuntu-latest
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for Unreleased changelog entry
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          unreleased=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md \
+            | sed -n '/^[ +-]## \[Unreleased\]/,/^[ +-]## \[/p' \
+            | grep -cE '^\+[^+]' || true)
+          if [ "$unreleased" -gt 0 ]; then
+            echo "Changelog gate passed — $unreleased line(s) added under ## [Unreleased]."
+          else
+            echo "::error::PRs that modify kompressor/src/ must add an entry under '## [Unreleased]' in CHANGELOG.md. Add the 'skip-changelog' label to bypass (docs-only, ci-only changes)."
+            exit 1
+          fi
