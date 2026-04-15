@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "15.0"
   xcodeVersion: "16.0"
+  generateEmptyDirectories: true
 settings:
   SWIFT_VERSION: "5.10"
 
@@ -13,12 +14,16 @@ targets:
     platform: iOS
     sources:
       - path: App
+    info:
+      path: App/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketesthost
-        INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_IDENTITY: "iPhone Developer"
         CODE_SIGNING_REQUIRED: "YES"
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"
       configs:
         Release:
           CODE_SIGN_IDENTITY: "iPhone Developer"
@@ -31,12 +36,16 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+    info:
+      path: Tests/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketests
-        INFOPLIST_FILE: Tests/Info.plist
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmokeTestHost.app/SmokeTestHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"
     dependencies:
       - target: SmokeTestHost
       - framework: ../kompressor/build/bin/iosArm64/releaseFramework/Kompressor.framework
