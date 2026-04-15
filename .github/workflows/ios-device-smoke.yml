@@ -19,7 +19,7 @@ env:
   MOBILE_CI_BUDGET_MONTH: ${{ vars.MOBILE_CI_BUDGET_MONTH || '25' }}
 
 jobs:
-  # ── iOS device smoke tests (Firebase Test Lab — iPhone 14 Pro iOS 16) ──
+  # ── iOS device smoke tests (Firebase Test Lab — iPhone 16 Pro iOS 18) ──
   #
   # Runs HDR10 HEVC + 5.1/7.1 surround AAC round-trip tests on a real
   # iPhone via FTL. These code paths crash or silently fail on the iOS
@@ -34,7 +34,7 @@ jobs:
   # the PR is blocked — use repository admin override for confirmed outages
   # rather than weakening the gate. Rachid explicitly mandated this.
   ios-device-smoke:
-    name: iOS device smoke (FTL — iPhone 14 Pro iOS 16)
+    name: iOS device smoke (FTL — iPhone 16 Pro iOS 18)
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -100,10 +100,9 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      # Device: iPhone 14 Pro (A16 Bionic) — above the A10+ minimum for
-      # HEVC Main10 + multi-channel AAC. iphone13pro deprecated from FTL 2024-04.
-      # FTL catalog confirms iphone14pro only supports 16.6. Prior "Infrastructure
-      # failure" runs were transient FTL issues, not version mismatches.
+      # Device: iPhone 16 Pro (A18 Pro) — above the A10+ minimum for
+      # HEVC Main10 + multi-channel AAC. iphone14pro at 16.6 had persistent
+      # Infrastructure failures in FTL; iphone16pro at 18.3 is actively available.
       - name: Run on Firebase Test Lab
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -111,7 +110,7 @@ jobs:
         run: |
           gcloud firebase test ios run \
             --test "${TEST_ZIP}" \
-            --device model=iphone14pro,version=16.6 \
+            --device model=iphone16pro,version=18.3 \
             --project kompressor-library \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ios-smoke-${RUN_ID}" \
