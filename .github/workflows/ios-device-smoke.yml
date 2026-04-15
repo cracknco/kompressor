@@ -102,8 +102,8 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      # Device: iPhone 13 Pro (A15 Bionic) — above the A10+ minimum for
-      # HEVC Main10 + multi-channel AAC. Same results bucket as Android FTL.
+      # Device: iPhone 14 Pro (A16 Bionic) — above the A10+ minimum for
+      # HEVC Main10 + multi-channel AAC. iphone13pro deprecated from FTL 2024-04.
       - name: Run on Firebase Test Lab
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -111,7 +111,7 @@ jobs:
         run: |
           gcloud firebase test ios run \
             --test "${TEST_ZIP}" \
-            --device model=iphone13pro,version=16.6 \
+            --device model=iphone14pro,version=16.6 \
             --project kompressor-library \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ios-smoke-${RUN_ID}" \

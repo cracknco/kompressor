@@ -55,9 +55,9 @@ the `kompressor-library` project with the same threshold.
 
 | Property | Value |
 |---|---|
-| Model | iPhone 13 Pro (`iphone13pro`) |
+| Model | iPhone 14 Pro (`iphone14pro`) |
 | iOS version | 16.6 |
-| Chip | A15 Bionic |
+| Chip | A16 Bionic |
 | Minimum required | A10+ (iPhone 7+) for HEVC Main10 hardware encoding |
 
 ## Workflow
