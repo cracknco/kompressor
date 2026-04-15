@@ -34,7 +34,7 @@ enum HdrMp4Fixture {
             input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         }
 
-        if let objcError {
+        if let objcError = objcError as NSError? {
             let reason = objcError.localizedDescription
             let stack = (objcError.userInfo["NSExceptionCallStackSymbols"] as? [String])?.joined(separator: "\n") ?? "N/A"
             NSLog("[HDR10-fixture] AVAssetWriterInput threw NSException: %@", reason)
