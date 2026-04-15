@@ -5,6 +5,7 @@ import VideoToolbox
 
 enum HdrMp4FixtureError: Error {
     case unsupportedDevice(String)
+    case writerFailed(String)
 }
 
 enum HdrMp4Fixture {
@@ -23,12 +24,27 @@ enum HdrMp4Fixture {
                 AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main10_AutoLevel as String,
             ],
         ]
-        guard writer.canApply(outputSettings: settings, forMediaType: .video) else {
+
+        // AVAssetWriterInput.init throws an uncatchable ObjC NSException on
+        // devices where the hardware encoder rejects HEVC Main10 settings —
+        // even when canApply(outputSettings:) returns true. The only way to
+        // survive this is an ObjC @try/@catch block.
+        var input: AVAssetWriterInput!
+        var objcError: NSError?
+        let ok = ObjCExceptionCatcher.tryBlock({
+            input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        }, error: &objcError)
+
+        if !ok {
+            let reason = objcError?.localizedDescription ?? "Unknown"
+            let stack = (objcError?.userInfo["NSExceptionCallStackSymbols"] as? [String])?.joined(separator: "\n") ?? "N/A"
+            NSLog("[HDR10-fixture] AVAssetWriterInput threw NSException: %@", reason)
+            NSLog("[HDR10-fixture] Stack trace:\n%@", stack)
             throw HdrMp4FixtureError.unsupportedDevice(
-                "HEVC Main10 BT.2020/PQ writer input not supported at \(width)x\(height)"
+                "HEVC Main10 BT.2020/PQ AVAssetWriterInput.init failed: \(reason)"
             )
         }
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
@@ -47,7 +63,7 @@ enum HdrMp4Fixture {
             }
             let time = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
             guard let pool = adaptor.pixelBufferPool else {
-                throw NSError(domain: "HdrMp4Fixture", code: 2, userInfo: [NSLocalizedDescriptionKey: "Pixel buffer pool unavailable"])
+                throw HdrMp4FixtureError.writerFailed("Pixel buffer pool unavailable")
             }
             var pixelBuffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
@@ -65,7 +81,9 @@ enum HdrMp4Fixture {
         semaphore.wait()
 
         guard writer.status == .completed else {
-            throw writer.error ?? NSError(domain: "HdrMp4Fixture", code: 1)
+            throw HdrMp4FixtureError.writerFailed(
+                writer.error?.localizedDescription ?? "AVAssetWriter finished with status \(writer.status.rawValue)"
+            )
         }
     }
 }

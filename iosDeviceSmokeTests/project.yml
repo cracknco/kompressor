@@ -56,6 +56,7 @@ targets:
         CODE_SIGN_IDENTITY: ""
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmokeTestHost.app/SmokeTestHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_OBJC_BRIDGING_HEADER: Tests/BridgingHeader.h
         FRAMEWORK_SEARCH_PATHS:
           - "$(inherited)"
           - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"

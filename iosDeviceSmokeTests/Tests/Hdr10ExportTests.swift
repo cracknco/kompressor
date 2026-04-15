@@ -18,57 +18,32 @@ final class Hdr10ExportTests: XCTestCase {
     }
 
     override func tearDown() {
-        NSLog("[HDR10] tearDown — cleaning temp dir")
+        NSLog("[HDR10] tearDown")
         try? FileManager.default.removeItem(at: testDir)
         super.tearDown()
     }
 
-    /// Verify HDR10 HEVC compression either succeeds or returns a typed error
-    /// (not an uncatchable NSException crash). The critical property is graceful
-    /// handling, not guaranteed output — same pattern as the surround audio tests.
-    ///
-    /// Uses an SDR H.264 fixture as input because generating HEVC Main10 content
-    /// via AVAssetWriterInput crashes with an NSException on some devices even
-    /// when canApplyOutputSettings returns true.
     func testHdr10HevcRoundTrip_producesValidOutput() async throws {
         NSLog("[HDR10] test started")
         let inputURL = testDir.appendingPathComponent("in.mp4")
         let outputURL = testDir.appendingPathComponent("out.mp4")
 
-        // Probe: log whether this device advertises HEVC Main10 support.
-        // This is purely informational — we don't gate on it because canApply
-        // can return true while AVAssetWriterInput.init still crashes.
-        let probeURL = testDir.appendingPathComponent("probe.mp4")
-        if let probeWriter = try? AVAssetWriter(url: probeURL, fileType: .mp4) {
-            let probeSettings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.hevc,
-                AVVideoWidthKey: 64,
-                AVVideoHeightKey: 64,
-                AVVideoColorPropertiesKey: [
-                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_2020,
-                    AVVideoTransferFunctionKey: AVVideoTransferFunction_SMPTE_ST_2084_PQ,
-                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_2020,
-                ],
-                AVVideoCompressionPropertiesKey: [
-                    AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main10_AutoLevel as String,
-                ],
-            ]
-            let canApply = probeWriter.canApply(outputSettings: probeSettings, forMediaType: .video)
-            NSLog("[HDR10] Swift canApplyOutputSettings HEVC Main10 BT.2020/PQ 64x64: %@", canApply ? "YES" : "NO")
+        // Generate a real HEVC Main10 BT.2020/PQ fixture.
+        // HdrMp4Fixture wraps AVAssetWriterInput.init in ObjC @try/@catch
+        // to safely catch the NSException thrown on unsupported devices.
+        NSLog("[HDR10] generating HEVC Main10 fixture at %@", inputURL.path)
+        do {
+            try HdrMp4Fixture.generate(at: inputURL, width: 64, height: 64, frameCount: 8, fps: 8)
+        } catch let error as HdrMp4FixtureError {
+            NSLog("[HDR10] fixture generation failed (device limitation): %@", String(describing: error))
+            throw XCTSkip("Device does not support HEVC Main10 BT.2020/PQ encoding: \(error)")
         }
 
-        // Generate SDR H.264 fixture — safe on all devices, no NSException risk.
-        NSLog("[HDR10] generating SDR H.264 fixture at %@", inputURL.path)
-        try Mp4Fixture.generate(at: inputURL, width: 64, height: 64, frameCount: 8, fps: 8)
-        let inputExists = FileManager.default.fileExists(atPath: inputURL.path)
-        NSLog("[HDR10] fixture exists: %@", inputExists ? "YES" : "NO")
-        XCTAssertTrue(inputExists, "SDR fixture must exist")
-
-        if inputExists {
-            let attrs = try FileManager.default.attributesOfItem(atPath: inputURL.path)
-            let size = (attrs[.size] as? Int) ?? 0
-            NSLog("[HDR10] fixture size: %d bytes", size)
-        }
+        let inputAttrs = try FileManager.default.attributesOfItem(atPath: inputURL.path)
+        let inputSize = (inputAttrs[.size] as? Int) ?? 0
+        NSLog("[HDR10] fixture generated — %d bytes", inputSize)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inputURL.path), "HDR10 fixture must exist")
+        XCTAssertGreaterThan(inputSize, 0, "HDR10 fixture must be non-empty")
 
         let config = VideoCompressionConfig(
             codec: .hevc,
@@ -81,7 +56,7 @@ final class Hdr10ExportTests: XCTestCase {
             dynamicRange: .hdr10
         )
 
-        NSLog("[HDR10] calling kompressor.video.compress with HDR10 config")
+        NSLog("[HDR10] calling kompressor.video.compress")
         let result = try await kompressor.video.compress(
             inputPath: inputURL.path,
             outputPath: outputURL.path,
@@ -90,25 +65,19 @@ final class Hdr10ExportTests: XCTestCase {
         )
 
         NSLog("[HDR10] compress returned — result type: %@", String(describing: type(of: result as Any)))
-        NSLog("[HDR10] result description: %@", String(describing: result))
+        NSLog("[HDR10] result: %@", String(describing: result))
 
         let outputExists = FileManager.default.fileExists(atPath: outputURL.path)
         NSLog("[HDR10] output file exists: %@", outputExists ? "YES" : "NO")
 
-        // Primary assertion: we reached this point without an NSException crash.
-        // If the device supports HDR10 encoding, validate the output.
+        XCTAssertTrue(outputExists, "Output file must exist")
         if outputExists {
             let attrs = try FileManager.default.attributesOfItem(atPath: outputURL.path)
             let size = (attrs[.size] as? Int) ?? 0
             NSLog("[HDR10] output file size: %d bytes", size)
-            XCTAssertGreaterThan(size, 0, "Output must be non-empty")
-            XCTAssertNotNil(result, "Compression result must be non-nil")
-        } else {
-            NSLog("[HDR10] no output file — compressor returned typed error (expected on devices without HEVC Main10)")
+            XCTAssertGreaterThan(size, 0, "Output file must be non-empty")
         }
-        // If the file doesn't exist, the compressor returned a typed error
-        // (UnsupportedSourceFormat) instead of crashing — that's the correct behavior.
-
-        NSLog("[HDR10] test completed successfully (no crash)")
+        XCTAssertNotNil(result, "Compression result must be non-nil")
+        NSLog("[HDR10] test passed — HDR10 round-trip succeeded")
     }
 }
