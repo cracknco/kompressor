@@ -177,6 +177,7 @@ jobs:
           set -euo pipefail
           upload() {
             local file="$1" type="$2" name="$3"
+            echo "::group::Upload $name ($type, $(du -h "$file" | cut -f1))"
             local resp arn url
             resp=$(aws devicefarm create-upload \
               --region "$AWS_REGION" \
@@ -186,23 +187,43 @@ jobs:
               --output json)
             arn=$(echo "$resp" | jq -r '.upload.arn')
             url=$(echo "$resp" | jq -r '.upload.url')
+            echo "arn=$arn"
             curl -fsS -T "$file" -H "Content-Type: application/octet-stream" "$url"
+            local attempts=0
             while :; do
-              local status
-              status=$(aws devicefarm get-upload --region "$AWS_REGION" --arn "$arn" --query 'upload.status' --output text)
+              local getj status message
+              getj=$(aws devicefarm get-upload --region "$AWS_REGION" --arn "$arn" --output json)
+              status=$(echo "$getj" | jq -r '.upload.status')
               echo "  $name: $status"
               case "$status" in
-                SUCCEEDED) break;;
-                FAILED|ERRORED) echo "::error::Upload $name status=$status"; exit 1;;
-                *) sleep 5;;
+                SUCCEEDED)
+                  echo "::endgroup::"
+                  printf '%s' "$arn" > "$RUNNER_TEMP/${name}.arn"
+                  return 0
+                  ;;
+                FAILED|ERRORED)
+                  message=$(echo "$getj" | jq -r '.upload.metadata, .upload.message // empty')
+                  echo "::error::Upload $name status=$status: $message"
+                  echo "full response:"; echo "$getj"
+                  echo "::endgroup::"
+                  return 1
+                  ;;
+                *)
+                  attempts=$((attempts+1))
+                  if (( attempts > 60 )); then
+                    echo "::error::Upload $name stuck in $status after 5 min"
+                    echo "::endgroup::"
+                    return 1
+                  fi
+                  sleep 5
+                  ;;
               esac
             done
-            printf '%s' "$arn"
           }
-          APP_ARN=$(upload "$IPA" IOS_APP "SmokeTestHost.ipa")
-          TEST_ARN=$(upload "$TESTS" XCTEST_TEST_PACKAGE "SmokeTests.xctest.zip")
-          echo "app-arn=$APP_ARN" >> "$GITHUB_OUTPUT"
-          echo "test-arn=$TEST_ARN" >> "$GITHUB_OUTPUT"
+          upload "$IPA" IOS_APP "SmokeTestHost.ipa"
+          upload "$TESTS" XCTEST_TEST_PACKAGE "SmokeTests.xctest.zip"
+          echo "app-arn=$(cat "$RUNNER_TEMP/SmokeTestHost.ipa.arn")" >> "$GITHUB_OUTPUT"
+          echo "test-arn=$(cat "$RUNNER_TEMP/SmokeTests.xctest.zip.arn")" >> "$GITHUB_OUTPUT"
 
       - name: Schedule Device Farm run
         id: run
