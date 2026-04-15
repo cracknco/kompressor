@@ -23,7 +23,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           unreleased=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md \
-            | sed -n '/^[+-]## \[Unreleased\]/,/^[+-]## \[/p' \
+            | sed -n '/^[ +-]## \[Unreleased\]/,/^[ +-]## \[/p' \
             | grep -cE '^\+[^+]' || true)
           if [ "$unreleased" -gt 0 ]; then
             echo "Changelog gate passed — $unreleased line(s) added under ## [Unreleased]."
