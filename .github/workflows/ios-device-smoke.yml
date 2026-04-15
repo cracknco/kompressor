@@ -89,10 +89,8 @@ jobs:
             exit 1
           fi
 
-          # Remove unsigned dylibs that FTL's re-signing process
-          # doesn't handle — causes "Infrastructure failure" on device.
+          # Remove Xcode Previews dylib — FTL re-signing doesn't handle it.
           find Debug-iphoneos -name '__preview.dylib' -delete
-          find Debug-iphoneos -name '*.debug.dylib' -delete
           find Debug-iphoneos -name '*.dSYM' -type d -exec rm -rf {} + 2>/dev/null || true
 
           zip -r "${GITHUB_WORKSPACE}/ios-smoke-tests.zip" \
