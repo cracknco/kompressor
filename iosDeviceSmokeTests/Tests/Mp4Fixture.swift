@@ -28,8 +28,11 @@ enum Mp4Fixture {
                 Thread.sleep(forTimeInterval: 0.01)
             }
             let time = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
+            guard let pool = adaptor.pixelBufferPool else {
+                throw NSError(domain: "Mp4Fixture", code: 2, userInfo: [NSLocalizedDescriptionKey: "Pixel buffer pool unavailable"])
+            }
             var pixelBuffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pixelBuffer)
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
             guard let buffer = pixelBuffer else { continue }
             CVPixelBufferLockBaseAddress(buffer, [])
             let base = CVPixelBufferGetBaseAddress(buffer)!
