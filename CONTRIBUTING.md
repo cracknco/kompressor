@@ -10,7 +10,7 @@ Thanks for your interest in Kompressor! This guide will get you from zero to a p
 |------|----------------|-------|
 | **JDK** | 21 (Temurin recommended) | `java -version` to check |
 | **Android SDK** | API 24+ (compile SDK 36) | Install via Android Studio or `sdkmanager` |
-| **Xcode** | 16+ (iOS deployment target 16.0) | Required only for iOS development |
+| **Xcode** | 15.0+ | Required only for iOS targets (deployment target iOS 15+) |
 | **Kotlin** | 2.3.20 | Managed by Gradle — no manual install |
 | **Git LFS** | Latest | Required for test fixtures (`git lfs install`) |
 
@@ -77,7 +77,7 @@ tests in the wrong environment:
 | `androidDeviceTest` | Emulator / device | End-to-end golden + property tests for the actual transcoder | Media3 `Transformer`, codec behavior, AAC passthrough |
 | `iosTest` | iOS simulator | End-to-end tests for `IosVideoCompressor` / `IosAudioCompressor` | `AVAssetExportSession` / `AVAssetWriter` paths |
 
-> **CI note:** `androidDeviceTest` does NOT run in PR CI (requires KVM emulator).
+> **CI note:** `androidDeviceTest` runs on Firebase Test Lab (Pixel 6, API 33) in PR CI.
 > `iosTest` runs on `macos-latest` in both PR and release workflows.
 
 ---
