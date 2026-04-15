@@ -18,7 +18,6 @@ xcuserdata
 
 # XcodeGen-generated artifacts — regenerated from project.yml in CI.
 iosDeviceSmokeTests/*.xcodeproj
-iosDeviceSmokeTests/SmokeTests/
 
 # Local planning + agent worktree state — not part of the repo contract.
 .claude/
