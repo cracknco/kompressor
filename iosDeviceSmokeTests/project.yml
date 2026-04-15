@@ -25,7 +25,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketesthost
+        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.devicetest
         CODE_SIGN_IDENTITY: "iPhone Developer"
         CODE_SIGNING_REQUIRED: "YES"
         FRAMEWORK_SEARCH_PATHS:
@@ -50,7 +50,10 @@ targets:
       path: Tests/Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketests
+        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.devicetest.tests
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmokeTestHost.app/SmokeTestHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
         FRAMEWORK_SEARCH_PATHS:
