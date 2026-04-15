@@ -58,5 +58,3 @@ targets:
           - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"
     dependencies:
       - target: SmokeTestHost
-      - framework: ../kompressor/build/bin/iosArm64/releaseFramework/Kompressor.framework
-        embed: false
