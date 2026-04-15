@@ -65,6 +65,22 @@ kotlin {
             baseName = "Kompressor"
             isStatic = true
         }
+        val interopDir = project.file("src/nativeInterop/cinterop")
+        val targetLibDir = when (target.name) {
+            "iosArm64" -> "iosArm64"
+            "iosSimulatorArm64" -> "iosSimulatorArm64"
+            "iosX64" -> "iosX64"
+            else -> error("Unexpected iOS target: ${target.name}")
+        }
+        target.compilations.getByName("main") {
+            cinterops {
+                create("ObjCExceptionCatcher") {
+                    defFile(interopDir.resolve("ObjCExceptionCatcher.def"))
+                    includeDirs(interopDir)
+                    extraOpts("-libraryPath", interopDir.resolve("libs/$targetLibDir").absolutePath)
+                }
+            }
+        }
     }
 
     sourceSets {

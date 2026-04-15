@@ -2,6 +2,7 @@ package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.awaitExportSession
+import co.crackn.kompressor.cinterop.KMP_safeCreateWriterInput
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
@@ -307,9 +308,12 @@ private class IosVideoTranscodePipeline(
             outputUrl, fileType = AVFileTypeMPEG4, error = null,
         ) ?: error("Failed to create AVAssetWriter for: $outputUrl")
 
-        val videoInput = AVAssetWriterInput.assetWriterInputWithMediaType(
-            mediaType = AVMediaTypeVideo,
+        val videoInput = KMP_safeCreateWriterInput(
+            mediaType = requireNotNull(AVMediaTypeVideo) { "AVMediaTypeVideo unavailable" },
             outputSettings = buildVideoSettings(targetW, targetH),
+        ) ?: throw VideoCompressionError.UnsupportedSourceFormat(
+            "AVAssetWriterInput.init threw ObjC NSException — hardware encoder " +
+                "rejected HEVC Main10 output settings (see Kompressor NSLog for details)",
         )
         videoInput.expectsMediaDataInRealTime = false
         // Preserve source orientation. `preferredTransform` is an affine matrix that
