@@ -76,8 +76,7 @@ jobs:
             -scheme SmokeTests \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package test artifacts for FTL
         id: package
