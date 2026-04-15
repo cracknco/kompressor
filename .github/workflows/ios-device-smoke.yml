@@ -19,7 +19,7 @@ env:
   MOBILE_CI_BUDGET_MONTH: ${{ vars.MOBILE_CI_BUDGET_MONTH || '25' }}
 
 jobs:
-  # ── iOS device smoke tests (Firebase Test Lab — iPhone 13 Pro iOS 16) ──
+  # ── iOS device smoke tests (Firebase Test Lab — iPhone 14 Pro iOS 16) ──
   #
   # Runs HDR10 HEVC + 5.1/7.1 surround AAC round-trip tests on a real
   # iPhone via FTL. These code paths crash or silently fail on the iOS
@@ -34,7 +34,7 @@ jobs:
   # the PR is blocked — use repository admin override for confirmed outages
   # rather than weakening the gate. Rachid explicitly mandated this.
   ios-device-smoke:
-    name: iOS device smoke (FTL — iPhone 13 Pro iOS 16)
+    name: iOS device smoke (FTL — iPhone 14 Pro iOS 16)
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
