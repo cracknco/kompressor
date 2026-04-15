@@ -113,10 +113,19 @@ jobs:
             -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          PROFILE_TMP="$RUNNER_TEMP/profile.mobileprovision"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_TMP"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin \
+            <<< "$(security cms -D -i "$PROFILE_TMP")")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin \
+            <<< "$(security cms -D -i "$PROFILE_TMP")")
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /dev/stdin \
+            <<< "$(security cms -D -i "$PROFILE_TMP")")
+          echo "Profile: name='$PROFILE_NAME' uuid=$PROFILE_UUID app-id=$PROFILE_APP_ID"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 --decode \
-            > "$HOME/Library/MobileDevice/Provisioning Profiles/kompressor-dev.mobileprovision"
+          cp "$PROFILE_TMP" "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
 
       - name: Build for testing (arm64 device, signed)
         working-directory: iosDeviceSmokeTests
@@ -129,9 +138,11 @@ jobs:
             -scheme SmokeTests \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
             | xcbeautify --renderer github-actions
 
       - name: Package IPA and test bundle
