@@ -19,7 +19,7 @@ env:
   MOBILE_CI_BUDGET_MONTH: ${{ vars.MOBILE_CI_BUDGET_MONTH || '25' }}
 
 jobs:
-  # ── iOS device smoke tests (Firebase Test Lab — iPhone 14 Pro iOS 16) ──
+  # ── iOS device smoke tests (Firebase Test Lab — iPhone 14 Pro iOS 17) ──
   #
   # Runs HDR10 HEVC + 5.1/7.1 surround AAC round-trip tests on a real
   # iPhone via FTL. These code paths crash or silently fail on the iOS
