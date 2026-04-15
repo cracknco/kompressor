@@ -3,14 +3,14 @@ import XCTest
 
 final class Hdr10ExportTests: XCTestCase {
     private var testDir: URL!
-    private var kompressor: (any KompressorKompressor)!
+    private var kompressor: (any Kompressor)!
 
     override func setUp() {
         super.setUp()
         testDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("hdr10-swift-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
-        kompressor = KompressorIosKompressorKt.createKompressor()
+        kompressor = IosKompressorKt.createKompressor()
     }
 
     override func tearDown() {
@@ -23,9 +23,9 @@ final class Hdr10ExportTests: XCTestCase {
         let outputURL = testDir.appendingPathComponent("out.mp4")
         try Mp4Fixture.generate(at: inputURL, width: 64, height: 64, frameCount: 8, fps: 8)
 
-        let config = KompressorVideoCompressionConfig(
+        let config = VideoCompressionConfig(
             codec: .hevc,
-            maxResolution: KompressorMaxResolutionCompanion.shared.HD_720,
+            maxResolution: MaxResolution.Companion.shared.HD_720,
             videoBitrate: 1_200_000,
             audioBitrate: 128_000,
             audioCodec: .aac,

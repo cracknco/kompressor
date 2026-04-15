@@ -3,14 +3,14 @@ import XCTest
 
 final class Surround71Tests: XCTestCase {
     private var testDir: URL!
-    private var kompressor: (any KompressorKompressor)!
+    private var kompressor: (any Kompressor)!
 
     override func setUp() {
         super.setUp()
         testDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("surround71-swift-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
-        kompressor = KompressorIosKompressorKt.createKompressor()
+        kompressor = IosKompressorKt.createKompressor()
     }
 
     override func tearDown() {
@@ -25,7 +25,7 @@ final class Surround71Tests: XCTestCase {
         let wavData = WavFixture.generate(durationSec: 2, sampleRate: 48_000, channels: 8)
         try wavData.write(to: inputURL)
 
-        let config = KompressorAudioCompressionConfig(
+        let config = AudioCompressionConfig(
             codec: .aac,
             bitrate: 512_000,
             sampleRate: 48_000,
