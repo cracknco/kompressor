@@ -2,22 +2,18 @@
 
 @implementation ObjCExceptionCatcher
 
-+ (BOOL)tryBlock:(void (NS_NOESCAPE ^)(void))block
-           error:(NSError *_Nullable *_Nullable)error {
++ (NSError *_Nullable)catchExceptionInBlock:(void (NS_NOESCAPE ^)(void))block {
     @try {
         block();
-        return YES;
+        return nil;
     } @catch (NSException *exception) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"NSExceptionDomain"
-                                         code:0
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: exception.reason ?: @"Unknown NSException",
-                @"NSExceptionName": exception.name ?: @"",
-                @"NSExceptionCallStackSymbols": exception.callStackSymbols ?: @[],
-            }];
-        }
-        return NO;
+        return [NSError errorWithDomain:@"NSExceptionDomain"
+                                   code:0
+                               userInfo:@{
+            NSLocalizedDescriptionKey: exception.reason ?: @"Unknown NSException",
+            @"NSExceptionName": exception.name ?: @"",
+            @"NSExceptionCallStackSymbols": exception.callStackSymbols ?: @[],
+        }];
     }
 }
 

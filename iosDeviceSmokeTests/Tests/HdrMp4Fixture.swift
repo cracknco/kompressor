@@ -30,14 +30,13 @@ enum HdrMp4Fixture {
         // even when canApply(outputSettings:) returns true. The only way to
         // survive this is an ObjC @try/@catch block.
         var input: AVAssetWriterInput!
-        var objcError: NSError?
-        let ok = ObjCExceptionCatcher.tryBlock({
+        let objcError = ObjCExceptionCatcher.catchException {
             input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        }, error: &objcError)
+        }
 
-        if !ok {
-            let reason = objcError?.localizedDescription ?? "Unknown"
-            let stack = (objcError?.userInfo["NSExceptionCallStackSymbols"] as? [String])?.joined(separator: "\n") ?? "N/A"
+        if let objcError {
+            let reason = objcError.localizedDescription
+            let stack = (objcError.userInfo["NSExceptionCallStackSymbols"] as? [String])?.joined(separator: "\n") ?? "N/A"
             NSLog("[HDR10-fixture] AVAssetWriterInput threw NSException: %@", reason)
             NSLog("[HDR10-fixture] Stack trace:\n%@", stack)
             throw HdrMp4FixtureError.unsupportedDevice(
