@@ -363,6 +363,22 @@ data class CompressionResult(
 
 ---
 
+## Versioning & Stability
+
+Kompressor follows [Semantic Versioning 2.0.0](https://semver.org) **strictly** from version **1.0.0** onward:
+
+- **MAJOR** — breaking changes to the public API.
+- **MINOR** — additive, backward-compatible features.
+- **PATCH** — backward-compatible bug fixes.
+
+APIs annotated with `@ExperimentalKompressorApi` or declared `internal` are **not** covered by the semver contract and may change in any release.
+
+Binary compatibility is maintained across MINOR and PATCH releases for all artifact types (AAR, klib, Kotlin/Native framework).
+
+> Full policy, binary compatibility details, and exemptions: **[docs/api-stability.md](docs/api-stability.md)**
+
+---
+
 ## License
 
 ```
