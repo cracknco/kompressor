@@ -1,0 +1,34 @@
+name: Changelog check
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'kompressor/src/**'
+
+jobs:
+  changelog-entry:
+    name: Require Unreleased changelog entry
+    runs-on: ubuntu-latest
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for Unreleased additions in CHANGELOG.md
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          ADDED_LINES=$(git diff "$BASE_SHA".."$HEAD_SHA" -- CHANGELOG.md \
+            | grep '^+' | grep -v '^+++' | grep -v '^+$' || true)
+          if [ -z "$ADDED_LINES" ]; then
+            echo "::error::This PR modifies kompressor/src/ but does not add an entry to the ## [Unreleased] section of CHANGELOG.md."
+            echo ""
+            echo "Please add a changelog entry describing your changes."
+            echo "If this is a docs-only or CI-only change, add the 'skip-changelog' label to bypass this check."
+            exit 1
+          fi
+          echo "✅ CHANGELOG.md has new entries — check passed."
