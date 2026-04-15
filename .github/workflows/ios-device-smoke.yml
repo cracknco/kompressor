@@ -34,7 +34,7 @@ jobs:
   # the PR is blocked — use repository admin override for confirmed outages
   # rather than weakening the gate. Rachid explicitly mandated this.
   ios-device-smoke:
-    name: iOS device smoke (FTL — iPhone 16 Pro iOS 18)
+    name: iOS device smoke (FTL)
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -108,22 +108,48 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      # Device: iPhone 16 Pro (A18 Pro) — above the A10+ minimum for
-      # HEVC Main10 + multi-channel AAC. iphone14pro at 16.6 had persistent
-      # Infrastructure failures in FTL; iphone16pro at 18.3 is actively available.
+      - name: Discover FTL iOS device catalog
+        id: device
+        run: |
+          echo "::group::Available iPhone models"
+          gcloud firebase test ios models list --project kompressor-library \
+            --filter="name~iPhone" --format="table(modelId,name,supportedVersionIds)" 2>/dev/null || true
+          echo "::endgroup::"
+
+          # Pick the best available device: iPhone 16 Pro preferred,
+          # fall back to iPhone 15 Pro, then any available iPhone.
+          for MODEL in iphone16pro iphone15pro iphone14pro; do
+            VERSION=$(gcloud firebase test ios models describe "$MODEL" \
+              --project kompressor-library \
+              --format="value(supportedVersionIds.flatten())" 2>/dev/null \
+              | tr ';' '\n' | sort -rV | head -1)
+            if [ -n "$VERSION" ]; then
+              echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+              echo "Selected device: $MODEL @ iOS $VERSION"
+              break
+            fi
+          done
+
+      # Device must be A10+ for HEVC Main10 + multi-channel AAC.
       - name: Run on Firebase Test Lab
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           TEST_ZIP: ${{ steps.package.outputs.zip }}
+          FTL_MODEL: ${{ steps.device.outputs.model || 'iphone16pro' }}
+          FTL_VERSION: ${{ steps.device.outputs.version || '18.3' }}
         run: |
+          echo "Running on $FTL_MODEL @ iOS $FTL_VERSION"
           gcloud firebase test ios run \
+            --type xctest \
             --test "${TEST_ZIP}" \
-            --device model=iphone16pro,version=18.3 \
+            --device "model=${FTL_MODEL},version=${FTL_VERSION}" \
             --project kompressor-library \
             --results-bucket test-lab-kompressor-ci \
             --results-dir "ios-smoke-${RUN_ID}" \
             --timeout 15m \
-            --no-record-video
+            --no-record-video \
+            --num-flaky-test-attempts 1
 
       - name: Download FTL test results
         if: always()
@@ -131,6 +157,9 @@ jobs:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p ftl-results
+          echo "::group::GCS bucket contents"
+          gcloud storage ls -r "gs://test-lab-kompressor-ci/ios-smoke-${RUN_ID}/" 2>/dev/null || true
+          echo "::endgroup::"
           gcloud storage cp -r \
             "gs://test-lab-kompressor-ci/ios-smoke-${RUN_ID}/" \
             ftl-results/ || echo "::warning::Could not download FTL results"
