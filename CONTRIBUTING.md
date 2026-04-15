@@ -2,6 +2,10 @@
 
 Thanks for your interest in Kompressor! This guide will get you from zero to a passing build and a mergeable PR.
 
+> **Code of Conduct** — This project follows the
+> [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Please read it before
+> participating.
+
 ---
 
 ## Prerequisites
