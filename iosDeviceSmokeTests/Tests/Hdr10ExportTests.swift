@@ -21,7 +21,9 @@ final class Hdr10ExportTests: XCTestCase {
     func testHdr10HevcRoundTrip_producesValidOutput() async throws {
         let inputURL = testDir.appendingPathComponent("in.mp4")
         let outputURL = testDir.appendingPathComponent("out.mp4")
-        try Mp4Fixture.generate(at: inputURL, width: 64, height: 64, frameCount: 8, fps: 8)
+        try HdrMp4Fixture.generate(at: inputURL, width: 64, height: 64, frameCount: 8, fps: 8)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inputURL.path), "HDR10 fixture must exist")
 
         let config = VideoCompressionConfig(
             codec: .hevc,
@@ -42,9 +44,11 @@ final class Hdr10ExportTests: XCTestCase {
         )
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path), "Output file must exist")
-        let attrs = try FileManager.default.attributesOfItem(atPath: outputURL.path)
-        let size = (attrs[.size] as? Int) ?? 0
-        XCTAssertGreaterThan(size, 0, "Output file must be non-empty")
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            let attrs = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+            let size = (attrs[.size] as? Int) ?? 0
+            XCTAssertGreaterThan(size, 0, "Output file must be non-empty")
+        }
         XCTAssertNotNil(result, "Compression result must be non-nil")
     }
 }

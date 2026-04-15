@@ -50,7 +50,9 @@ import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
 import platform.Foundation.NSData
+import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import platform.Foundation.create
 
 /** iOS audio compressor backed by [AVAssetReader] and [AVAssetWriter]. */
@@ -83,6 +85,7 @@ internal class IosAudioCompressor : AudioCompressor {
         validateAudioTrackIndex(inputPath, config.audioTrackIndex)
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
+        requireAacEncodingCapability(config)
         runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
@@ -193,6 +196,40 @@ internal class IosAudioCompressor : AudioCompressor {
     // AVAssetExportSession uses Apple's internal preset quality — it does NOT honour
     // the exact bitrate/sampleRate/channels from AudioCompressionConfig. We only use it
     // when the caller passes the default config (no custom expectations to violate).
+    /**
+     * Probe `AVAssetWriter.canApplyOutputSettings` with the AAC encoding dictionary
+     * *before* creating `AVAssetWriterInput`. On real iOS devices the hardware AAC encoder
+     * only supports mono/stereo; requesting ≥3 channels causes `AVAssetWriterInput.init`
+     * to throw an Obj-C `NSException` that K/N cannot catch. This pre-flight turns the
+     * crash into a typed [AudioCompressionError.UnsupportedConfiguration].
+     */
+    private fun requireAacEncodingCapability(config: AudioCompressionConfig) {
+        val channelCount = config.channels.count
+        if (channelCount <= 2) return
+        val tmpUrl = NSURL.fileURLWithPath(
+            NSTemporaryDirectory() + "kompressor-aac-probe-" +
+                NSUUID().UUIDString + ".m4a",
+        )
+        val writer = AVAssetWriter.assetWriterWithURL(
+            tmpUrl, fileType = AVFileTypeAppleM4A, error = null,
+        )
+        val probeSettings: Map<Any?, *> = buildMap {
+            put(AVFormatIDKey, kAudioFormatMPEG4AAC)
+            put(AVEncoderBitRateKey, config.bitrate)
+            put(AVSampleRateKey, config.sampleRate)
+            put(AVNumberOfChannelsKey, channelCount)
+            channelLayoutData(config.channels)?.let { put(AVChannelLayoutKey, it) }
+        }
+        val supported = writer?.canApplyOutputSettings(
+            probeSettings, forMediaType = AVMediaTypeAudio,
+        ) ?: false
+        if (!supported) {
+            throw AudioCompressionError.UnsupportedConfiguration(
+                "AAC encoder does not support $channelCount-channel output on this device",
+            )
+        }
+    }
+
     private fun canUseExportSession(config: AudioCompressionConfig): Boolean =
         config == AudioCompressionConfig()
 
