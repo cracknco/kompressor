@@ -22,10 +22,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if git diff "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md | grep -qE '^\+.*##.*Unreleased'; then
-            echo "✅ CHANGELOG.md has an Unreleased entry"
-          elif git diff "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md | grep -qE '^\+'; then
-            echo "✅ CHANGELOG.md was updated"
+          unreleased=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md \
+            | sed -n '/^[+-]## \[Unreleased\]/,/^[+-]## \[/p' \
+            | grep -cE '^\+[^+]' || true)
+          if [ "$unreleased" -gt 0 ]; then
+            echo "Changelog gate passed — $unreleased line(s) added under ## [Unreleased]."
           else
             echo "::error::PRs that modify kompressor/src/ must add an entry under '## [Unreleased]' in CHANGELOG.md. Add the 'skip-changelog' label to bypass (docs-only, ci-only changes)."
             exit 1
