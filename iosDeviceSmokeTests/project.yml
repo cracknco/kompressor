@@ -1,0 +1,42 @@
+name: KompressorDeviceSmokeTests
+options:
+  bundleIdPrefix: co.crackn.kompressor
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "16.0"
+settings:
+  SWIFT_VERSION: "5.10"
+
+targets:
+  SmokeTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketesthost
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_IDENTITY: "iPhone Developer"
+        CODE_SIGNING_REQUIRED: "YES"
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: "iPhone Developer"
+    dependencies:
+      - framework: ../kompressor/build/bin/iosArm64/releaseFramework/Kompressor.framework
+        embed: true
+
+  SmokeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketests
+        INFOPLIST_FILE: Tests/Info.plist
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmokeTestHost.app/SmokeTestHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: SmokeTestHost
+      - framework: ../kompressor/build/bin/iosArm64/releaseFramework/Kompressor.framework

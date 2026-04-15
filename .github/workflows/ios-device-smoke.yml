@@ -1,0 +1,143 @@
+name: iOS device smoke tests (Firebase Test Lab)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MOBILE_CI_BUDGET_MONTH: "25"
+
+jobs:
+  # ── iOS device smoke tests (Firebase Test Lab — iPhone 13 Pro iOS 16) ──
+  #
+  # Runs HDR10 HEVC + 5.1/7.1 surround AAC round-trip tests on a real
+  # iPhone via FTL. These code paths crash or silently fail on the iOS
+  # simulator (NSException for HEVC Main10, VTAACEncoder gate for multi-
+  # channel AAC), so physical hardware is the only reliable signal.
+  #
+  # FTL iOS free tier covers ~5 physical device-tests/day. Our suite of 3
+  # tests runs in ~3-5 min, well within the quota for normal PR volume.
+  # Overage is billed at ~$5/device-hour.
+  #
+  # Hard-fail by design: no `continue-on-error`. If FTL is unavailable,
+  # the PR is blocked — use repository admin override for confirmed outages
+  # rather than weakening the gate. Rachid explicitly mandated this.
+  ios-device-smoke:
+    name: iOS device smoke (FTL — iPhone 13 Pro iOS 16)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - name: Build KMP framework (iosArm64)
+        run: ./gradlew :kompressor:linkReleaseFrameworkIosArm64
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: iosDeviceSmokeTests
+        run: xcodegen generate
+
+      - name: Build for testing (arm64 device)
+        working-directory: iosDeviceSmokeTests
+        run: |
+          xcodebuild build-for-testing \
+            -project KompressorDeviceSmokeTests.xcodeproj \
+            -scheme SmokeTests \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package test artifacts for FTL
+        id: package
+        run: |
+          cd iosDeviceSmokeTests/build/Build/Products
+          XCTESTRUN=$(find . -name '*.xctestrun' -maxdepth 1 | head -1)
+          if [ -z "$XCTESTRUN" ]; then
+            echo "::error::No .xctestrun file found"
+            exit 1
+          fi
+          zip -r "${GITHUB_WORKSPACE}/ios-smoke-tests.zip" \
+            "${XCTESTRUN}" \
+            Release-iphoneos/
+          echo "zip=${GITHUB_WORKSPACE}/ios-smoke-tests.zip" >> "${GITHUB_OUTPUT}"
+          ls -lh "${GITHUB_WORKSPACE}/ios-smoke-tests.zip"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # Device: iPhone 13 Pro (A15 Bionic) — above the A10+ minimum for
+      # HEVC Main10 + multi-channel AAC. Same results bucket as Android FTL.
+      - name: Run on Firebase Test Lab
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          TEST_ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          gcloud firebase test ios run \
+            --test "${TEST_ZIP}" \
+            --device model=iphone13pro,version=16.6 \
+            --project kompressor-library \
+            --results-bucket test-lab-kompressor-ci \
+            --results-dir "ios-smoke-${RUN_ID}" \
+            --timeout 15m \
+            --no-record-video
+
+      - name: Download FTL test results
+        if: always()
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p ftl-results
+          gcloud storage cp -r \
+            "gs://test-lab-kompressor-ci/ios-smoke-${RUN_ID}/**/test_result_*.xml" \
+            ftl-results/ || echo "::warning::Could not download JUnit XML — FTL may not have produced results"
+
+      - name: Upload JUnit XML results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-device-smoke-results
+          path: ftl-results/
+
+      - name: Budget check
+        if: always()
+        env:
+          BUDGET_CAP: ${{ env.MOBILE_CI_BUDGET_MONTH }}
+        run: |
+          echo "::notice::iOS device CI budget cap: \$${BUDGET_CAP}/month. Monitor at https://console.cloud.google.com/billing"
