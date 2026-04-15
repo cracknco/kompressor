@@ -55,9 +55,9 @@ the `kompressor-library` project with the same threshold.
 
 | Property | Value |
 |---|---|
-| Model | iPhone 16 Pro (`iphone16pro`) |
-| iOS version | 18.3 |
-| Chip | A18 Pro |
+| Model | Dynamic — prefers iPhone SE 3 (`iphonese3`), falls back to 14 Pro / 16 Pro / 11 Pro |
+| iOS version | Latest available (currently 18.4) |
+| Chip | A15 Bionic (iPhone SE 3) — A10+ required for HEVC Main10 |
 | Minimum required | A10+ (iPhone 7+) for HEVC Main10 hardware encoding |
 
 ## Workflow

@@ -119,8 +119,8 @@ jobs:
           echo "::endgroup::"
 
           # Pick the best available device (A10+ for HEVC Main10).
-          # Try iPhone 15 Pro first — 16 Pro pool has persistent issues.
-          for MODEL in iphone15pro iphone16pro iphone14pro; do
+          # iPhone SE 3 (A15) is most reliable; 16 Pro pool has persistent issues.
+          for MODEL in iphonese3 iphone14pro iphone16pro iphone11pro; do
             VERSION=$(gcloud firebase test ios models describe "$MODEL" \
               --project kompressor-library \
               --format="value(supportedVersionIds.flatten())" 2>/dev/null \
@@ -138,8 +138,8 @@ jobs:
         env:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           TEST_ZIP: ${{ steps.package.outputs.zip }}
-          FTL_MODEL: ${{ steps.device.outputs.model || 'iphone16pro' }}
-          FTL_VERSION: ${{ steps.device.outputs.version || '18.3' }}
+          FTL_MODEL: ${{ steps.device.outputs.model || 'iphonese3' }}
+          FTL_VERSION: ${{ steps.device.outputs.version || '18.4' }}
         run: |
           echo "Running on $FTL_MODEL @ iOS $FTL_VERSION"
           gcloud firebase test ios run \
