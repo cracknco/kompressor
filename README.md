@@ -379,6 +379,13 @@ Binary compatibility is maintained across MINOR and PATCH releases for all artif
 
 ---
 
+## Contributing
+
+We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup
+instructions, commit conventions, and the PR process.
+
+---
+
 ## License
 
 ```
