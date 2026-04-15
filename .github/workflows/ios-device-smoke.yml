@@ -124,8 +124,16 @@ jobs:
         run: |
           mkdir -p ftl-results
           gcloud storage cp -r \
-            "gs://test-lab-kompressor-ci/ios-smoke-${RUN_ID}/**/test_result_*.xml" \
-            ftl-results/ || echo "::warning::Could not download JUnit XML — FTL may not have produced results"
+            "gs://test-lab-kompressor-ci/ios-smoke-${RUN_ID}/" \
+            ftl-results/ || echo "::warning::Could not download FTL results"
+          echo "::group::FTL results listing"
+          find ftl-results -type f 2>/dev/null || true
+          echo "::endgroup::"
+          if ls ftl-results/**/*.log 2>/dev/null; then
+            echo "::group::Device syslog (last 100 lines)"
+            tail -100 ftl-results/**/*.log 2>/dev/null || true
+            echo "::endgroup::"
+          fi
 
       - name: Upload JUnit XML results
         if: always()
