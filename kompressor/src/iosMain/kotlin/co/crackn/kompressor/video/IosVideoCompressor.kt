@@ -55,6 +55,7 @@ import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
+import platform.CoreVideo.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
 import platform.Foundation.NSURL
 import platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
 
@@ -268,13 +269,20 @@ private class IosVideoTranscodePipeline(
     ): Triple<AVAssetReader, AVAssetReaderTrackOutput, AVAssetReaderTrackOutput?> {
         val reader = AVAssetReader(asset = asset, error = null)
         // Request decoded pixel buffers (not compressed passthrough) so the
-        // writer's H.264 encoder can re-encode at the target bitrate/resolution.
+        // writer's encoder can re-encode at the target bitrate/resolution.
         // The raw string "PixelFormatType" is the underlying value of
         // kCVPixelBufferPixelFormatTypeKey (see CVPixelBuffer.h). We use the
         // literal because the CFStringRef constant does not bridge to NSDictionary
         // keys in Kotlin/Native.
+        // HDR10 requires 10-bit P010 pixel buffers — VideoToolbox rejects 8-bit
+        // BGRA with BT.2020/PQ color properties on real devices.
+        val pixelFormat = if (config.dynamicRange == DynamicRange.HDR10) {
+            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+        } else {
+            kCVPixelFormatType_32BGRA
+        }
         val videoOutputSettings: Map<Any?, *> = mapOf(
-            PIXEL_FORMAT_KEY to kCVPixelFormatType_32BGRA,
+            PIXEL_FORMAT_KEY to pixelFormat,
         )
         val videoOutput = AVAssetReaderTrackOutput(
             track = videoTrack,

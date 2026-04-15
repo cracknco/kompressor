@@ -9,7 +9,10 @@ import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -26,6 +29,7 @@ import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
 import platform.AVFAudio.AVAudioFile
+import platform.AVFAudio.AVChannelLayoutKey
 import platform.AVFAudio.AVEncoderBitRateKey
 import platform.AVFAudio.AVFormatIDKey
 import platform.AVFAudio.AVLinearPCMBitDepthKey
@@ -45,7 +49,9 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
+import platform.Foundation.NSData
 import platform.Foundation.NSURL
+import platform.Foundation.create
 
 /** iOS audio compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
@@ -268,6 +274,29 @@ private const val IOS_AAC_MIN_KBPS_LOW_RATE = 16
 private const val IOS_AAC_MIN_KBPS_MID_RATE = 24
 private const val IOS_AAC_MIN_KBPS_HIGH_RATE = 32
 
+// AudioChannelLayout struct: mChannelLayoutTag (UInt32) + mChannelBitmap (UInt32) +
+// mNumberChannelDescriptions (UInt32) = 12 bytes. When using a tag with zero descriptions,
+// the variable-length mChannelDescriptions array is empty.
+private const val AUDIO_CHANNEL_LAYOUT_STRUCT_SIZE = 12
+
+@Suppress("MagicNumber")
+@OptIn(BetaInteropApi::class, ExperimentalForeignApi::class)
+internal fun channelLayoutData(channels: AudioChannels): NSData? {
+    val tag: UInt = when (channels) {
+        AudioChannels.MONO, AudioChannels.STEREO -> null
+        AudioChannels.FIVE_POINT_ONE -> (121u shl 16) or 6u // kAudioChannelLayoutTag_MPEG_5_1_A
+        AudioChannels.SEVEN_POINT_ONE -> (128u shl 16) or 8u // kAudioChannelLayoutTag_MPEG_7_1_C
+    } ?: return null
+    val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_STRUCT_SIZE)
+    bytes[0] = (tag and 0xFFu).toByte()
+    bytes[1] = ((tag shr 8) and 0xFFu).toByte()
+    bytes[2] = ((tag shr 16) and 0xFFu).toByte()
+    bytes[3] = ((tag shr 24) and 0xFFu).toByte()
+    return bytes.usePinned { pinned ->
+        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+    }
+}
+
 @OptIn(ExperimentalForeignApi::class)
 private class IosPipeline(
     inputPath: String,
@@ -291,12 +320,13 @@ private class IosPipeline(
         AVNumberOfChannelsKey to channelCount,
     )
 
-    private val encodingSettings: Map<Any?, *> = mapOf(
-        AVFormatIDKey to kAudioFormatMPEG4AAC,
-        AVEncoderBitRateKey to config.bitrate,
-        AVSampleRateKey to config.sampleRate,
-        AVNumberOfChannelsKey to channelCount,
-    )
+    private val encodingSettings: Map<Any?, *> = buildMap {
+        put(AVFormatIDKey, kAudioFormatMPEG4AAC)
+        put(AVEncoderBitRateKey, config.bitrate)
+        put(AVSampleRateKey, config.sampleRate)
+        put(AVNumberOfChannelsKey, channelCount)
+        channelLayoutData(config.channels)?.let { put(AVChannelLayoutKey, it) }
+    }
 
     @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
