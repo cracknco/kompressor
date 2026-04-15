@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MOBILE_CI_BUDGET_MONTH: "25"
+  MOBILE_CI_BUDGET_MONTH: ${{ vars.MOBILE_CI_BUDGET_MONTH || '25' }}
 
 jobs:
   # ── iOS device smoke tests (Firebase Test Lab — iPhone 13 Pro iOS 16) ──

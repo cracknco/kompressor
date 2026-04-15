@@ -33,12 +33,13 @@ the GCP project (`kompressor-library`), service account, and results bucket
 | Our usage per PR | 1 test run × 3 tests × ~3-5 min = 1 device-session |
 | Normal PR volume | 5-10 PRs/day → within free tier |
 | Overage rate | ~$5/device-hour |
-| Monthly budget cap | **$25** (`MOBILE_CI_BUDGET_MONTH` env var) |
+| Monthly budget cap | **$25** (`MOBILE_CI_BUDGET_MONTH` repo variable, default) |
 
 ### Budget alerting
 
-The `MOBILE_CI_BUDGET_MONTH` environment variable is set in the workflow. A
-notice annotation logs the cap on every run. For production alerting, configure
+`MOBILE_CI_BUDGET_MONTH` is a GitHub repository variable (Settings → Variables →
+Actions). The workflow reads it with a fallback to `$25`. A notice annotation
+logs the cap on every run. For production alerting, configure
 a [GCP budget alert](https://cloud.google.com/billing/docs/how-to/budgets) on
 the `kompressor-library` project with the same threshold.
 
