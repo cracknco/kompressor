@@ -76,7 +76,8 @@ jobs:
             -scheme SmokeTests \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_PREVIEWS=NO
 
       - name: Package test artifacts for FTL
         id: package
@@ -87,9 +88,16 @@ jobs:
             echo "::error::No .xctestrun file found"
             exit 1
           fi
+
+          # Remove unsigned dylibs that FTL's re-signing process
+          # doesn't handle — causes "Infrastructure failure" on device.
+          find Debug-iphoneos -name '__preview.dylib' -delete
+          find Debug-iphoneos -name '*.debug.dylib' -delete
+          find Debug-iphoneos -name '*.dSYM' -type d -exec rm -rf {} + 2>/dev/null || true
+
           zip -r "${GITHUB_WORKSPACE}/ios-smoke-tests.zip" \
             "${XCTESTRUN}" \
-            Debug-iphoneos/
+            Debug-iphoneos/*.app
           echo "zip=${GITHUB_WORKSPACE}/ios-smoke-tests.zip" >> "${GITHUB_OUTPUT}"
           ls -lh "${GITHUB_WORKSPACE}/ios-smoke-tests.zip"
 
@@ -129,11 +137,16 @@ jobs:
           echo "::group::FTL results listing"
           find ftl-results -type f 2>/dev/null || true
           echo "::endgroup::"
-          if ls ftl-results/**/*.log 2>/dev/null; then
-            echo "::group::Device syslog (last 100 lines)"
-            tail -100 ftl-results/**/*.log 2>/dev/null || true
+          for log in $(find ftl-results -name '*.log' -o -name 'syslog' 2>/dev/null); do
+            echo "::group::$log (last 200 lines)"
+            tail -200 "$log" 2>/dev/null || true
             echo "::endgroup::"
-          fi
+          done
+          for xml in $(find ftl-results -name '*.xml' 2>/dev/null); do
+            echo "::group::$xml"
+            cat "$xml" 2>/dev/null || true
+            echo "::endgroup::"
+          done
 
       - name: Upload JUnit XML results
         if: always()
@@ -141,6 +154,7 @@ jobs:
         with:
           name: ios-device-smoke-results
           path: ftl-results/
+          if-no-files-found: warn
 
       - name: Budget check
         if: always()
