@@ -16,6 +16,13 @@ targets:
       - path: App
     info:
       path: App/Info.plist
+      properties:
+        UILaunchStoryboardName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.smoketesthost
@@ -24,6 +31,9 @@ targets:
         FRAMEWORK_SEARCH_PATHS:
           - "$(inherited)"
           - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-ObjC"
       configs:
         Release:
           CODE_SIGN_IDENTITY: "iPhone Developer"
