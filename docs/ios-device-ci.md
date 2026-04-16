@@ -82,6 +82,7 @@ PR opened
 | `Hdr10ExportTests` | `Hdr10ExportRoundTripTest` | Kotlin test skips on sim via `runDeviceOnly()` |
 | `Surround51Tests` | `Surround51RoundTripTest` | Same |
 | `Surround71Tests` | `Surround71RoundTripTest` | Same |
+| `IosLargeInputStreamingTest` | — (Swift-only) | Generates a ~200 MB 1080p/60s fixture on device and asserts `task_info` peak stays ≤ 300 MB while `IosVideoCompressor` streams it. No Kotlin sibling: peak-memory sampling and `task_info(TASK_VM_INFO)` are expressed naturally in Swift, and the DoD only requires the device-side assertion |
 
 The Kotlin tests contain detailed assertions (progress monotonicity, channel
 count preservation, compression result validation). The Swift wrappers are thin
