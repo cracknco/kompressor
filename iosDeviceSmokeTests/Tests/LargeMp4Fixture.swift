@@ -4,6 +4,8 @@ import Foundation
 
 enum LargeMp4FixtureError: Error {
     case writerFailed(String)
+    case invalidParameters(String)
+    case generationTimedOut
 }
 
 /// Generates a large 1080p H.264 MP4 on the device, on the fly.
@@ -30,6 +32,14 @@ enum LargeMp4Fixture {
         durationSec: Int = defaultDurationSec,
         bitrate: Int = defaultBitrate
     ) throws {
+        // Fail fast on pathological inputs — AVAssetWriter would otherwise fail late with
+        // a less actionable error (bad pixel-buffer pool, zero-frame session, etc.).
+        guard width > 0, height > 0, fps > 0, durationSec > 0, bitrate > 0 else {
+            throw LargeMp4FixtureError.invalidParameters(
+                "width=\(width), height=\(height), fps=\(fps), durationSec=\(durationSec), bitrate=\(bitrate) must all be > 0"
+            )
+        }
+
         try? FileManager.default.removeItem(at: url)
 
         let writer = try AVAssetWriter(url: url, fileType: .mp4)
@@ -122,7 +132,14 @@ enum LargeMp4Fixture {
                 if writeError != nil { return }
             }
         }
-        done.wait()
+        // Safety net: generating 1800 frames of 1080p random BGRA at ~200 MB finishes in
+        // well under a minute on A15+ devices. Five minutes is an order-of-magnitude cap
+        // so a stuck AVAssetWriter surfaces as `.generationTimedOut` instead of stalling
+        // the whole Device Farm run until the job-level timeout.
+        let timeoutSec = max(300, durationSec * 5)
+        if done.wait(timeout: .now() + .seconds(timeoutSec)) == .timedOut {
+            throw LargeMp4FixtureError.generationTimedOut
+        }
 
         if let writeError { throw writeError }
         guard writer.status == .completed else {
