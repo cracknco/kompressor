@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Pull request template with DoD checklist and changelog entry section [CRA-34]
 * **ci/docs:** committed ABI baseline + fail-hard CI gate — the `test` job in `pr.yml` now annotates `apiCheck` failures with an actionable `::error::` message ("Run `./gradlew apiDump` and commit the result if intentional"), and `docs/api-stability.md` documents the dump-update workflow plus the S/E/I review checklist (Source compatibility, Experimental?, Intentional?) that reviewers must walk through on every ABI diff [CRA-23]
 
+### Changed
+
+* **ci:** `changelog-check` workflow now parses `CHANGELOG.md` content directly at the base and head revisions via `scripts/ci/check-unreleased-entry.sh`, instead of scraping `git diff` output with sed/grep. Eliminates false failures when a new bullet sits outside the unified-diff context window (previously mitigated by a fragile `-U1000` widen). Ships with a self-contained shell test suite (`scripts/ci/check-unreleased-entry.test.sh`, 8 cases) that reproduces PR #83's pre-fix layout [CRA-79]
+
 ### Fixed
 
 * **errors:** iOS `VideoCompressor.compress` no longer leaks an untyped `IllegalArgumentException` from the "no video track found in input file" path — this pre-condition now surfaces as the typed `VideoCompressionError.UnsupportedSourceFormat` that Android has returned all along, so KMP callers get consistent `when`-branchable failures. Same treatment for a file-size race on the happy path of both iOS compressors: the post-pipeline size read now goes through `sizeOrTypedError`, preventing a stray `IllegalStateException("Cannot read file size")` from escaping if the output file disappears between `writer.finishWriting()` and the size probe. `AudioCompressor.compress` KDoc now documents the one remaining `IllegalArgumentException` surface (programmer-error config, e.g. non-AAC codec) [CRA-21]
