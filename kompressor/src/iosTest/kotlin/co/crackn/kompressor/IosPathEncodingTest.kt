@@ -253,7 +253,11 @@ class IosPathEncodingTest {
      * Xcode 16 iOS simulator — issues orthogonal to the contract this test defends.
      */
     private fun hasMp4FtypSignature(path: String): Boolean {
-        val bytes = runCatching { readBytes(path) }.getOrNull() ?: return false
+        // Intentionally propagates any read failure instead of collapsing it into a
+        // `false` return — otherwise a bug in the test harness's own path handling
+        // (the very surface this test exercises) would be misreported as "AVFoundation/
+        // UIKit wrote a corrupt file" and pin the blame on the compressor.
+        val bytes = readBytes(path)
         if (bytes.size < FTYP_PROBE_OFFSET + FTYP_LEN) return false
         return bytes[FTYP_PROBE_OFFSET] == 'f'.code.toByte() &&
             bytes[FTYP_PROBE_OFFSET + 1] == 't'.code.toByte() &&
