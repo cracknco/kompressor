@@ -24,9 +24,12 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * Concurrent-compression smoke tests. Four parallel audio exports, then two audio + two image
- * exports in parallel — all must succeed with non-empty outputs to confirm there are no shared
- * mutable-state or temp-file races between sibling coroutines.
+ * Concurrent-compression smoke tests. Four parallel audio exports, a 2+2 audio/image mix, and a
+ * 16-coroutine stress grid — all must succeed with non-empty outputs to confirm there are no
+ * shared mutable-state or temp-file races between sibling coroutines. The 16-coroutine variant
+ * mirrors the grid shape of [ConcurrentCompressInterProcessTest] on the host JVM so a
+ * dispatcher-level lock would be visible here in real Media3 `Transformer` / `MediaCodec`
+ * conditions. See `docs/threading-model.md`.
  */
 class ConcurrentCompressionTest {
 
@@ -99,6 +102,39 @@ class ConcurrentCompressionTest {
         }
     }
 
+    @Test
+    fun sixteenParallelCoroutines_allSucceed() = runBlocking {
+        val inputs = (0 until STRESS_COUNT).map { i ->
+            File(tempDir, "stress_audio_in_$i.wav").apply {
+                writeBytes(
+                    WavGenerator.generateWavBytes(
+                        durationSeconds = 1,
+                        sampleRate = SAMPLE_RATE_44K,
+                        channels = STEREO,
+                    ),
+                )
+            }
+        }
+        val outputs = (0 until STRESS_COUNT).map { i ->
+            File(tempDir, "stress_audio_out_$i.m4a")
+        }
+
+        val results = coroutineScope {
+            inputs.zip(outputs).map { (input, output) ->
+                async(Dispatchers.Default) {
+                    audio.compress(input.absolutePath, output.absolutePath)
+                }
+            }.awaitAll()
+        }
+
+        results.forEachIndexed { i, r ->
+            assertTrue(r.isSuccess, "Stress audio #$i failed: ${r.exceptionOrNull()}")
+        }
+        outputs.forEachIndexed { i, out ->
+            assertTrue(out.exists() && out.length() > 0, "Stress output #$i missing / empty")
+        }
+    }
+
     private fun wavFile(index: Int): File = File(tempDir, "audio_in_$index.wav").apply {
         writeBytes(
             WavGenerator.generateWavBytes(
@@ -113,5 +149,6 @@ class ConcurrentCompressionTest {
         const val PARALLEL_AUDIO_COUNT = 4
         const val MIXED_AUDIO_COUNT = 2
         const val MIXED_IMAGE_COUNT = 2
+        const val STRESS_COUNT = 16
     }
 }
