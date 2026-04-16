@@ -1,0 +1,5 @@
+language = Objective-C
+package = co.crackn.kompressor.cinterop
+headers = ObjCExceptionCatcher.h
+headerFilter = ObjCExceptionCatcher*
+staticLibraries = libObjCExceptionCatcher.a

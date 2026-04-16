@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  OIDC federation role for GitHub Actions to run AWS Device Farm jobs
+  on behalf of the cracknco/kompressor repository.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: cracknco
+  GitHubRepo:
+    Type: String
+    Default: kompressor
+  RoleName:
+    Type: String
+    Default: kompressor-ci-devicefarm
+  CreateOidcProvider:
+    Type: String
+    Description: >
+      Set to "true" only if the GitHub OIDC provider does NOT already exist
+      in this AWS account. If it already exists, keep "false".
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+Conditions:
+  ShouldCreateProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeviceFarmCiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: GitHub Actions OIDC role for Device Farm iOS device smoke
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              StringLike:
+                "token.actions.githubusercontent.com:sub":
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:pull_request"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/tags/*"
+      Policies:
+        - PolicyName: DeviceFarmLeastPrivilege
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DeviceFarmRun
+                Effect: Allow
+                Action:
+                  - devicefarm:ScheduleRun
+                  - devicefarm:GetRun
+                  - devicefarm:StopRun
+                  - devicefarm:ListArtifacts
+                  - devicefarm:ListJobs
+                  - devicefarm:ListSuites
+                  - devicefarm:ListTests
+                  - devicefarm:GetJob
+                  - devicefarm:CreateUpload
+                  - devicefarm:GetUpload
+                  - devicefarm:ListUploads
+                  - devicefarm:UpdateUpload
+                  - devicefarm:GetProject
+                  - devicefarm:GetDevicePool
+                Resource: "*"
+              - Sid: CostExplorerReadForBudgetGuard
+                Effect: Allow
+                Action:
+                  - ce:GetCostAndUsage
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: ARN to put in GitHub Actions variable AWS_ROLE_ARN
+    Value: !GetAtt DeviceFarmCiRole.Arn

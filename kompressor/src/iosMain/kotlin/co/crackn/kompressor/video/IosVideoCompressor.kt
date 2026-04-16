@@ -2,6 +2,7 @@ package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.awaitExportSession
+import co.crackn.kompressor.cinterop.KMP_safeCreateWriterInput
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
@@ -55,6 +56,7 @@ import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
+import platform.CoreVideo.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
 import platform.Foundation.NSURL
 import platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
 
@@ -187,11 +189,9 @@ internal class IosVideoCompressor : VideoCompressor {
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
 
-        // Settings matrix the runtime pre-flight uses to probe HDR10 support via
-        // `AVAssetWriter.canApplyOutputSettings`. 16×16 keeps the dictionary minimal — the
-        // dimensions are irrelevant to the capability check, only the codec/color/profile keys
-        // drive the answer.
-        private const val HDR10_PROBE_DIM = 16
+        // Minimum probe dimension for `canApplyOutputSettings` HDR10 pre-flight.
+        // 16×16 returns false on some devices; 64×64 matches the fixture and works reliably.
+        private const val HDR10_PROBE_DIM = 64
         private val HDR10_PROBE_SETTINGS: Map<Any?, Any?> = mapOf(
             AVVideoCodecKey to AVVideoCodecHEVC,
             AVVideoWidthKey to HDR10_PROBE_DIM,
@@ -268,13 +268,20 @@ private class IosVideoTranscodePipeline(
     ): Triple<AVAssetReader, AVAssetReaderTrackOutput, AVAssetReaderTrackOutput?> {
         val reader = AVAssetReader(asset = asset, error = null)
         // Request decoded pixel buffers (not compressed passthrough) so the
-        // writer's H.264 encoder can re-encode at the target bitrate/resolution.
+        // writer's encoder can re-encode at the target bitrate/resolution.
         // The raw string "PixelFormatType" is the underlying value of
         // kCVPixelBufferPixelFormatTypeKey (see CVPixelBuffer.h). We use the
         // literal because the CFStringRef constant does not bridge to NSDictionary
         // keys in Kotlin/Native.
+        // HDR10 requires 10-bit P010 pixel buffers — VideoToolbox rejects 8-bit
+        // BGRA with BT.2020/PQ color properties on real devices.
+        val pixelFormat = if (config.dynamicRange == DynamicRange.HDR10) {
+            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+        } else {
+            kCVPixelFormatType_32BGRA
+        }
         val videoOutputSettings: Map<Any?, *> = mapOf(
-            PIXEL_FORMAT_KEY to kCVPixelFormatType_32BGRA,
+            PIXEL_FORMAT_KEY to pixelFormat,
         )
         val videoOutput = AVAssetReaderTrackOutput(
             track = videoTrack,
@@ -301,9 +308,12 @@ private class IosVideoTranscodePipeline(
             outputUrl, fileType = AVFileTypeMPEG4, error = null,
         ) ?: error("Failed to create AVAssetWriter for: $outputUrl")
 
-        val videoInput = AVAssetWriterInput.assetWriterInputWithMediaType(
-            mediaType = AVMediaTypeVideo,
+        val videoInput = KMP_safeCreateWriterInput(
+            mediaType = requireNotNull(AVMediaTypeVideo) { "AVMediaTypeVideo unavailable" },
             outputSettings = buildVideoSettings(targetW, targetH),
+        ) ?: throw VideoCompressionError.UnsupportedSourceFormat(
+            "AVAssetWriterInput.init threw ObjC NSException — hardware encoder " +
+                "rejected HEVC Main10 output settings (see Kompressor NSLog for details)",
         )
         videoInput.expectsMediaDataInRealTime = false
         // Preserve source orientation. `preferredTransform` is an affine matrix that

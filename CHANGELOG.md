@@ -147,3 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * simplify Android audio pipeline — remove Channel overengineering ([557f631](https://github.com/cracknco/kompressor/commit/557f6316f4522dcc88b4b30b35af00772af8d05a))
 
 ## [Unreleased]
+
+### Fixed
+
+* **video:** catch ObjC NSException from AVAssetWriterInput.init via cinterop @try/@catch — prevents crash when HEVC Main10 output settings are rejected by the hardware encoder [CRA-7]
