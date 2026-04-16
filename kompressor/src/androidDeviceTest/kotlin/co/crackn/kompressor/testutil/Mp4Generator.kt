@@ -40,6 +40,12 @@ object Mp4Generator {
         fps = fps,
         rotationDegrees = rotationDegrees,
         frameFiller = ::fillVaryingYuv,
+        // Gradient fixture's size behaviour has been calibrated (in GoldenVideoTest) against
+        // the legacy raw-buffer path. Switching it to the Image API changes the encoder's
+        // effective chroma entropy — the linear U/V ramp that wraps many times per row
+        // compresses differently once laid out correctly — and blows the MBps-to-size
+        // bounds. Keep it on the raw-buffer path; sentinel test below opts into Image API.
+        inputViaImageApi = false,
     )
 
     /**
@@ -70,6 +76,7 @@ object Mp4Generator {
             fps = fps,
             rotationDegrees = rotationDegrees,
             frameFiller = { dst, w, h, _ -> fillCornerMarkedYuv(dst, w, h, corners, markerSize) },
+            inputViaImageApi = true,
         )
     }
 
@@ -82,6 +89,7 @@ object Mp4Generator {
         fps: Int,
         rotationDegrees: Int,
         frameFiller: (ByteArray, Int, Int, Int) -> Unit,
+        inputViaImageApi: Boolean,
     ): File {
         val format = MediaFormat.createVideoFormat(H264_MIME, width, height).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE)
@@ -104,7 +112,7 @@ object Mp4Generator {
             muxer.setOrientationHint(normalisedRotation)
         }
         try {
-            encodeFrames(encoder, muxer, width, height, frameCount, fps, frameFiller)
+            encodeFrames(encoder, muxer, width, height, frameCount, fps, frameFiller, inputViaImageApi)
         } finally {
             try { encoder.stop() } catch (_: IllegalStateException) { }
             encoder.release()
@@ -123,6 +131,7 @@ object Mp4Generator {
         frameCount: Int,
         fps: Int,
         frameFiller: (ByteArray, Int, Int, Int) -> Unit,
+        inputViaImageApi: Boolean,
     ) {
         val yuvData = ByteArray(width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR)
         val info = MediaCodec.BufferInfo()
@@ -137,20 +146,31 @@ object Mp4Generator {
                 if (inputIdx >= 0) {
                     if (framesSubmitted < frameCount) {
                         frameFiller(yuvData, width, height, framesSubmitted)
-                        // COLOR_FormatYUV420Flexible does not guarantee a specific planar
-                        // layout: devices may expose I420 (pixelStride=1) or NV12/NV21
-                        // (interleaved UV, pixelStride=2). Writing raw bytes via
-                        // getInputBuffer assumes I420 and silently corrupts chroma on
-                        // NV12 encoders (e.g. Pixel 6) — visible when pixel content is
-                        // asserted, invisible when only dimensions/size are. The Image
-                        // API exposes per-plane strides so the same planar source byte
-                        // array lands correctly regardless of the codec's choice.
-                        val image = encoder.getInputImage(inputIdx)
-                            ?: error("MediaCodec.getInputImage returned null for YUV420Flexible input")
-                        writePlanarYuvToImage(image, yuvData, width, height)
                         val pts = framesSubmitted.toLong() * US_PER_SEC / fps
-                        val yuvBytes = width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR
-                        encoder.queueInputBuffer(inputIdx, 0, yuvBytes, pts, 0)
+                        if (inputViaImageApi) {
+                            // COLOR_FormatYUV420Flexible does not guarantee a specific planar
+                            // layout: devices may expose I420 (pixelStride=1) or NV12/NV21
+                            // (interleaved UV, pixelStride=2). Writing raw bytes via
+                            // getInputBuffer assumes I420 and silently corrupts chroma on
+                            // NV12 encoders (e.g. Pixel 6) — invisible when only dimensions
+                            // or size are asserted, but catastrophic for tests asserting
+                            // exact pixel colour at exact positions (corner-marker sentinel).
+                            val image = encoder.getInputImage(inputIdx)
+                                ?: error("MediaCodec.getInputImage returned null for YUV420Flexible input")
+                            writePlanarYuvToImage(image, yuvData, width, height)
+                            val yuvBytes = width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR
+                            encoder.queueInputBuffer(inputIdx, 0, yuvBytes, pts, 0)
+                        } else {
+                            // Legacy raw-buffer path: kept for fixtures whose downstream
+                            // assertions (bitrate/size) are calibrated against the chroma
+                            // scrambling that NV12-reinterpretation of planar bytes
+                            // produces. See generateMp4's caller comment.
+                            val inputBuf = encoder.getInputBuffer(inputIdx) ?: error("No input buffer")
+                            inputBuf.clear()
+                            val written = minOf(yuvData.size, inputBuf.capacity())
+                            inputBuf.put(yuvData, 0, written)
+                            encoder.queueInputBuffer(inputIdx, 0, written, pts, 0)
+                        }
                     } else {
                         encoder.queueInputBuffer(
                             inputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM,

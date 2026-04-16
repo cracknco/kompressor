@@ -139,7 +139,11 @@ class VideoRotationSentinelTest {
         const val INPUT_WIDTH = 320
         const val INPUT_HEIGHT = 240
         const val INPUT_FRAME_COUNT = 30
-        const val TOLERANCE = 5
+        // Android MediaCodec's H.264 encoder + MediaMetadataRetriever's BT.601 limited-range
+        // decode path drifts up to ~8 units per channel on the Pixel 6 (API 33) hardware — a
+        // wrong-way or dropped rotation still produces ~255-unit corner swaps, so ±12 leaves
+        // wide diagnostic headroom against codec quantisation noise without false positives.
+        const val TOLERANCE = 12
         const val HALF_CIRCLE = 180
         const val QUARTER_TURN = 90
         const val R_SHIFT = 16
