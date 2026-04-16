@@ -17,6 +17,7 @@ import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.fileSize
+import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionError
@@ -25,6 +26,7 @@ import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
+import platform.UIKit.UIImage
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -36,10 +38,13 @@ import kotlin.test.fail
  * Core Graphics when they appear in an output file path: emoji ZWJ sequences, Arabic
  * RTL text, a bare zero-width joiner, and an NFD-encoded combining mark.
  *
- * For every case the compressor must either succeed (producing a non-empty output file)
+ * For every case the compressor must either succeed (producing a non-empty output file
+ * that the platform can still recognise as valid media — `UIImage.imageWithContentsOfFile`
+ * must return non-nil for JPEG, the MP4 / M4A must begin with the ISO BMFF "ftyp" box)
  * or fail with the typed `IoFailed` variant of the corresponding per-media sealed error
- * hierarchy, carrying a non-blank `details` string. Anything else — an opaque `Unknown`,
- * an `NPE` from the ObjC bridge, or a crash — is a regression.
+ * hierarchy, carrying a `details` string with a readable reason (≥ 10 non-whitespace
+ * chars). Anything else — an opaque `Unknown`, an `NPE` from the ObjC bridge, a terse
+ * one-letter reason, a header-less / zero-byte file, or a crash — is a regression.
  *
  * The CRA-10 DoD refers to the typed failure as `IoError.InvalidPath`; the equivalent
  * in this codebase is `ImageCompressionError.IoFailed`, `AudioCompressionError.IoFailed`,
@@ -70,66 +75,66 @@ class IosPathEncodingTest {
     // ---- Image ----
 
     @Test
-    fun imageCompress_outputWithEmojiZwjFamily_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun imageCompress_outputWithEmojiZwjFamily_succeedsOrTypedIoFailed() = runTest {
         runImageCase(label = "emoji ZWJ family 👨‍👩‍👧", trickySegment = EMOJI_ZWJ_FAMILY)
     }
 
     @Test
-    fun imageCompress_outputWithRtlArabic_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun imageCompress_outputWithRtlArabic_succeedsOrTypedIoFailed() = runTest {
         runImageCase(label = "RTL Arabic مرحبا", trickySegment = RTL_ARABIC)
     }
 
     @Test
-    fun imageCompress_outputWithBareZeroWidthJoiner_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun imageCompress_outputWithBareZeroWidthJoiner_succeedsOrTypedIoFailed() = runTest {
         runImageCase(label = "bare zero-width joiner", trickySegment = ZWJ_BETWEEN_LETTERS)
     }
 
     @Test
-    fun imageCompress_outputWithNfdCombiningMark_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun imageCompress_outputWithNfdCombiningMark_succeedsOrTypedIoFailed() = runTest {
         runImageCase(label = "NFD café (ca + U+0301)", trickySegment = NFD_CAFE)
     }
 
     // ---- Audio ----
 
     @Test
-    fun audioCompress_outputWithEmojiZwjFamily_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun audioCompress_outputWithEmojiZwjFamily_succeedsOrTypedIoFailed() = runTest {
         runAudioCase(label = "emoji ZWJ family 👨‍👩‍👧", trickySegment = EMOJI_ZWJ_FAMILY)
     }
 
     @Test
-    fun audioCompress_outputWithRtlArabic_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun audioCompress_outputWithRtlArabic_succeedsOrTypedIoFailed() = runTest {
         runAudioCase(label = "RTL Arabic مرحبا", trickySegment = RTL_ARABIC)
     }
 
     @Test
-    fun audioCompress_outputWithBareZeroWidthJoiner_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun audioCompress_outputWithBareZeroWidthJoiner_succeedsOrTypedIoFailed() = runTest {
         runAudioCase(label = "bare zero-width joiner", trickySegment = ZWJ_BETWEEN_LETTERS)
     }
 
     @Test
-    fun audioCompress_outputWithNfdCombiningMark_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun audioCompress_outputWithNfdCombiningMark_succeedsOrTypedIoFailed() = runTest {
         runAudioCase(label = "NFD café (ca + U+0301)", trickySegment = NFD_CAFE)
     }
 
     // ---- Video ----
 
     @Test
-    fun videoCompress_outputWithEmojiZwjFamily_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun videoCompress_outputWithEmojiZwjFamily_succeedsOrTypedIoFailed() = runTest {
         runVideoCase(label = "emoji ZWJ family 👨‍👩‍👧", trickySegment = EMOJI_ZWJ_FAMILY)
     }
 
     @Test
-    fun videoCompress_outputWithRtlArabic_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun videoCompress_outputWithRtlArabic_succeedsOrTypedIoFailed() = runTest {
         runVideoCase(label = "RTL Arabic مرحبا", trickySegment = RTL_ARABIC)
     }
 
     @Test
-    fun videoCompress_outputWithBareZeroWidthJoiner_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun videoCompress_outputWithBareZeroWidthJoiner_succeedsOrTypedIoFailed() = runTest {
         runVideoCase(label = "bare zero-width joiner", trickySegment = ZWJ_BETWEEN_LETTERS)
     }
 
     @Test
-    fun videoCompress_outputWithNfdCombiningMark_succeedsOrReturnsTypedIoFailed() = runTest {
+    fun videoCompress_outputWithNfdCombiningMark_succeedsOrTypedIoFailed() = runTest {
         runVideoCase(label = "NFD café (ca + U+0301)", trickySegment = NFD_CAFE)
     }
 
@@ -146,8 +151,9 @@ class IosPathEncodingTest {
             label = label,
             outputPath = outputPath,
             result = result,
-            typedFailureCheck = { it is ImageCompressionError.IoFailed && it.details.isNotBlank() },
+            typedFailureCheck = { it is ImageCompressionError.IoFailed && it.details.isReadableReason() },
             typedFailureName = "ImageCompressionError.IoFailed",
+            verifyDecodable = ::canDecodeJpeg,
         )
     }
 
@@ -169,8 +175,9 @@ class IosPathEncodingTest {
             label = label,
             outputPath = outputPath,
             result = result,
-            typedFailureCheck = { it is AudioCompressionError.IoFailed && it.details.isNotBlank() },
+            typedFailureCheck = { it is AudioCompressionError.IoFailed && it.details.isReadableReason() },
             typedFailureName = "AudioCompressionError.IoFailed",
+            verifyDecodable = ::hasMp4FtypSignature,
         )
     }
 
@@ -185,8 +192,9 @@ class IosPathEncodingTest {
             label = label,
             outputPath = outputPath,
             result = result,
-            typedFailureCheck = { it is VideoCompressionError.IoFailed && it.details.isNotBlank() },
+            typedFailureCheck = { it is VideoCompressionError.IoFailed && it.details.isReadableReason() },
             typedFailureName = "VideoCompressionError.IoFailed",
+            verifyDecodable = ::hasMp4FtypSignature,
         )
     }
 
@@ -204,11 +212,18 @@ class IosPathEncodingTest {
         result: Result<*>,
         typedFailureCheck: (Throwable) -> Boolean,
         typedFailureName: String,
+        verifyDecodable: (String) -> Boolean,
     ) {
         if (result.isSuccess) {
             assertTrue(
                 fileSize(outputPath) > 0,
                 "Case '$label' reported success but wrote empty file at $outputPath",
+            )
+            assertTrue(
+                verifyDecodable(outputPath),
+                "Case '$label' reported success and wrote bytes but the output at " +
+                    "$outputPath is not decodable by the platform — AVFoundation/UIKit " +
+                    "wrote a corrupt file on a tricky path",
             )
             return
         }
@@ -217,10 +232,33 @@ class IosPathEncodingTest {
         if (!typedFailureCheck(error)) {
             fail(
                 "Case '$label' failed with an opaque or untyped error — expected " +
-                    "$typedFailureName with non-blank details, got " +
-                    "${error::class.simpleName}: ${error.message}",
+                    "$typedFailureName with a readable reason (>= $MIN_READABLE_REASON_LEN " +
+                    "non-whitespace chars), got ${error::class.simpleName}: ${error.message}",
             )
         }
+    }
+
+    private fun String.isReadableReason(): Boolean = trim().length >= MIN_READABLE_REASON_LEN
+
+    private fun canDecodeJpeg(path: String): Boolean = UIImage.imageWithContentsOfFile(path) != null
+
+    /**
+     * Verifies [path] starts with a valid ISO BMFF "ftyp" box — the mandatory first
+     * box of an MP4 / M4A container (ISO/IEC 14496-12 §4.3). A file the compressor
+     * "succeeded" writing but which lacks this signature is a zero-byte or header-only
+     * corruption; catching that is the value the CRA-10 contract adds over
+     * `fileSize > 0`. A stronger decode (AVURLAsset.duration) is deliberately avoided
+     * because AVFoundation's asset loader is async-lazy for duration and has known
+     * issues dereferencing `NSURL`s over paths containing a bare U+200D on the
+     * Xcode 16 iOS simulator — issues orthogonal to the contract this test defends.
+     */
+    private fun hasMp4FtypSignature(path: String): Boolean {
+        val bytes = runCatching { readBytes(path) }.getOrNull() ?: return false
+        if (bytes.size < FTYP_PROBE_OFFSET + FTYP_LEN) return false
+        return bytes[FTYP_PROBE_OFFSET] == 'f'.code.toByte() &&
+            bytes[FTYP_PROBE_OFFSET + 1] == 't'.code.toByte() &&
+            bytes[FTYP_PROBE_OFFSET + 2] == 'y'.code.toByte() &&
+            bytes[FTYP_PROBE_OFFSET + 3] == 'p'.code.toByte()
     }
 
     private fun makeDirs(path: String): Boolean =
@@ -234,6 +272,17 @@ class IosPathEncodingTest {
     private companion object {
         const val VIDEO_FRAME_COUNT = 15
 
+        // Minimum non-whitespace length for a typed-error `details` string to qualify as a
+        // "readable reason" (ticket DoD: "raison lisible"). Floors out degenerate messages like
+        // "x" or "io" that would satisfy `isNotBlank()` but defeat the contract. AVFoundation's
+        // own format `"${domain}#${code} — ${localizedDescription}"` is always well above this.
+        const val MIN_READABLE_REASON_LEN = 10
+
+        // ISO BMFF "ftyp" box. The box-size prefix occupies bytes 0–3, the 4-char type
+        // occupies bytes 4–7. Every well-formed MP4 / M4A starts exactly this way.
+        const val FTYP_PROBE_OFFSET = 4
+        const val FTYP_LEN = 4
+
         // MAN + ZWJ + WOMAN + ZWJ + GIRL — renders as 👨‍👩‍👧 on fonts that support the sequence,
         // degrades to three separate emoji elsewhere. The bytes on disk are identical either way.
         const val EMOJI_ZWJ_FAMILY = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"
@@ -246,8 +295,10 @@ class IosPathEncodingTest {
         // Legal in an APFS file name; platforms must either honour it or reject with IoFailed.
         const val ZWJ_BETWEEN_LETTERS = "a\u200Db"
 
-        // "café" in NFD form: c, a, f, e, U+0301 COMBINING ACUTE ACCENT. APFS does not silently
-        // normalise; a round-trip must not collapse this into the NFC precomposed "café".
+        // "café" in NFD form: c, a, f, e, U+0301 COMBINING ACUTE ACCENT. The 5-codepoint form
+        // historically tripped AVAssetWriter and CoreGraphics output-URL parsing; the contract
+        // is that compressors must handle it without crashing or returning an opaque error.
+        // (Byte-exact APFS path preservation is a separate invariant, not asserted by this test.)
         const val NFD_CAFE = "cafe\u0301"
     }
 }
