@@ -130,7 +130,7 @@ final class AudioBitrateCharacterizationTests: XCTestCase {
         bitrate: Int
     ) -> Bool {
         var accepted = false
-        let nsError = ObjCExceptionCatcher.catchExceptionInBlock {
+        let nsError = ObjCExceptionCatcher.catchException {
             accepted = self.probeEncoderInner(
                 inputURL: inputURL,
                 outputURL: outputURL,
