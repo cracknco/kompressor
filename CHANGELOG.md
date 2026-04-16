@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * GitHub issue templates: bug report, feature request, regression (form-based `.yml`) [CRA-34]
 * GitHub issue template config with link to Discussions for questions [CRA-34]
 * Pull request template with DoD checklist and changelog entry section [CRA-34]
+* **ci/docs:** committed ABI baseline + fail-hard CI gate — the `test` job in `pr.yml` now annotates `apiCheck` failures with an actionable `::error::` message ("Run `./gradlew apiDump` and commit the result if intentional"), and `docs/api-stability.md` documents the dump-update workflow plus the S/E/I review checklist (Source compatibility, Experimental?, Intentional?) that reviewers must walk through on every ABI diff [CRA-23]
 
 ### Fixed
 
