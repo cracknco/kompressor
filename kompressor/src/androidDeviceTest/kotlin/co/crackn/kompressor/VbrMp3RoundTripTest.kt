@@ -89,7 +89,7 @@ class VbrMp3RoundTripTest {
      * as CBR and masks the VBR-specific decoder path we care about.
      */
     private fun assertInputIsVbr(file: File) {
-        val head = file.inputStream().use { it.readNBytes(VBR_HEADER_SCAN_LIMIT) }
+        val head = readUpTo(file, VBR_HEADER_SCAN_LIMIT)
         val xingIdx = indexOfAscii(head, "Xing")
         val infoIdx = indexOfAscii(head, "Info")
         assertTrue(
@@ -97,6 +97,22 @@ class VbrMp3RoundTripTest {
             "Fixture vbr_v0.mp3 missing Xing header — expected VBR marker, found " +
                 "${if (infoIdx >= 0) "CBR 'Info' tag at $infoIdx" else "neither Xing nor Info"}",
         )
+    }
+
+    // Portable equivalent of InputStream.readNBytes(int), which is JDK 11 / Android API 33+.
+    // Our device-test matrix runs on AWS Device Farm across multiple API levels, so we can't
+    // rely on the JDK 11 call here. Reads up to [limit] bytes, stopping early at EOF.
+    private fun readUpTo(file: File, limit: Int): ByteArray {
+        val buf = ByteArray(limit)
+        var total = 0
+        file.inputStream().use { stream ->
+            while (total < limit) {
+                val n = stream.read(buf, total, limit - total)
+                if (n < 0) break
+                total += n
+            }
+        }
+        return if (total == limit) buf else buf.copyOf(total)
     }
 
     private fun indexOfAscii(haystack: ByteArray, needle: String): Int {
