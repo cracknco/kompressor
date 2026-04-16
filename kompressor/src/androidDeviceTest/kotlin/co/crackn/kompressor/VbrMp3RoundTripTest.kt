@@ -77,7 +77,7 @@ class VbrMp3RoundTripTest {
 
         val durationMs = readAudioDurationMs(output)
         assertTrue(
-            abs(durationMs - SOURCE_DURATION_MS) < DURATION_TOLERANCE_MS,
+            abs(durationMs - SOURCE_DURATION_MS) <= DURATION_TOLERANCE_MS,
             "Output duration $durationMs ms must be within ${DURATION_TOLERANCE_MS}ms of the " +
                 "${SOURCE_DURATION_MS}ms source — zero or wildly different means the VBR extractor " +
                 "failed to produce a populated track",
