@@ -218,14 +218,25 @@ internal class AndroidVideoCompressor(
 }
 
 /**
- * Returns true when the device's `MediaCodecList` advertises at least one HEVC encoder
- * supporting the Main10 or Main10HDR10 profile. Used to pre-flight HDR10 compression requests.
+ * Returns true when the device has at least one HEVC encoder that can actually keep an HDR10
+ * source HDR10 through Media3 — i.e. the device runs API 33+ AND an encoder advertises a
+ * Main10 / Main10HDR10 profile with the `FEATURE_HdrEditing` MediaCodec feature.
+ *
+ * The two-stage check mirrors Media3's own gate in `EncoderUtil.getSupportedEncodersForHdrEditing`
+ * (annotated `@RequiresApi(33)` — empty list on older SDKs) and
+ * `TransformerUtil.getOutputMimeTypeAndHdrModeAfterFallback` (which flips `HDR_MODE_KEEP_HDR`
+ * to `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` whenever that list is empty or the encoder
+ * doesn't advertise `FEATURE_HdrEditing`). Aligning the pre-flight with Media3 means
+ * `VideoCompressionError.UnsupportedSourceFormat` surfaces to callers instead of a
+ * surprise-SDR output — caught by `Hdr10PixelFidelityRoundTripTest` on Pixel 6 API 33, which
+ * advertises Main10 but NOT `FEATURE_HdrEditing`.
  *
  * Cached after the first probe — `MediaCodecList(REGULAR_CODECS)` enumerates every encoder on
  * the device and is non-trivial; on hot HDR10 paths (re-encode loops) the result is invariant
  * for the process lifetime so re-probing per call is wasted work.
  */
 private val hdr10HevcSupported: Boolean by lazy {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return@lazy false
     val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
     val main10Profiles = setOf(
         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
@@ -235,7 +246,8 @@ private val hdr10HevcSupported: Boolean by lazy {
     codecs.any { info ->
         if (!info.isEncoder) return@any false
         val caps = runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull() ?: return@any false
-        caps.profileLevels.any { pl -> pl.profile in main10Profiles }
+        val hasMain10 = caps.profileLevels.any { pl -> pl.profile in main10Profiles }
+        hasMain10 && caps.isFeatureSupported(android.media.MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)
     }
 }
 

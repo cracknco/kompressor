@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+* **test:** HDR10 pixel-fidelity round-trip test — canonical P010/HEVC Main10 fixture generator (`scripts/generate-hdr10-fixture.sh` + on-device instrumented generator), `Hdr10PixelFidelityRoundTripTest` asserts BT.2020 primaries survive compression within ΔE ≤ 2 (CIEDE2000) and `MediaFormat` color metadata (BT.2020 primaries/matrix + ST.2084 transfer) is preserved end-to-end [CRA-6]
 * **test/docs:** `Bs775DownmixMatrixTest` host-side conformance check pinning the 7.1 → stereo / 7.1 → 5.1 surround downmix matrices against ITU-R BS.775-3 reference coefficients (±0.01 tolerance, intentional divergences pinned with rationale), canonical 7.1 PCM fixture generator, and `docs/audio-downmix.md` documenting the impl / BS.775-3 / Dolby (ATSC A/52) matrices and every divergence [CRA-13]
 * **test:** reproducible M1 edge-case fixtures (VBR MP3, FLAC with embedded cover art, CMYK JPEG) and round-trip tests pinning compressor contract (Xing VBR round-trip, FLAC PICTURE block dropped from AAC output, CMYK → RGB conversion or typed `ImageCompressionError`) [CRA-5]
 * **test:** inter-process concurrent `compress()` regression guard on Android host JVM (4 processes × 4 coroutines), 16-coroutine stress variant on iOS simulator and Android device, `docs/threading-model.md`, and consistent thread-safety KDoc on all public compressor APIs [CRA-14]
@@ -18,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **video:** tighten Android HDR10 pre-flight to also require `MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing` on API 33+ — aligns with Media3's internal `HDR_MODE_KEEP_HDR` gate, so devices that advertise HEVC Main10 but lack the feature now surface `VideoCompressionError.UnsupportedSourceFormat` instead of silently tone-mapping to SDR BT.709 [CRA-6]
 * **video:** catch ObjC NSException from AVAssetWriterInput.init via cinterop @try/@catch — prevents crash when HEVC Main10 output settings are rejected by the hardware encoder [CRA-7]
 
 ## 1.0.0 (2026-04-15)

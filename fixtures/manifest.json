@@ -257,6 +257,17 @@
       "test_cases": [
         "CmykJpegHandlingTest.cmykJpeg_convertsToRgbOrReturnsTypedError"
       ]
+    },
+    {
+      "name": "hdr10_p010.mp4",
+      "source_url": null,
+      "license": "Internal (generated via scripts/generate-hdr10-fixture.sh)",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "hdr/video",
+      "tags": ["hevc", "main10", "hdr10", "p010", "bt2020", "st2084", "1080p", "30fps"],
+      "test_cases": ["Hdr10PixelFidelityRoundTripTest.hdr10RoundTrip_preservesBt2020PrimariesAndColorMetadata"]
     }
   ]
 }
