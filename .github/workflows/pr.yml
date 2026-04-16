@@ -98,8 +98,20 @@ jobs:
         run: ./scripts/fetch-fixtures.sh
       - name: Run tests (Android host)
         run: ./gradlew testAndroidHostTest
+      # BCV's `apiCheck` already exits non-zero on ABI drift. The wrapper below turns that
+      # into a GitHub-annotated error so the PR's Files-Changed view shows one actionable line
+      # ("Run `./gradlew apiDump` and commit …") right next to the red check, instead of the
+      # reviewer having to expand the logs to find the Gradle diff. No `continue-on-error`:
+      # the step must still fail the job — the annotation only augments the signal.
+      # Message is a hardcoded static string — no `github.event.*` interpolation — so there
+      # is no injection surface (cf. the security-reminder hook on workflow edits).
       - name: API binary compatibility check
-        run: ./gradlew apiCheck
+        run: |
+          set -e
+          if ! ./gradlew apiCheck; then
+            echo "::error title=ABI baseline drift::Public ABI diverged from kompressor/api/kompressor.api. Run \`./gradlew apiDump\` and commit the result if intentional. See docs/api-stability.md for the S/E/I review checklist."
+            exit 1
+          fi
       - name: Run Kover report
         run: ./gradlew koverXmlReport
       - name: Kover — quality gate
