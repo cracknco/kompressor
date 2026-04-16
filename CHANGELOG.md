@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-* **test:** inter-process concurrent `compress()` regression guard on Android host JVM (4 processes × 4 coroutines), 16-coroutine stress variant on iOS simulator and Android device, `docs/threading-model.md`, and consistent thread-safety KDoc on all public compressor APIs [CRA-14]
 * **test:** reproducible M1 edge-case fixtures (VBR MP3, FLAC with embedded cover art, CMYK JPEG) and round-trip tests pinning compressor contract (Xing VBR round-trip, FLAC PICTURE block dropped from AAC output, CMYK → RGB conversion or typed `ImageCompressionError`) [CRA-5]
+* **test:** inter-process concurrent `compress()` regression guard on Android host JVM (4 processes × 4 coroutines), 16-coroutine stress variant on iOS simulator and Android device, `docs/threading-model.md`, and consistent thread-safety KDoc on all public compressor APIs [CRA-14]
 * **license:** Apache-2.0 SPDX headers, transitive dependency license audit, and SPDX release asset [CRA-26] (#79)
 * GitHub issue templates: bug report, feature request, regression (form-based `.yml`) [CRA-34]
 * GitHub issue template config with link to Discussions for questions [CRA-34]
