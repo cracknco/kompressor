@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Pull request template with DoD checklist and changelog entry section [CRA-34]
 * **ci/docs:** committed ABI baseline + fail-hard CI gate — the `test` job in `pr.yml` now annotates `apiCheck` failures with an actionable `::error::` message ("Run `./gradlew apiDump` and commit the result if intentional"), and `docs/api-stability.md` documents the dump-update workflow plus the S/E/I review checklist (Source compatibility, Experimental?, Intentional?) that reviewers must walk through on every ABI diff [CRA-23]
 
+### Changed
+
+* **ci:** `changelog-check` workflow now parses `CHANGELOG.md` content directly at the base and head revisions via `scripts/ci/check-unreleased-entry.sh`, instead of scraping `git diff` output with sed/grep. Eliminates false failures when a new bullet sits outside the unified-diff context window (previously mitigated by a fragile `-U1000` widen). Ships with a self-contained shell test suite (`scripts/ci/check-unreleased-entry.test.sh`, 8 cases) that reproduces PR #83's pre-fix layout [CRA-79]
+
 ### Fixed
 
 * **video:** tighten Android HDR10 pre-flight to also require `MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing` on API 33+ — aligns with Media3's internal `HDR_MODE_KEEP_HDR` gate, so devices that advertise HEVC Main10 but lack the feature now surface `VideoCompressionError.UnsupportedSourceFormat` instead of silently tone-mapping to SDR BT.709 [CRA-6]
