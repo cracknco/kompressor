@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
 import co.crackn.kompressor.testutil.readAudioTrackInfo
@@ -124,22 +125,11 @@ class FlacCoverArtDroppedTest {
     }
 
     private fun assertDoesNotContain(haystack: ByteArray, needle: ByteArray, description: String) {
-        val idx = indexOf(haystack, needle)
+        val idx = ByteSearch.indexOf(haystack, needle)
         assertTrue(
             idx < 0,
             "$description must not appear in M4A output, but was found at offset $idx",
         )
-    }
-
-    private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
-        if (needle.isEmpty() || haystack.size < needle.size) return -1
-        outer@ for (i in 0..haystack.size - needle.size) {
-            for (j in needle.indices) {
-                if (haystack[i + j] != needle[j]) continue@outer
-            }
-            return i
-        }
-        return -1
     }
 
     private companion object {

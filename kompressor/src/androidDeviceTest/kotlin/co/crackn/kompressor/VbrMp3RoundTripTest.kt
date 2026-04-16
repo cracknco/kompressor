@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
 import co.crackn.kompressor.testutil.readAudioDurationMs
@@ -90,8 +91,8 @@ class VbrMp3RoundTripTest {
      */
     private fun assertInputIsVbr(file: File) {
         val head = readUpTo(file, VBR_HEADER_SCAN_LIMIT)
-        val xingIdx = indexOfAscii(head, "Xing")
-        val infoIdx = indexOfAscii(head, "Info")
+        val xingIdx = ByteSearch.indexOfAscii(head, "Xing")
+        val infoIdx = ByteSearch.indexOfAscii(head, "Info")
         assertTrue(
             xingIdx >= 0,
             "Fixture vbr_v0.mp3 missing Xing header — expected VBR marker, found " +
@@ -113,17 +114,6 @@ class VbrMp3RoundTripTest {
             }
         }
         return if (total == limit) buf else buf.copyOf(total)
-    }
-
-    private fun indexOfAscii(haystack: ByteArray, needle: String): Int {
-        val n = needle.encodeToByteArray()
-        outer@ for (i in 0..haystack.size - n.size) {
-            for (j in n.indices) {
-                if (haystack[i + j] != n[j]) continue@outer
-            }
-            return i
-        }
-        return -1
     }
 
     private companion object {

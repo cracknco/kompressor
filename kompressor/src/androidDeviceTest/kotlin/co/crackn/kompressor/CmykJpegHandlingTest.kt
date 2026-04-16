@@ -9,6 +9,7 @@ import android.graphics.BitmapFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionError
+import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
 import kotlinx.coroutines.test.runTest
@@ -94,7 +95,7 @@ class CmykJpegHandlingTest {
     }
 
     private fun readJpegComponentCount(bytes: ByteArray): Int {
-        val sofIndex = indexOfAny(
+        val sofIndex = ByteSearch.indexOfAny(
             bytes,
             byteArrayOf(0xFF.toByte(), 0xC0.toByte()),
             byteArrayOf(0xFF.toByte(), 0xC1.toByte()),
@@ -102,25 +103,6 @@ class CmykJpegHandlingTest {
         )
         if (sofIndex < 0 || sofIndex + SOF_NF_OFFSET >= bytes.size) return -1
         return bytes[sofIndex + SOF_NF_OFFSET].toInt() and 0xFF
-    }
-
-    private fun indexOfAny(haystack: ByteArray, vararg needles: ByteArray): Int {
-        for (needle in needles) {
-            val idx = indexOf(haystack, needle)
-            if (idx >= 0) return idx
-        }
-        return -1
-    }
-
-    private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
-        if (needle.isEmpty() || haystack.size < needle.size) return -1
-        outer@ for (i in 0..haystack.size - needle.size) {
-            for (j in needle.indices) {
-                if (haystack[i + j] != needle[j]) continue@outer
-            }
-            return i
-        }
-        return -1
     }
 
     private companion object {

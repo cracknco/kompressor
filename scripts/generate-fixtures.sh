@@ -79,28 +79,98 @@ check_deps() {
 
 verify() {
     local all_ok=1
+    # Verify BOTH the central bank ($BANK_DIR/$category/$name) and the Android device-test
+    # classpath copy ($ANDROID_RES/$name). Android tests read the classpath copy, so a stale
+    # one passes a bank-only check while the tests actually exercise drifted bytes.
     for i in "${!FIXTURE_NAMES[@]}"; do
         local name="${FIXTURE_NAMES[$i]}"
         local expected="${FIXTURE_SHAS[$i]}"
         local category="${FIXTURE_CATEGORIES[$i]}"
-        local committed="$BANK_DIR/$category/$name"
-        if [ ! -f "$committed" ]; then
-            echo "MISSING  $name (expected at $committed)"
-            all_ok=0
-            continue
-        fi
-        local actual
-        actual="$(sha256_of "$committed")"
-        if [ "$actual" = "$expected" ]; then
-            echo "OK       $name"
-        else
-            echo "MISMATCH $name"
-            echo "         expected $expected"
-            echo "         got      $actual"
-            all_ok=0
-        fi
+        local bank_path="$BANK_DIR/$category/$name"
+        local android_path="$ANDROID_RES/$name"
+        for committed in "$bank_path" "$android_path"; do
+            if [ ! -f "$committed" ]; then
+                echo "MISSING  $name ($committed)"
+                all_ok=0
+                continue
+            fi
+            local actual
+            actual="$(sha256_of "$committed")"
+            if [ "$actual" = "$expected" ]; then
+                echo "OK       $name ($committed)"
+            else
+                echo "MISMATCH $name ($committed)"
+                echo "         expected $expected"
+                echo "         got      $actual"
+                all_ok=0
+            fi
+        done
     done
+    # Cross-check the iOS inlined BYTES literal against the on-disk CMYK fixture. The iosTest
+    # source set inlines cmyk.jpg bytes (NSBundle resource layout is not stable across KGP
+    # versions — see CmykJpegFixture.kt docstring). A regeneration that updates the on-disk
+    # fixture + anchor table but forgets to refresh BYTES would otherwise pass --verify while
+    # the iOS test breaks at CI run time.
+    local cmyk_on_disk="$BANK_DIR/image/cmyk.jpg"
+    local cmyk_kt="$PROJECT_ROOT/kompressor/src/iosTest/kotlin/co/crackn/kompressor/testutil/CmykJpegFixture.kt"
+    if [ -f "$cmyk_on_disk" ] && [ -f "$cmyk_kt" ]; then
+        if verify_inlined_cmyk_bytes "$cmyk_on_disk" "$cmyk_kt"; then
+            echo "OK       cmyk.jpg inlined BYTES match on-disk fixture"
+        else
+            echo "MISMATCH cmyk.jpg inlined BYTES drifted from on-disk fixture"
+            echo "         Regenerate: scripts/generate-fixtures.sh"
+            echo "         Then refresh the BYTES literal in CmykJpegFixture.kt to match."
+            all_ok=0
+        fi
+    fi
     [ "$all_ok" -eq 1 ]
+}
+
+# Extract the `byteArrayOf(...)` literal from CmykJpegFixture.kt, decode the hex tokens, and
+# compare the reconstructed byte stream to the on-disk fixture. Uses python3 (ships with
+# macOS >= 12 and with every GitHub Actions / Ubuntu CI runner).
+verify_inlined_cmyk_bytes() {
+    local fixture_path="$1"
+    local kotlin_file="$2"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "SKIP     cmyk inlined-BYTES check — python3 not available" >&2
+        return 0
+    fi
+    python3 - "$fixture_path" "$kotlin_file" <<'PY'
+import re, sys
+fixture_path, kotlin_file = sys.argv[1], sys.argv[2]
+with open(kotlin_file, "r", encoding="utf-8") as f:
+    content = f.read()
+# Balanced-paren extraction: find `byteArrayOf(` and walk until the matching `)`. A plain
+# non-greedy regex would stop at the first `)` from `0xFF.toByte()`, truncating to 1 byte.
+start = content.find("byteArrayOf(")
+if start < 0:
+    sys.stderr.write("no byteArrayOf literal found in " + kotlin_file + "\n")
+    sys.exit(1)
+i = start + len("byteArrayOf(")
+depth = 1
+while i < len(content) and depth > 0:
+    c = content[i]
+    if c == "(":
+        depth += 1
+    elif c == ")":
+        depth -= 1
+    i += 1
+if depth != 0:
+    sys.stderr.write("unbalanced parens in byteArrayOf(...) literal\n")
+    sys.exit(1)
+literal = content[start + len("byteArrayOf(") : i - 1]
+tokens = re.findall(r"0x([0-9a-fA-F]{2})", literal)
+inlined = bytes(int(t, 16) for t in tokens)
+with open(fixture_path, "rb") as f:
+    on_disk = f.read()
+if inlined != on_disk:
+    sys.stderr.write(
+        "inlined BYTES (%d bytes) differ from %s (%d bytes)\n"
+        % (len(inlined), fixture_path, len(on_disk))
+    )
+    sys.exit(1)
+PY
 }
 
 generate() {

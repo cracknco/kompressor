@@ -9,7 +9,9 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.CmykJpegFixture
+import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -66,10 +68,14 @@ class CmykJpegHandlingTest {
         val result = compressor.compress(inputPath, outputPath)
 
         if (result.isSuccess) {
-            // Conversion path — the compressor must emit an RGB (3-component) JPEG. Verifying
-            // `Nf == 3` at the SOF marker catches a "wrote the bytes back untouched with the
-            // input's 4-component header still intact" regression.
+            // Conversion path — the compressor must emit a valid RGB (3-component) JPEG.
+            // Validating the SOI/EOI markers first produces a clear diagnostic when the
+            // compressor wrote 0 bytes or non-JPEG garbage — mirrors the Android sibling's
+            // `OutputValidators.isValidJpeg` gate.
             val outputBytes = readBytes(outputPath)
+            assertTrue(OutputValidators.isValidJpeg(outputBytes), "Output must be valid JPEG")
+            // Verifying `Nf == 3` at the SOF marker catches a "wrote the bytes back untouched
+            // with the input's 4-component header still intact" regression.
             val components = readJpegComponentCount(outputBytes)
             assertTrue(
                 components == JPEG_RGB_COMPONENTS,
@@ -99,7 +105,7 @@ class CmykJpegHandlingTest {
     }
 
     private fun readJpegComponentCount(bytes: ByteArray): Int {
-        val sofIndex = indexOfAny(
+        val sofIndex = ByteSearch.indexOfAny(
             bytes,
             byteArrayOf(0xFF.toByte(), 0xC0.toByte()),
             byteArrayOf(0xFF.toByte(), 0xC1.toByte()),
@@ -107,25 +113,6 @@ class CmykJpegHandlingTest {
         )
         if (sofIndex < 0 || sofIndex + SOF_NF_OFFSET >= bytes.size) return -1
         return bytes[sofIndex + SOF_NF_OFFSET].toInt() and 0xFF
-    }
-
-    private fun indexOfAny(haystack: ByteArray, vararg needles: ByteArray): Int {
-        for (needle in needles) {
-            val idx = indexOf(haystack, needle)
-            if (idx >= 0) return idx
-        }
-        return -1
-    }
-
-    private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
-        if (needle.isEmpty() || haystack.size < needle.size) return -1
-        outer@ for (i in 0..haystack.size - needle.size) {
-            for (j in needle.indices) {
-                if (haystack[i + j] != needle[j]) continue@outer
-            }
-            return i
-        }
-        return -1
     }
 
     private companion object {
