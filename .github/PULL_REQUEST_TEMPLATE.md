@@ -28,7 +28,7 @@
 ## Breaking change
 
 - [ ] **Yes** — describe the migration path below
-- [x] **No**
+- [ ] **No**
 
 <!-- If yes, explain what breaks and how consumers should migrate. -->
 

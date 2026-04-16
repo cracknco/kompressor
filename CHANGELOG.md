@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * GitHub issue template config with link to Discussions for questions [CRA-34]
 * Pull request template with DoD checklist and changelog entry section [CRA-34]
 
+### Fixed
+
+* **video:** catch ObjC NSException from AVAssetWriterInput.init via cinterop @try/@catch — prevents crash when HEVC Main10 output settings are rejected by the hardware encoder [CRA-7]
+
 ## 1.0.0 (2026-04-15)
 
 ### Added
@@ -154,9 +158,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * refactor CI/CD workflows and integrate Fastlane ([e7a93f9](https://github.com/cracknco/kompressor/commit/e7a93f902ba06aee5a101b76ebb7e73275c54aa0))
 * rename `library` module to `kompressor` and update dependencies ([1ccba22](https://github.com/cracknco/kompressor/commit/1ccba22dd5181d4b0e04351b2082fc55e6f46930))
 * simplify Android audio pipeline — remove Channel overengineering ([557f631](https://github.com/cracknco/kompressor/commit/557f6316f4522dcc88b4b30b35af00772af8d05a))
-
-## [Unreleased]
-
-### Fixed
-
-* **video:** catch ObjC NSException from AVAssetWriterInput.init via cinterop @try/@catch — prevents crash when HEVC Main10 output settings are rejected by the hardware encoder [CRA-7]
