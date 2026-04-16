@@ -271,5 +271,8 @@ licenseReport {
     )
     filters = arrayOf<com.github.jk1.license.filter.DependencyFilter>(LicenseBundleNormalizer())
     excludeOwnGroup = true
+    // Scans only the Android runtime classpath because iOS-side dependencies are Apple
+    // system frameworks (AVFoundation, CoreImage, …) shipped with the OS rather than
+    // Maven artifacts — there is no iOS configuration with transitive Maven deps to scan.
     configurations = arrayOf("androidRuntimeClasspath")
 }

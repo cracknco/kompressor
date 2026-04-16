@@ -11,7 +11,9 @@ if [ ! -f "$REPORT" ]; then
 fi
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-VERSION=$(grep '^version' kompressor/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
+# Prefer VERSION from the caller (CI passes the authoritative semantic-release version);
+# fall back to grep for local runs where the env var isn't set.
+VERSION="${VERSION:-$(grep '^version' kompressor/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')}"
 
 jq --arg ts "$TIMESTAMP" --arg ver "${VERSION:-0.0.0}" '{
   spdxVersion: "SPDX-2.3",

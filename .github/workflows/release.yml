@@ -79,6 +79,8 @@ jobs:
       - name: Generate license report
         run: ./gradlew generateLicenseReport --no-configuration-cache
       - name: Generate SPDX document
+        env:
+          VERSION: ${{ needs.release.outputs.new_release_version }}
         run: ./scripts/generate-spdx.sh
       - name: Upload SPDX to release
         env:
