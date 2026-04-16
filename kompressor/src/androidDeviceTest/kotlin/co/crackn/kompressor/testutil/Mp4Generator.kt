@@ -5,6 +5,7 @@
 
 package co.crackn.kompressor.testutil
 
+import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -134,17 +135,22 @@ object Mp4Generator {
             if (framesSubmitted <= frameCount) {
                 val inputIdx = encoder.dequeueInputBuffer(TIMEOUT_US)
                 if (inputIdx >= 0) {
-                    val inputBuf = encoder.getInputBuffer(inputIdx) ?: error("No input buffer")
                     if (framesSubmitted < frameCount) {
                         frameFiller(yuvData, width, height, framesSubmitted)
-                        inputBuf.clear()
-                        val written = minOf(yuvData.size, inputBuf.capacity())
-                        inputBuf.put(yuvData, 0, written)
+                        // COLOR_FormatYUV420Flexible does not guarantee a specific planar
+                        // layout: devices may expose I420 (pixelStride=1) or NV12/NV21
+                        // (interleaved UV, pixelStride=2). Writing raw bytes via
+                        // getInputBuffer assumes I420 and silently corrupts chroma on
+                        // NV12 encoders (e.g. Pixel 6) — visible when pixel content is
+                        // asserted, invisible when only dimensions/size are. The Image
+                        // API exposes per-plane strides so the same planar source byte
+                        // array lands correctly regardless of the codec's choice.
+                        val image = encoder.getInputImage(inputIdx)
+                            ?: error("MediaCodec.getInputImage returned null for YUV420Flexible input")
+                        writePlanarYuvToImage(image, yuvData, width, height)
                         val pts = framesSubmitted.toLong() * US_PER_SEC / fps
-                        // Declare the actual bytes written, not the logical yuvSize.
-                        // If the codec's buffer is smaller, claiming more would send
-                        // garbage past the written region to the encoder.
-                        encoder.queueInputBuffer(inputIdx, 0, written, pts, 0)
+                        val yuvBytes = width * height * YUV_BYTES_PER_PIXEL / YUV_DIVISOR
+                        encoder.queueInputBuffer(inputIdx, 0, yuvBytes, pts, 0)
                     } else {
                         encoder.queueInputBuffer(
                             inputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM,
@@ -168,6 +174,57 @@ object Mp4Generator {
                 }
                 encoder.releaseOutputBuffer(outputIdx, false)
                 if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+            }
+        }
+    }
+
+    /**
+     * Copy planar YUV420 data in [planar] (Y then U then V, each row-major with no padding)
+     * into a MediaCodec input [image], respecting per-plane `pixelStride` and `rowStride`.
+     *
+     * Handles I420 (pixelStride=1), NV12/NV21 (pixelStride=2 interleaved UV) and any
+     * row-padded variant. Keeping the source in compact planar form lets the corner-marker
+     * and gradient fillers stay layout-agnostic.
+     */
+    private fun writePlanarYuvToImage(image: Image, planar: ByteArray, width: Int, height: Int) {
+        val ySize = width * height
+        val uvSize = ySize / UV_PLANE_DIVISOR
+        val uvWidth = width / 2
+        val uvHeight = height / 2
+        copyPlane(image.planes[0], planar, 0, width, height, width)
+        copyPlane(image.planes[1], planar, ySize, uvWidth, uvHeight, uvWidth)
+        copyPlane(image.planes[2], planar, ySize + uvSize, uvWidth, uvHeight, uvWidth)
+    }
+
+    @Suppress("LongParameterList")
+    private fun copyPlane(
+        plane: Image.Plane,
+        src: ByteArray,
+        srcOffset: Int,
+        planeWidth: Int,
+        planeHeight: Int,
+        srcRowSize: Int,
+    ) {
+        val buf = plane.buffer
+        val rowStride = plane.rowStride
+        val pixelStride = plane.pixelStride
+        if (pixelStride == 1 && rowStride == planeWidth) {
+            buf.position(0)
+            buf.put(src, srcOffset, planeWidth * planeHeight)
+            return
+        }
+        if (pixelStride == 1) {
+            for (row in 0 until planeHeight) {
+                buf.position(row * rowStride)
+                buf.put(src, srcOffset + row * srcRowSize, planeWidth)
+            }
+            return
+        }
+        for (row in 0 until planeHeight) {
+            val dstRowBase = row * rowStride
+            val srcRowBase = srcOffset + row * srcRowSize
+            for (col in 0 until planeWidth) {
+                buf.put(dstRowBase + col * pixelStride, src[srcRowBase + col])
             }
         }
     }
