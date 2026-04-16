@@ -46,6 +46,8 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+        excludes:
+          - "AudioBitrateCharacterizationTests.swift"
     info:
       path: Tests/Info.plist
     settings:
@@ -60,5 +62,27 @@ targets:
         FRAMEWORK_SEARCH_PATHS:
           - "$(inherited)"
           - "$(SRCROOT)/../kompressor/build/bin/iosArm64/releaseFramework"
+    dependencies:
+      - target: SmokeTestHost
+
+  CharacterizationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/AudioBitrateCharacterizationTests.swift
+      - path: Tests/ObjCExceptionCatcher.h
+      - path: Tests/ObjCExceptionCatcher.m
+      - path: Tests/WavFixture.swift
+    info:
+      path: Tests/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.crackn.kompressor.devicetest.characterization
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmokeTestHost.app/SmokeTestHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_OBJC_BRIDGING_HEADER: Tests/BridgingHeader.h
     dependencies:
       - target: SmokeTestHost
