@@ -23,10 +23,13 @@ import kotlin.test.Test
  *    reference *unless* the position appears in [INTENTIONAL_DIVERGENCES_*] — in which case the
  *    impl must match the pinned divergence value exactly. Any drift on either side surfaces a
  *    typed assertion failure with the position and rationale.
- *  - The per-sample stereo output of the canonical 7.1 fixture, after subtracting the
+ *  - The per-sample output of the canonical 7.1 fixture, after subtracting the linear
  *    contribution of the documented divergences, must match the BS.775-3 reference output
- *    within [SAMPLE_TOLERANCE]. This is the end-to-end version of the per-coefficient check:
- *    the matrix multiply itself is exercised, not just the coefficient values.
+ *    within [SAMPLE_TOLERANCE]. Since both impl and reference share the same
+ *    [Bs775ReferenceFixture.applyMatrix] helper, a bug in that helper would cancel out — what
+ *    this check *does* catch is **completeness of the divergence inventory**: any coefficient
+ *    that drifts from the reference without being listed in `INTENTIONAL_DIVERGENCES_*` shows
+ *    up as a per-sample residual outside the tolerance envelope.
  *
  * Sister test [SurroundChannelMixingTest] pins the impl coefficients exactly without reference
  * comparison; this test is the spec-conformance complement and the doc anchor.
@@ -68,22 +71,47 @@ class Bs775DownmixMatrixTest {
 
     @Test
     fun stereoOutput_matchesBs775ReferencePlusDocumentedDivergences() {
-        // End-to-end: applying the impl matrix to the canonical fixture must yield the same
-        // stereo output as applying the BS.775-3 reference matrix, *plus* the linear contribution
-        // of the documented intentional divergences. Any matrix-multiply bug or undocumented
-        // coefficient drift surfaces here as a per-sample tolerance failure.
-        val inputs = Bs775ReferenceFixture.generateCanonical71Pcm()
-
         val implMatrix = surroundDownmixMatrix(CHANNELS_71, 2).shouldNotBeNull()
-        val implOutput = Bs775ReferenceFixture.applyMatrix(inputs, implMatrix, outputChannels = 2)
-        val refOutput = Bs775ReferenceFixture.applyMatrix(inputs, REFERENCE_8_TO_2, outputChannels = 2)
+        assertPerSampleOutputMatchesReferencePlusDivergences(
+            implMatrix = implMatrix,
+            referenceMatrix = REFERENCE_8_TO_2,
+            outputChannels = 2,
+            divergences = INTENTIONAL_DIVERGENCES_8_TO_2,
+        )
+    }
 
-        for (out in 0 until 2) {
-            val divergencesForRow = INTENTIONAL_DIVERGENCES_8_TO_2.filter { it.outputChannel == out }
+    @Test
+    fun fivePointOneOutput_matchesBs775ReferencePlusDocumentedDivergences() {
+        val implMatrix = surroundDownmixMatrix(CHANNELS_71, 6).shouldNotBeNull()
+        assertPerSampleOutputMatchesReferencePlusDivergences(
+            implMatrix = implMatrix,
+            referenceMatrix = REFERENCE_8_TO_6,
+            outputChannels = 6,
+            divergences = INTENTIONAL_DIVERGENCES_8_TO_6,
+        )
+    }
+
+    /**
+     * Applies [implMatrix] and [referenceMatrix] to the canonical 7.1 fixture and asserts the
+     * per-sample diff matches the linear contribution of [divergences]. See the class KDoc for
+     * what this actually catches (divergence-inventory completeness, not `applyMatrix` bugs).
+     */
+    private fun assertPerSampleOutputMatchesReferencePlusDivergences(
+        implMatrix: FloatArray,
+        referenceMatrix: FloatArray,
+        outputChannels: Int,
+        divergences: List<IntentionalDivergence>,
+    ) {
+        val inputs = Bs775ReferenceFixture.generateCanonical71Pcm()
+        val implOutput = Bs775ReferenceFixture.applyMatrix(inputs, implMatrix, outputChannels)
+        val refOutput = Bs775ReferenceFixture.applyMatrix(inputs, referenceMatrix, outputChannels)
+
+        for (out in 0 until outputChannels) {
+            val divergencesForRow = divergences.filter { it.outputChannel == out }
             for (t in 0 until SAMPLE_COUNT) {
                 var expectedDiff = 0.0
                 for (d in divergencesForRow) {
-                    val refValue = REFERENCE_8_TO_2[out * CHANNELS_71 + d.inputChannel]
+                    val refValue = referenceMatrix[out * CHANNELS_71 + d.inputChannel]
                     expectedDiff += (d.implValue - refValue) * inputs[d.inputChannel][t]
                 }
                 val actualDiff = (implOutput[out][t] - refOutput[out][t]).toDouble()
@@ -129,21 +157,36 @@ class Bs775DownmixMatrixTest {
         // non-divergent positions (≈ 6.8e-6 per coefficient).
         const val SAMPLE_TOLERANCE: Double = 1e-4
 
+        // 7.1 input channel indices used by the divergence lists below (ISO/IEC 23001-8
+        // Mpeg7_1_C order: 0=FL, 1=FR, 2=FC, 3=LFE, 4=BL, 5=BR, 6=SL, 7=SR). Only the
+        // divergent channels are named here; see docs/audio-downmix.md for the full layout.
         const val LFE_INDEX: Int = 3
+        const val BL_INDEX: Int = 4
+        const val BR_INDEX: Int = 5
+        const val SL_INDEX: Int = 6
+        const val SR_INDEX: Int = 7
+
+        // Stereo output channel indices.
+        const val L_OUT: Int = 0
+        const val R_OUT: Int = 1
+
+        // 5.1 output channel indices (FL/FR/FC/LFE/Ls/Rs per Media3 CHANNEL_OUT_5POINT1).
+        const val LS_OUT_5_1: Int = 4
+        const val RS_OUT_5_1: Int = 5
 
         // 7.1 → stereo divergences vs BS.775-3 chained reference.
         // Surround coefficients (BL/SL = 0.7071) match the BS.775-3 chained reference within
         // tolerance — see docs/audio-downmix.md for the derivation note (single-step vs chained).
         val INTENTIONAL_DIVERGENCES_8_TO_2: List<IntentionalDivergence> = listOf(
             IntentionalDivergence(
-                outputChannel = 0,
+                outputChannel = L_OUT,
                 inputChannel = LFE_INDEX,
                 implValue = 0.5f,
                 rationale = "L picks up LFE at 0.5 (≈ -6 dB) for low-end preservation on stereo " +
                     "headphones (BS.775 strict ref = 0.0). Matches Dolby Pro Logic II convention.",
             ),
             IntentionalDivergence(
-                outputChannel = 1,
+                outputChannel = R_OUT,
                 inputChannel = LFE_INDEX,
                 implValue = 0.5f,
                 rationale = "R picks up LFE at 0.5 (≈ -6 dB), symmetric to L.",
@@ -153,27 +196,27 @@ class Bs775DownmixMatrixTest {
             // applied per-surround. Ref above also encodes 0.5 (chained 7.1 → 5.1 → 2.0); the
             // ~0.21 diff exceeds tolerance and is the only matrix-shape divergence vs ref.
             IntentionalDivergence(
-                outputChannel = 0,
-                inputChannel = 4,
+                outputChannel = L_OUT,
+                inputChannel = BL_INDEX,
                 implValue = 0.7071f,
                 rationale = "BL into L at 1/√2 (single-step BS.775 §3, treating BL as a 5.1 " +
                     "surround) vs chained ref 0.5. Documented in docs/audio-downmix.md.",
             ),
             IntentionalDivergence(
-                outputChannel = 0,
-                inputChannel = 6,
+                outputChannel = L_OUT,
+                inputChannel = SL_INDEX,
                 implValue = 0.7071f,
                 rationale = "SL into L at 1/√2 (single-step BS.775 §3) vs chained ref 0.5.",
             ),
             IntentionalDivergence(
-                outputChannel = 1,
-                inputChannel = 5,
+                outputChannel = R_OUT,
+                inputChannel = BR_INDEX,
                 implValue = 0.7071f,
                 rationale = "BR into R at 1/√2 (single-step BS.775 §3) vs chained ref 0.5.",
             ),
             IntentionalDivergence(
-                outputChannel = 1,
-                inputChannel = 7,
+                outputChannel = R_OUT,
+                inputChannel = SR_INDEX,
                 implValue = 0.7071f,
                 rationale = "SR into R at 1/√2 (single-step BS.775 §3) vs chained ref 0.5.",
             ),
@@ -184,15 +227,15 @@ class Bs775DownmixMatrixTest {
         // the spec.
         val INTENTIONAL_DIVERGENCES_8_TO_6: List<IntentionalDivergence> = listOf(
             IntentionalDivergence(
-                outputChannel = 4,
-                inputChannel = 4,
+                outputChannel = LS_OUT_5_1,
+                inputChannel = BL_INDEX,
                 implValue = 1.0f,
                 rationale = "Ls_5.1 ← 1.0·BL (back-left passes through full-gain) vs BS.775 §3.5 " +
                     "1/√2. Avoids loudness loss when 7.1 source has no SL content.",
             ),
             IntentionalDivergence(
-                outputChannel = 5,
-                inputChannel = 5,
+                outputChannel = RS_OUT_5_1,
+                inputChannel = BR_INDEX,
                 implValue = 1.0f,
                 rationale = "Rs_5.1 ← 1.0·BR symmetric to Ls/BL.",
             ),

@@ -147,8 +147,18 @@ tolerance.
 
 **Net effect**: when the 7.1 source uses BL/BR only, our 5.1 output carries the full
 back-channel energy. When SL/SR also carry signal, the combined Ls level is
-`1.0·BL + 0.707·SL`, peaking ≈ +1.4 dB above the BS.775 chained reference. THX
-implementations sometimes apply a similar bias for "rear-loaded" 7.1 sources.
+`1.0·BL + 0.707·SL`, peaking ≈ +1.4 dB above the BS.775 chained reference.
+
+### A note on THX
+
+The original CRA-13 DoD framed this as a "BS.775-3 vs Dolby/THX matrices" comparison.
+We were unable to cite a public THX downmix specification: THX's multichannel rendering is
+a proprietary certification regime rather than a published coefficient table, so there is
+no standard to pin against. The Dolby / E-AC-3 coefficients above (from ATSC A/52, which is
+public) are the only industry reference this doc cites alongside BS.775-3; any statement
+about what a specific THX-certified renderer does would be unsourced. If a citable THX
+coefficient table becomes available, extend the divergence tables above with a "THX ref"
+column and add it to [`Bs775ReferenceFixture`] as an additional pinned matrix.
 
 ---
 
