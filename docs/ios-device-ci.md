@@ -89,8 +89,35 @@ PR opened
 | `Surround51Tests` | `Surround51RoundTripTest` | Same |
 | `Surround71Tests` | `Surround71RoundTripTest` | Same |
 | `IosLargeInputStreamingTests` | — (Swift-only) | Generates a ~200 MB 1080p/60s fixture on device and asserts `task_info` peak stays ≤ 300 MB while `IosVideoCompressor` streams it. No Kotlin sibling: peak-memory sampling and `task_info(TASK_VM_INFO)` are expressed naturally in Swift, and the DoD only requires the device-side assertion |
+| `AudioBitrateCharacterizationTests` *(on-demand only)* | `AudioToolboxBitrateCharacterizationTest` | Kotlin runs simulator-gated `[1, 2]` as a sanity guardrail; Swift runs the full `[1, 2, 6, 8] × 32k–1280k` sweep on A15+ hardware via the `ios-audio-characterization.yml` workflow (`workflow_dispatch`). Discovery tool — always passes. Emits the acceptance matrix as `XCTAttachment` artifacts |
 
 The Kotlin tests contain detailed assertions (progress monotonicity, channel
 count preservation, compression result validation). The Swift wrappers are thin
 smoke tests that verify the compression completes and produces output on real
 hardware.
+
+## Characterization (on-demand)
+
+File: `.github/workflows/ios-audio-characterization.yml`
+
+Separate `workflow_dispatch`-only workflow for the AudioToolbox AAC-LC
+characterization sweep. Not wired to PRs — a full sweep is a one-shot discovery
+run (~$1-$1.50), not a regression gate.
+
+```
+gh workflow run ios-audio-characterization.yml
+  └─ Budget guard (same as smoke)
+  └─ macos-latest runner
+       ├─ Build KMP framework + xcodegen
+       ├─ xcodebuild build-for-testing -scheme CharacterizationTests
+       ├─ Package SmokeTestHost.ipa + CharacterizationTests.xctest.zip
+       ├─ aws devicefarm schedule-run
+       └─ Extract audio-bitrate-matrix-*.md XCTAttachments
+            └─ Upload as audio-bitrate-matrix-<run-id> artifact
+```
+
+Paste the contents of the downloaded `audio-bitrate-matrix-table.md` between
+the `<!-- ACCEPTANCE_MATRIX -->` markers in `docs/audio-bitrate-matrix.md`,
+then update `iosAacMaxBitrate` / `iosAacMinBitrate` in `IosAudioCompressor.kt`
+and the boundary assertions in `IosAudioBitrateValidationTest.kt` if the
+empirical surround caps diverge from the current linear extrapolation.
