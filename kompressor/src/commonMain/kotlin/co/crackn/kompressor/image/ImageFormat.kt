@@ -23,8 +23,14 @@ public enum class ImageFormat {
 
     /**
      * Lossy/lossless compression. Smaller than JPEG at equivalent quality. Quality parameter
-     * applies (ignored for lossless mode on platforms that support it). Always available on
-     * Android (API 24+) and iOS 15+.
+     * applies (ignored for lossless mode on platforms that support it).
+     *
+     * **Availability:**
+     * - Android: input and output, API 24+.
+     * - iOS: input-only (decoded by ImageIO on iOS 14+). Output surfaces
+     *   [ImageCompressionError.UnsupportedOutputFormat] — `CGImageDestination` does not expose
+     *   an `org.webmproject.webp` destination type across our iOS 15 baseline. Test under
+     *   [ImageCompressionError.Companion.NOT_IMPLEMENTED] to distinguish from a version gate.
      */
     WEBP,
 

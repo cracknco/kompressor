@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// The sniffer is a single cohesive pipeline — splitting it across files would scatter
+// ISOBMFF parsing logic that only makes sense when read together. Threshold exceeded by one.
+@file:Suppress("TooManyFunctions")
+
 package co.crackn.kompressor.image
 
 /**
@@ -37,8 +41,24 @@ internal enum class InputImageFormat(
  * Minimum number of header bytes required to disambiguate every format in [InputImageFormat]
  * via magic bytes. 32 covers JPEG (3B), PNG (8B), WebP RIFF (12B), GIF (6B), BMP (2B), and
  * ISOBMFF (`ftyp` box at offset 4–12B plus up to 16B of compatible brands).
+ *
+ * Pragmatically a budget choice: real-world ISOBMFF files declare their major brand at offset 8
+ * and the brand we actually care about in the first compatible-brand slot at offset 16, so 32B
+ * is sufficient for every container we support. Files that bury the brand deeper in `compatible`
+ * entries would need a streaming parser — out of scope for this sniffer.
  */
 internal const val IMAGE_SNIFF_BYTES: Int = 32
+
+/**
+ * Lower-case filename extension without the leading dot (`"heic"`, `"jpg"`). Empty string when
+ * the path has no extension. Platform-agnostic — used by both compressors to feed
+ * [detectInputImageFormat].
+ */
+internal fun fileExtension(inputPath: String): String {
+    val lastDot = inputPath.lastIndexOf('.')
+    if (lastDot < 0 || lastDot == inputPath.length - 1) return ""
+    return inputPath.substring(lastDot + 1).lowercase()
+}
 
 /**
  * Classify the input container from its leading [header] bytes and filename [extension].

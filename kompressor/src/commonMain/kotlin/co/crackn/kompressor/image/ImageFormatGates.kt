@@ -33,10 +33,12 @@ internal const val AVIF_OUTPUT_MIN_API_ANDROID: Int = 34
 /**
  * HEIC output on Android is **not implemented** by this library in this release. The platform
  * has no stable `Bitmap.CompressFormat.HEIC` (HeifWriter is a separate, more involved API), so
- * Android always fails fast with `UnsupportedOutputFormat` pointing at the synthetic "API 999"
- * sentinel. iOS implements HEIC output normally.
+ * Android always fails fast with `UnsupportedOutputFormat` carrying
+ * [ImageCompressionError.NOT_IMPLEMENTED] as [ImageCompressionError.UnsupportedOutputFormat.minApi]
+ * — callers should branch on `isNotImplementedOnPlatform` instead of showing a version gate.
+ * iOS implements HEIC output normally.
  */
-internal const val HEIC_OUTPUT_MIN_API_ANDROID: Int = Int.MAX_VALUE
+internal const val HEIC_OUTPUT_MIN_API_ANDROID: Int = ImageCompressionError.NOT_IMPLEMENTED
 
 /** Minimum iOS version for AVIF **input** (decode). */
 internal const val AVIF_INPUT_MIN_IOS: Int = 16
@@ -50,9 +52,10 @@ internal const val HEIC_OUTPUT_MIN_IOS: Int = 11
 /**
  * WebP **output** on iOS is not wired through `CGImageDestination` in this release. Apple's
  * ImageIO decodes WebP from iOS 14+ but does not expose an `org.webmproject.webp` destination
- * type across the iOS 15 baseline, so we reject WebP output with a sentinel "requires iOS 999+".
+ * type across the iOS 15 baseline, so we reject WebP output with
+ * [ImageCompressionError.NOT_IMPLEMENTED] — same branching contract as HEIC output on Android.
  */
-internal const val WEBP_OUTPUT_MIN_IOS: Int = Int.MAX_VALUE
+internal const val WEBP_OUTPUT_MIN_IOS: Int = ImageCompressionError.NOT_IMPLEMENTED
 
 internal const val PLATFORM_ANDROID: String = "android"
 internal const val PLATFORM_IOS: String = "ios"
