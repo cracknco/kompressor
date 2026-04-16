@@ -67,43 +67,64 @@ enum LargeMp4Fixture {
         }
         writer.startSession(atSourceTime: .zero)
 
+        // Idiomatic push-based ingestion: AVFoundation signals the callback whenever the
+        // encoder has room for more buffers. We generate frames until saturated, return
+        // control, and get called again — no polling, no `Thread.sleep`.
         let frameCount = fps * durationSec
-        for i in 0 ..< frameCount {
-            // Each iteration autoreleases transient CF objects so the fixture itself
-            // doesn't bloat the process footprint before the compression measurement.
-            try autoreleasepool {
-                while !input.isReadyForMoreMediaData {
-                    Thread.sleep(forTimeInterval: 0.002)
+        let queue = DispatchQueue(label: "co.crackn.kompressor.fixture")
+        let done = DispatchSemaphore(value: 0)
+        var nextFrame = 0
+        var writeError: Error?
+
+        input.requestMediaDataWhenReady(on: queue) {
+            while input.isReadyForMoreMediaData {
+                if nextFrame >= frameCount {
+                    input.markAsFinished()
+                    writer.finishWriting { done.signal() }
+                    return
                 }
-                let time = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
-                guard let pool = adaptor.pixelBufferPool else {
-                    throw LargeMp4FixtureError.writerFailed("Pixel buffer pool unavailable")
+                let i = nextFrame
+                nextFrame += 1
+                // Each iteration autoreleases transient CF objects so the fixture itself
+                // doesn't bloat the process footprint before the compression measurement.
+                autoreleasepool {
+                    guard let pool = adaptor.pixelBufferPool else {
+                        writeError = LargeMp4FixtureError.writerFailed("Pixel buffer pool unavailable")
+                        input.markAsFinished()
+                        writer.finishWriting { done.signal() }
+                        return
+                    }
+                    var pixelBuffer: CVPixelBuffer?
+                    CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+                    guard let buffer = pixelBuffer else {
+                        writeError = LargeMp4FixtureError.writerFailed("Pixel buffer allocation failed at frame \(i)")
+                        input.markAsFinished()
+                        writer.finishWriting { done.signal() }
+                        return
+                    }
+                    CVPixelBufferLockBaseAddress(buffer, [])
+                    let base = CVPixelBufferGetBaseAddress(buffer)!
+                    let bytes = CVPixelBufferGetDataSize(buffer)
+                    // High-entropy content so the H.264 encoder has little redundancy to collapse.
+                    // `arc4random_buf` is vDSO-fast on iOS and comfortably keeps up with the encoder.
+                    arc4random_buf(base, bytes)
+                    CVPixelBufferUnlockBaseAddress(buffer, [])
+                    let time = CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))
+                    if !adaptor.append(buffer, withPresentationTime: time) {
+                        writeError = LargeMp4FixtureError.writerFailed(
+                            writer.error?.localizedDescription ?? "appendPixelBuffer failed at frame \(i)"
+                        )
+                        input.markAsFinished()
+                        writer.finishWriting { done.signal() }
+                        return
+                    }
                 }
-                var pixelBuffer: CVPixelBuffer?
-                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
-                guard let buffer = pixelBuffer else {
-                    throw LargeMp4FixtureError.writerFailed("Pixel buffer allocation failed at frame \(i)")
-                }
-                CVPixelBufferLockBaseAddress(buffer, [])
-                let base = CVPixelBufferGetBaseAddress(buffer)!
-                let bytes = CVPixelBufferGetDataSize(buffer)
-                // High-entropy content so the H.264 encoder has little redundancy to collapse.
-                // `arc4random_buf` is vDSO-fast on iOS and comfortably keeps up with the encoder.
-                arc4random_buf(base, bytes)
-                CVPixelBufferUnlockBaseAddress(buffer, [])
-                guard adaptor.append(buffer, withPresentationTime: time) else {
-                    throw LargeMp4FixtureError.writerFailed(
-                        writer.error?.localizedDescription ?? "appendPixelBuffer failed at frame \(i)"
-                    )
-                }
+                if writeError != nil { return }
             }
         }
+        done.wait()
 
-        input.markAsFinished()
-        let semaphore = DispatchSemaphore(value: 0)
-        writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
-
+        if let writeError { throw writeError }
         guard writer.status == .completed else {
             throw LargeMp4FixtureError.writerFailed(
                 writer.error?.localizedDescription ?? "AVAssetWriter finished with status \(writer.status.rawValue)"

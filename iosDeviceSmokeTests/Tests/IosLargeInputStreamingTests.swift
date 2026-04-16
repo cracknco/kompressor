@@ -17,7 +17,7 @@ import XCTest
 /// Runs only in the device-smoke XCTest bundle, which `ios-device-smoke.yml` uploads to
 /// AWS Device Farm. Bundle-level placement is this repo's "`deviceOnly`" tag — see
 /// `docs/ios-device-ci.md`.
-final class IosLargeInputStreamingTest: XCTestCase {
+final class IosLargeInputStreamingTests: XCTestCase {
     private var testDir: URL!
     private var kompressor: (any Kompressor)!
 
@@ -66,6 +66,7 @@ final class IosLargeInputStreamingTest: XCTestCase {
         let progress = CountingProgress()
         let sampler = PeakMemorySampler(intervalMs: 50)
 
+        // Diagnostic log only — DoD cap below is absolute, not a delta from baseline.
         let baselineBytes = MemoryProbe.physFootprintBytes()
         NSLog("[LargeStreaming] baseline phys_footprint: %.1f MB", Double(baselineBytes) / 1_048_576.0)
 
