@@ -68,7 +68,6 @@ class ConcurrentCompressInterProcessTest {
                 PAYLOAD_BYTES.toString(),
             )
             ProcessBuilder(command)
-                .redirectErrorStream(false)
                 .redirectOutput(File(tempDir, "worker_${workerIndex}_stdout.log"))
                 .redirectError(File(tempDir, "worker_${workerIndex}_stderr.log"))
                 .start()
@@ -113,7 +112,12 @@ class ConcurrentCompressInterProcessTest {
         const val COROUTINES_PER_WORKER = 4
         const val PAYLOAD_BYTES = 65_536
         const val WAIT_TIMEOUT_SECONDS = 60L
-        const val MAX_WALL_TIME_SECONDS = 30L
+
+        // Loose upper bound: 16 short file-copy tasks across 4 JVMs should finish in seconds on
+        // a warm runner, but cold GitHub-hosted runners can spend 10-20s just on JVM startup ×
+        // N. A regression that serialises the grid on a process-wide lock would push well past
+        // this; a flaky cold start will not.
+        const val MAX_WALL_TIME_SECONDS = 90L
         const val NANOS_PER_SECOND = 1_000_000_000.0
         const val WORKER_MAIN_CLASS =
             "co.crackn.kompressor.testutil.InterProcessCompressWorkerKt"

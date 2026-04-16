@@ -29,8 +29,6 @@ import kotlin.system.exitProcess
  * path unique to this worker × coroutine pair. That is sufficient to detect a process-wide
  * lock regression — the stated goal of the test — without needing a real codec stack.
  */
-internal object InterProcessCompressWorker
-
 fun main(args: Array<String>) {
     if (args.size != ARG_COUNT) {
         System.err.println(
