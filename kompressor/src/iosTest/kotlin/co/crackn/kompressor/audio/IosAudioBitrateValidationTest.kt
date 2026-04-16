@@ -172,6 +172,12 @@ class IosAudioBitrateValidationTest {
     }
 
     @Test
+    fun iosAacMinBitrate_fivePointOne_alwaysZero() {
+        val min = iosAacMinBitrate(44_100, AudioChannels.FIVE_POINT_ONE)
+        assertTrue(min == 0, "Expected 0 (surround unsupported), got $min")
+    }
+
+    @Test
     fun iosAacMinBitrate_sevenPointOne_alwaysZero() {
         val min = iosAacMinBitrate(44_100, AudioChannels.SEVEN_POINT_ONE)
         assertTrue(min == 0, "Expected 0 (surround unsupported), got $min")

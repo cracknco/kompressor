@@ -13,9 +13,10 @@ reached via `AVAssetWriterInput` with `kAudioFormatMPEG4AAC`. The characterizati
 
 ## Acceptance Matrix
 
-> Run `AudioToolboxBitrateCharacterizationTest` on an iOS simulator or device to populate
-> this table with empirical results. Set `KOMPRESSOR_DOCS_DIR` to the repo's `docs/`
-> directory to auto-update this file; otherwise check `NSTemporaryDirectory()` for output.
+> Table populated from Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) and simulator
+> baseline. To re-run on a different device tier, dispatch `ios-audio-characterization.yml`
+> or run `AudioToolboxBitrateCharacterizationTest` locally with `KOMPRESSOR_DOCS_DIR` set
+> to the repo's `docs/` directory.
 
 <!-- ACCEPTANCE_MATRIX -->
 | Bitrate (bps) | Mono (1ch) | Stereo (2ch) | 5.1 (6ch) | 7.1 (8ch) |
@@ -71,18 +72,18 @@ Derived from the characterization test results and encoded in
 
 | Sample Rate   | Mono (1ch) | Stereo (2ch) | 5.1 (6ch)      | 7.1 (8ch)      |
 |---------------|:----------:|:------------:|:--------------:|:--------------:|
-| ≤ 24,000 Hz   | 64 kbps    | 128 kbps     | —  (rejected)  | —  (rejected)  |
-| ≤ 32,000 Hz   | 96 kbps    | 192 kbps     | —  (rejected)  | —  (rejected)  |
-| ≤ 44,100 Hz   | 160 kbps   | 320 kbps     | —  (rejected)  | —  (rejected)  |
-| > 44,100 Hz   | 192 kbps   | 384 kbps     | —  (rejected)  | —  (rejected)  |
+| ≤ 24,000 Hz   | 64 kbps    | 128 kbps     | — (rejected)  | — (rejected)  |
+| ≤ 32,000 Hz   | 96 kbps    | 192 kbps     | — (rejected)  | — (rejected)  |
+| ≤ 44,100 Hz   | 160 kbps   | 320 kbps     | — (rejected)  | — (rejected)  |
+| > 44,100 Hz   | 192 kbps   | 384 kbps     | — (rejected)  | — (rejected)  |
 
 ### Minimum bitrate (per sample-rate tier)
 
 | Sample Rate   | Mono (1ch) | Stereo (2ch) | 5.1 (6ch)      | 7.1 (8ch)      |
 |---------------|:----------:|:------------:|:--------------:|:--------------:|
-| ≤ 24,000 Hz   | 16 kbps    | 32 kbps      | —  (rejected)  | —  (rejected)  |
-| ≤ 32,000 Hz   | 24 kbps    | 48 kbps      | —  (rejected)  | —  (rejected)  |
-| > 32,000 Hz   | 32 kbps    | 64 kbps      | —  (rejected)  | —  (rejected)  |
+| ≤ 24,000 Hz   | 16 kbps    | 32 kbps      | — (rejected)  | — (rejected)  |
+| ≤ 32,000 Hz   | 24 kbps    | 48 kbps      | — (rejected)  | — (rejected)  |
+| > 32,000 Hz   | 32 kbps    | 64 kbps      | — (rejected)  | — (rejected)  |
 
 > **Note on surround**: Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) confirmed
 > that AudioToolbox's AAC-LC encoder rejects 5.1 and 7.1 output at every tested bitrate

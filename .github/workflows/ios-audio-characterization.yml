@@ -290,7 +290,7 @@ jobs:
           # so the glob below can find the matrix markdown files inside.
           shopt -s nullglob nocaseglob
           for z in artifacts/ios-device/*.zip; do
-            unzip -o -q "$z" -d artifacts/ios-device/ || true
+            unzip -o -q "$z" -d artifacts/ios-device/ || echo "::warning::Failed to unzip $z"
           done
           matches=(artifacts/ios-device/*audio-bitrate-matrix*)
           if (( ${#matches[@]} == 0 )); then
