@@ -1,0 +1,36 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for Kompressor? Describe the use case and we'll evaluate it.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem are you trying to solve? Why does this matter?
+      placeholder: "As a developer, I want to ... so that ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-workaround
+    attributes:
+      label: Current workaround
+      description: How are you solving this today, if at all?
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: Proposed API
+      description: |
+        If you have a suggestion for how the API should look, sketch it here.
+        Code blocks are welcome.
+      render: kotlin
+    validations:
+      required: false

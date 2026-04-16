@@ -147,19 +147,10 @@ chore/CRA-<number>--<short-kebab-description>
 
 ### 3. PR template
 
-```markdown
-## Summary
-<2-3 sentences>
-
-## Changes
-<bullet list by file>
-
-## Testing
-<what was added, how to verify>
-
-## Linear
-Closes CRA-<number>
-```
+GitHub auto-fills the body from
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+Fill in every section — the DoD checklist must be fully checked before
+requesting review.
 
 ### 4. Review & merge
 
