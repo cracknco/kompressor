@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * **license:** Apache-2.0 SPDX headers, transitive dependency license audit, and SPDX release asset [CRA-26] (#79)
+* GitHub issue templates: bug report, feature request, regression (form-based `.yml`) [CRA-34]
+* GitHub issue template config with link to Discussions for questions [CRA-34]
+* Pull request template with DoD checklist and changelog entry section [CRA-34]
 
 ## 1.0.0 (2026-04-15)
 
