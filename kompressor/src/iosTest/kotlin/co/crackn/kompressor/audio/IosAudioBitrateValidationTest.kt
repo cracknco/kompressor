@@ -105,62 +105,42 @@ class IosAudioBitrateValidationTest {
         }
     }
 
-    // ── Surround (5.1 / 7.1) boundary tests ─────────────────────
-    // These pin the caps for multichannel layouts. If the characterization test reveals
-    // nonlinear caps, these tests should be updated to match the discovered thresholds.
+    // ── Surround (5.1 / 7.1) rejection tests ─────────────────────
+    // Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) confirmed AudioToolbox rejects
+    // surround AAC at every tested bitrate (32k–1280k). These tests pin the blanket rejection.
 
     @Test
-    fun fivePointOneAt44kHz_withinCap_accepted() {
-        // Linear cap = 160 kbps x 6 ch = 960 000; 512 kbps should be well within range.
-        checkSupportedIosBitrate(
-            config(bitrate = 512_000, sampleRate = 44_100, channels = AudioChannels.FIVE_POINT_ONE),
-        )
-    }
-
-    @Test
-    fun fivePointOneAt44kHz_aboveCap_rejected() {
-        // Linear cap = 160 kbps x 6 ch = 960 000; 992 kbps exceeds it.
-        assertUnsupportedBitrate {
+    fun fivePointOneAt44kHz_anyBitrate_unsupportedConfiguration() {
+        assertUnsupportedConfiguration {
             checkSupportedIosBitrate(
-                config(bitrate = 992_000, sampleRate = 44_100, channels = AudioChannels.FIVE_POINT_ONE),
+                config(bitrate = 512_000, sampleRate = 44_100, channels = AudioChannels.FIVE_POINT_ONE),
             )
         }
     }
 
     @Test
-    fun fivePointOneAt44kHz_belowMinFloor_rejected() {
-        // Min = 32 kbps x 6 ch = 192 000; 128 kbps is below the floor.
-        assertUnsupportedBitrate {
+    fun fivePointOneAt22kHz_anyBitrate_unsupportedConfiguration() {
+        assertUnsupportedConfiguration {
             checkSupportedIosBitrate(
-                config(bitrate = 128_000, sampleRate = 44_100, channels = AudioChannels.FIVE_POINT_ONE),
+                config(bitrate = 64_000, sampleRate = 22_050, channels = AudioChannels.FIVE_POINT_ONE),
             )
         }
     }
 
     @Test
-    fun sevenPointOneAt44kHz_withinCap_accepted() {
-        // Linear cap = 160 kbps x 8 ch = 1 280 000; 768 kbps should be within range.
-        checkSupportedIosBitrate(
-            config(bitrate = 768_000, sampleRate = 44_100, channels = AudioChannels.SEVEN_POINT_ONE),
-        )
-    }
-
-    @Test
-    fun sevenPointOneAt44kHz_aboveCap_rejected() {
-        // Linear cap = 160 kbps x 8 ch = 1 280 000; 1 312 kbps exceeds it.
-        assertUnsupportedBitrate {
+    fun sevenPointOneAt44kHz_anyBitrate_unsupportedConfiguration() {
+        assertUnsupportedConfiguration {
             checkSupportedIosBitrate(
-                config(bitrate = 1_312_000, sampleRate = 44_100, channels = AudioChannels.SEVEN_POINT_ONE),
+                config(bitrate = 768_000, sampleRate = 44_100, channels = AudioChannels.SEVEN_POINT_ONE),
             )
         }
     }
 
     @Test
-    fun sevenPointOneAt44kHz_belowMinFloor_rejected() {
-        // Min = 32 kbps x 8 ch = 256 000; 192 kbps is below the floor.
-        assertUnsupportedBitrate {
+    fun sevenPointOneAt48kHz_anyBitrate_unsupportedConfiguration() {
+        assertUnsupportedConfiguration {
             checkSupportedIosBitrate(
-                config(bitrate = 192_000, sampleRate = 44_100, channels = AudioChannels.SEVEN_POINT_ONE),
+                config(bitrate = 384_000, sampleRate = 48_000, channels = AudioChannels.SEVEN_POINT_ONE),
             )
         }
     }
@@ -180,9 +160,9 @@ class IosAudioBitrateValidationTest {
     }
 
     @Test
-    fun iosAacMaxBitrate_fivePointOneVeryHighRate() {
+    fun iosAacMaxBitrate_fivePointOne_alwaysZero() {
         val max = iosAacMaxBitrate(48_000, AudioChannels.FIVE_POINT_ONE)
-        assertTrue(max == 1_152_000, "Expected 1152000, got $max")
+        assertTrue(max == 0, "Expected 0 (surround unsupported), got $max")
     }
 
     @Test
@@ -192,9 +172,15 @@ class IosAudioBitrateValidationTest {
     }
 
     @Test
-    fun iosAacMinBitrate_sevenPointOneHighRate() {
+    fun iosAacMinBitrate_sevenPointOne_alwaysZero() {
         val min = iosAacMinBitrate(44_100, AudioChannels.SEVEN_POINT_ONE)
-        assertTrue(min == 256_000, "Expected 256000, got $min")
+        assertTrue(min == 0, "Expected 0 (surround unsupported), got $min")
+    }
+
+    @Test
+    fun iosAacMaxBitrate_sevenPointOne_alwaysZero() {
+        val max = iosAacMaxBitrate(44_100, AudioChannels.SEVEN_POINT_ONE)
+        assertTrue(max == 0, "Expected 0 (surround unsupported), got $max")
     }
 
     // ── Helpers ──────────────────────────────────────────────────
@@ -207,6 +193,14 @@ class IosAudioBitrateValidationTest {
         assertTrue(
             err is AudioCompressionError.UnsupportedBitrate,
             "Expected UnsupportedBitrate, got ${err::class.simpleName}: ${err.message}",
+        )
+    }
+
+    private fun assertUnsupportedConfiguration(block: () -> Unit) {
+        val err = assertFails(block)
+        assertTrue(
+            err is AudioCompressionError.UnsupportedConfiguration,
+            "Expected UnsupportedConfiguration, got ${err::class.simpleName}: ${err.message}",
         )
     }
 }

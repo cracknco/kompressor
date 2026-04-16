@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **audio:** zero out iOS surround (5.1/7.1) AAC caps — Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) confirmed AudioToolbox rejects multichannel AAC output at every tested bitrate (32k–1280k). `iosAacMaxBitrate` / `iosAacMinBitrate` now return 0 for ≥3 channels, and `checkSupportedIosBitrate` surfaces `UnsupportedConfiguration` instead of letting the request reach the hardware encoder probe. Surround AAC remains supported on Android [CRA-82, CRA-78]
+
+### Fixed
+
+* **ci:** add `CUSTOMER_ARTIFACT` type to Device Farm artifact download in `ios-audio-characterization.yml` and unzip before scanning — XCTAttachments are packaged inside CUSTOMER_ARTIFACT zips, not as FILE type [CRA-82]
+
 ### Added
 
 * **test/ci:** Swift port of the AudioToolbox AAC-LC bitrate characterization sweep (`iosDeviceSmokeTests/Tests/AudioBitrateCharacterizationTests.swift`) runs the full `[1, 2, 6, 8] × 32k–1280k` grid on real A15+ hardware via AWS Device Farm, emitting the acceptance matrix as an `XCTAttachment` / GitHub Actions artifact. New `workflow_dispatch`-only workflow (`.github/workflows/ios-audio-characterization.yml`) and dedicated `CharacterizationTests` xctest target keep the one-shot discovery run separate from the per-PR smoke lane. The existing Kotlin sibling stays simulator-gated to `[1, 2]` as a cheap sanity guardrail [CRA-78]

@@ -266,7 +266,7 @@ jobs:
           mkdir -p artifacts/ios-device
           JOBS=$(aws devicefarm list-jobs --region "$AWS_REGION" --arn "$RUN_ARN" --query 'jobs[].arn' --output text)
           for JOB_ARN in $JOBS; do
-            for TYPE in FILE LOG SCREENSHOT; do
+            for TYPE in FILE LOG SCREENSHOT CUSTOMER_ARTIFACT; do
               aws devicefarm list-artifacts --region "$AWS_REGION" --arn "$JOB_ARN" --type "$TYPE" \
                 --query 'artifacts[].[name,extension,url]' --output text \
               | while IFS=$'\t' read -r name ext url; do
@@ -286,7 +286,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/audio-bitrate-matrix
+          # CUSTOMER_ARTIFACT zips contain XCTAttachments — unpack them in-place
+          # so the glob below can find the matrix markdown files inside.
           shopt -s nullglob nocaseglob
+          for z in artifacts/ios-device/*.zip; do
+            unzip -o -q "$z" -d artifacts/ios-device/ || true
+          done
           matches=(artifacts/ios-device/*audio-bitrate-matrix*)
           if (( ${#matches[@]} == 0 )); then
             echo "::warning::No audio-bitrate-matrix* attachments found in Device Farm artifacts."
