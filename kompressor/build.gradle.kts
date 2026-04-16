@@ -1,4 +1,7 @@
 import com.android.build.api.dsl.androidLibrary
+import com.github.jk1.license.filter.LicenseBundleNormalizer
+import com.github.jk1.license.render.InventoryHtmlReportRenderer
+import com.github.jk1.license.render.JsonReportRenderer
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -6,6 +9,7 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kover)
     alias(libs.plugins.binaryCompatibilityValidator)
+    alias(libs.plugins.dependencyLicenseReport)
 }
 
 group = "co.crackn.kompressor"
@@ -257,4 +261,18 @@ mavenPublishing {
             developerConnection = "scm:git:ssh://git@github.com/cracknco/kompressor.git"
         }
     }
+}
+
+licenseReport {
+    outputDir = rootProject.layout.buildDirectory.dir("reports/dependency-license").get().asFile.path
+    renderers = arrayOf<com.github.jk1.license.render.ReportRenderer>(
+        InventoryHtmlReportRenderer("index.html"),
+        JsonReportRenderer("licenses.json", false),
+    )
+    filters = arrayOf<com.github.jk1.license.filter.DependencyFilter>(LicenseBundleNormalizer())
+    excludeOwnGroup = true
+    // Scans only the Android runtime classpath because iOS-side dependencies are Apple
+    // system frameworks (AVFoundation, CoreImage, …) shipped with the OS rather than
+    // Maven artifacts — there is no iOS configuration with transitive Maven deps to scan.
+    configurations = arrayOf("androidRuntimeClasspath")
 }

@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 @file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 
 package co.crackn.kompressor.testutil
