@@ -99,7 +99,11 @@ internal class IosAudioCompressor : AudioCompressor {
             }
         }
         onProgress(1f)
-        val outputSize = nsFileSize(outputPath)
+        // Route the output-size read through `sizeOrTypedError` too: a race that loses the
+        // output file between pipeline success and this read would otherwise leak the untyped
+        // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
+        // `Result.failure`, which `suspendRunCatching` passes through unchanged.
+        val outputSize = sizeOrTypedError(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
     }

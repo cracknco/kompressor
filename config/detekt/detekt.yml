@@ -28,3 +28,22 @@ naming:
     active: true
   VariableNaming:
     active: true
+
+# CRA-21: NoUntypedThrowInPublicApi.
+# `buildUponDefaultConfig = true` (build.gradle.kts) means we can extend the bundled
+# `TooGenericExceptionThrown` rule with the untyped exception types we specifically want to block
+# from leaking out of public compress() APIs. The rule is AST-based and only matches
+# `throw <TypeName>(...)` expressions, so the internal `error("...")` / `check(...)` helpers (which
+# remain valid inside platform wrappers that get remapped by `mapTo*Error()`) are not affected.
+# Pair with `scripts/audit-throws.sh` which enforces the reference side in CI.
+exceptions:
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - Error
+      - Exception
+      - NullPointerException
+      - RuntimeException
+      - Throwable
+      - IllegalStateException
+      - IllegalArgumentException
