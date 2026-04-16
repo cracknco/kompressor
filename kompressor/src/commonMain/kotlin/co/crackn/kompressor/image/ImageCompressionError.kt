@@ -31,6 +31,49 @@ public sealed class ImageCompressionError(
     ) : ImageCompressionError("Unsupported source format: $details", cause)
 
     /**
+     * The source file's container is recognised but the current platform version cannot decode it.
+     *
+     * Carries the minimum platform version required so callers can:
+     *  1. show a localised "requires Android 12+ / iOS 16+" message, or
+     *  2. re-encode the input on a compatible device before retrying.
+     *
+     * @property format Lower-case format identifier (e.g. `"heic"`, `"avif"`).
+     * @property platform Name of the platform whose version gate failed (`"android"` or `"ios"`).
+     * @property minApi Minimum platform version that can decode this input. For Android this is
+     *   the API level (e.g. `30`). For iOS this is the major iOS version (e.g. `16`).
+     */
+    public class UnsupportedInputFormat(
+        public val format: String,
+        public val platform: String,
+        public val minApi: Int,
+        cause: Throwable? = null,
+    ) : ImageCompressionError(
+        "Unsupported input format '$format' on this $platform version (requires $platform $minApi+)",
+        cause,
+    )
+
+    /**
+     * The requested output format cannot be produced on the current platform version.
+     *
+     * Carries the minimum platform version required so callers can catch this error, fall back to
+     * a widely-supported format (JPEG / WebP / PNG), and retry.
+     *
+     * @property format Lower-case format identifier (e.g. `"avif"`, `"heic"`).
+     * @property platform Name of the platform whose version gate failed (`"android"` or `"ios"`).
+     * @property minApi Minimum platform version that can encode this output. See
+     *   [UnsupportedInputFormat.minApi] for the meaning per platform.
+     */
+    public class UnsupportedOutputFormat(
+        public val format: String,
+        public val platform: String,
+        public val minApi: Int,
+        cause: Throwable? = null,
+    ) : ImageCompressionError(
+        "Unsupported output format '$format' on this $platform version (requires $platform $minApi+)",
+        cause,
+    )
+
+    /**
      * The platform decoder was invoked but failed to produce a bitmap (truncated JPEG, corrupt
      * PNG, unsupported bit depth / color space for this OEM, etc.).
      */
