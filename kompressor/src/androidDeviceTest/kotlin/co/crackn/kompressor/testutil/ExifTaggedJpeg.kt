@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.testutil
 
 import android.graphics.Bitmap
