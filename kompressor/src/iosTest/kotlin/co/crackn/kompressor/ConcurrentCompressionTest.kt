@@ -31,7 +31,17 @@ import kotlin.test.assertTrue
 
 /**
  * iOS mirror of `androidDeviceTest/.../ConcurrentCompressionTest.kt`. Confirms that 4 parallel
- * audio exports and a 2+2 audio/image mix all finish successfully with distinct outputs.
+ * audio exports, a 2+2 audio/image mix, and a 16-coroutine stress grid all finish successfully
+ * with distinct outputs.
+ *
+ * **Inter-process coverage.** The Android side has a real subprocess test
+ * ([`ConcurrentCompressInterProcessTest`][ConcurrentCompressInterProcessTest] in `androidHostTest`)
+ * that catches regressions introduced by a process-wide lock in shared commonMain code. The
+ * equivalent on iOS is blocked by the absence of `NSTask` on the iOS SDK and the build infra
+ * needed to spawn a signed Kotlin/Native executable via `posix_spawn`. As a partial mitigation
+ * we lift the intra-process bar here to 16 concurrent coroutines — a dispatcher-level lock at
+ * that scale would show up as a hang or wall-time regression. A dedicated iOS inter-process
+ * test is tracked as a follow-up. See `docs/threading-model.md`.
  */
 class ConcurrentCompressionTest {
 
@@ -100,8 +110,31 @@ class ConcurrentCompressionTest {
         }
     }
 
-    private fun writeWav(index: Int): String {
-        val path = tempDir + "audio_in_$index.wav"
+    @Test
+    fun sixteenParallelCoroutines_allSucceed() = runBlocking {
+        val inputs = (0 until STRESS_COUNT).map { i -> writeStressWav(i) }
+        val outputs = (0 until STRESS_COUNT).map { i -> tempDir + "stress_audio_out_$i.m4a" }
+
+        val results = coroutineScope {
+            inputs.zip(outputs).map { (inPath, outPath) ->
+                async(Dispatchers.Default) { audio.compress(inPath, outPath) }
+            }.awaitAll()
+        }
+
+        results.forEachIndexed { i, r ->
+            assertTrue(r.isSuccess, "Stress audio #$i failed: ${r.exceptionOrNull()}")
+        }
+        outputs.forEachIndexed { i, out ->
+            assertTrue(fileSize(out) > 0, "Stress output #$i empty")
+        }
+    }
+
+    private fun writeWav(index: Int): String = writeWavAt("audio_in_$index.wav")
+
+    private fun writeStressWav(index: Int): String = writeWavAt("stress_audio_in_$index.wav")
+
+    private fun writeWavAt(fileName: String): String {
+        val path = tempDir + fileName
         writeBytes(
             path,
             WavGenerator.generateWavBytes(
@@ -117,5 +150,6 @@ class ConcurrentCompressionTest {
         const val PARALLEL_AUDIO_COUNT = 4
         const val MIXED_AUDIO_COUNT = 2
         const val MIXED_IMAGE_COUNT = 2
+        const val STRESS_COUNT = 16
     }
 }

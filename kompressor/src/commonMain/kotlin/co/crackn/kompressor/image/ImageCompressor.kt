@@ -30,9 +30,10 @@ interface ImageCompressor {
      *   [ImageCompressionError.Unknown]. [IllegalArgumentException] may still be thrown
      *   synchronously for programmer-error configs (e.g. requesting a non-JPEG output format).
      *
-     * Implementations are stateless. Concurrent `compress()` calls from different coroutines on
-     * the same instance are safe provided output paths differ. Concurrent calls with the same
-     * output path produce undefined results.
+     * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
+     * calls from different coroutines or OS processes on the same instance are safe provided
+     * every call writes to a distinct output path. Concurrent calls that share an output path
+     * produce undefined results. See `docs/threading-model.md`.
      */
     suspend fun compress(
         inputPath: String,

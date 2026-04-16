@@ -40,6 +40,11 @@ public interface AudioCompressor {
      * @param config Compression settings (codec, bitrate, sample rate, channels).
      * @param onProgress Called with a value between 0.0 and 1.0 as compression progresses.
      * @return [Result] wrapping [CompressionResult] on success, or an [AudioCompressionError] on failure.
+     *
+     * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
+     * calls from different coroutines or OS processes on the same instance are safe provided
+     * every call writes to a distinct output path. Concurrent calls that share an output path
+     * produce undefined results. See `docs/threading-model.md`.
      */
     public suspend fun compress(
         inputPath: String,

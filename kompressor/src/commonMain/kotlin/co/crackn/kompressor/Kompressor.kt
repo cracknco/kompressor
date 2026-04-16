@@ -15,9 +15,12 @@ import co.crackn.kompressor.video.VideoCompressor
  * Obtain an instance via [createKompressor]. Each compressor is lazily initialised —
  * only the ones you access are created.
  *
- * Implementations are stateless. Concurrent `compress()` calls from different coroutines on the
- * same instance are safe **provided output paths differ**. Concurrent calls with the same output
- * path produce undefined results.
+ * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`,
+ * [probe], and [canCompress] calls from different coroutines or OS processes on the same
+ * instance are safe **provided every call writes to a distinct output path**. Concurrent
+ * calls that share an output path produce undefined results (partial file, EncodingFailed,
+ * or one writer silently losing the race). See `docs/threading-model.md` for the full
+ * threading inventory and the inter-process coverage matrix.
  */
 public interface Kompressor {
     /** Image compressor for JPEG (and future format) compression. */
@@ -56,5 +59,9 @@ public interface Kompressor {
  * Create a platform-specific [Kompressor] instance.
  *
  * On Android the [android.content.Context] is obtained automatically via AndroidX App Startup.
+ *
+ * **Thread-safety:** safe to call from any thread and from multiple processes concurrently.
+ * Returns a fresh instance each call; share the instance within a process to benefit from
+ * lazy sub-compressor init.
  */
 public expect fun createKompressor(): Kompressor
