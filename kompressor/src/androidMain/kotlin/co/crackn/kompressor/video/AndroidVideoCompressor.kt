@@ -219,14 +219,15 @@ internal class AndroidVideoCompressor(
 
 /**
  * Returns true when the device has at least one HEVC encoder that can actually keep an HDR10
- * source HDR10 through Media3 — i.e. it advertises a Main10 / Main10HDR10 profile AND (on
- * API 33+) the `FEATURE_HdrEditing` MediaCodec feature.
+ * source HDR10 through Media3 — i.e. the device runs API 33+ AND an encoder advertises a
+ * Main10 / Main10HDR10 profile with the `FEATURE_HdrEditing` MediaCodec feature.
  *
- * The `FEATURE_HdrEditing` check is what Media3's `HDR_MODE_KEEP_HDR` gates on internally
- * (`TransformerUtil.getOutputMimeTypeAndHdrModeAfterFallback`): without it, Media3 silently
- * falls back to `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` and re-encodes the stream as
- * SDR BT.709. Keeping the pre-flight aligned with Media3's own criteria means
- * [VideoCompressionError.UnsupportedSourceFormat] surfaces to callers instead of a
+ * The two-stage check mirrors Media3's own gate in `EncoderUtil.getSupportedEncodersForHdrEditing`
+ * (annotated `@RequiresApi(33)` — empty list on older SDKs) and
+ * `TransformerUtil.getOutputMimeTypeAndHdrModeAfterFallback` (which flips `HDR_MODE_KEEP_HDR`
+ * to `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` whenever that list is empty or the encoder
+ * doesn't advertise `FEATURE_HdrEditing`). Aligning the pre-flight with Media3 means
+ * `VideoCompressionError.UnsupportedSourceFormat` surfaces to callers instead of a
  * surprise-SDR output — caught by `Hdr10PixelFidelityRoundTripTest` on Pixel 6 API 33, which
  * advertises Main10 but NOT `FEATURE_HdrEditing`.
  *
@@ -235,6 +236,7 @@ internal class AndroidVideoCompressor(
  * for the process lifetime so re-probing per call is wasted work.
  */
 private val hdr10HevcSupported: Boolean by lazy {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return@lazy false
     val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
     val main10Profiles = setOf(
         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
@@ -245,12 +247,7 @@ private val hdr10HevcSupported: Boolean by lazy {
         if (!info.isEncoder) return@any false
         val caps = runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull() ?: return@any false
         val hasMain10 = caps.profileLevels.any { pl -> pl.profile in main10Profiles }
-        if (!hasMain10) return@any false
-        // FEATURE_HdrEditing is the API 33+ signal for "encoder will actually preserve HDR,
-        // not tonemap to SDR". On earlier SDKs Media3's KEEP_HDR path isn't gated on it, so
-        // Main10-profile advertisement alone is the best signal we can get.
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return@any true
-        caps.isFeatureSupported(android.media.MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)
+        hasMain10 && caps.isFeatureSupported(android.media.MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)
     }
 }
 

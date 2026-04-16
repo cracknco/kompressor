@@ -93,13 +93,13 @@ object Hdr10Mp4Generator {
      * 1000 cd/m² → ST.2084 PQ → BT.2020 ncl → narrow-range 10-bit quantisation — the exact
      * pipeline the generator writes into the encoder's input buffers.
      */
-    val PATCH_RED: PatchYuv10 get() = encodeBt2020Primary(R_LIN, 0.0, 0.0)
+    val PATCH_RED: PatchYuv10 = encodeBt2020Primary(R_LIN, 0.0, 0.0)
     /** Canonical encoding of the BT.2020 green primary at 1000 cd/m². See [PATCH_RED]. */
-    val PATCH_GREEN: PatchYuv10 get() = encodeBt2020Primary(0.0, G_LIN, 0.0)
+    val PATCH_GREEN: PatchYuv10 = encodeBt2020Primary(0.0, G_LIN, 0.0)
     /** Canonical encoding of the BT.2020 blue primary at 1000 cd/m². See [PATCH_RED]. */
-    val PATCH_BLUE: PatchYuv10 get() = encodeBt2020Primary(0.0, 0.0, B_LIN)
+    val PATCH_BLUE: PatchYuv10 = encodeBt2020Primary(0.0, 0.0, B_LIN)
     /** Canonical encoding of BT.2020 D65 white at 1000 cd/m² (R = G = B = 1.0). See [PATCH_RED]. */
-    val PATCH_WHITE: PatchYuv10 get() = encodeBt2020Primary(R_LIN, G_LIN, B_LIN)
+    val PATCH_WHITE: PatchYuv10 = encodeBt2020Primary(R_LIN, G_LIN, B_LIN)
 
     /**
      * Build the [MediaFormat] the encoder is configured with. Exposed so tests can

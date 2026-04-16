@@ -9,7 +9,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.testutil.Hdr10Mp4Generator
 import co.crackn.kompressor.video.deviceSupportsHdr10Hevc
 import java.io.File
-import java.security.MessageDigest
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import kotlin.test.assertTrue
@@ -39,13 +38,7 @@ class GenerateHdr10Fixture {
         assertTrue(target.length() > 0, "Generated fixture is empty: ${target.absolutePath}")
         assertTrue(
             target.length() <= MAX_FIXTURE_BYTES,
-            "Generated fixture ${target.length()} B exceeds the $MAX_FIXTURE_MB MB LFS budget",
-        )
-        // Print the size + sha so the harness script can read it back from logcat without
-        // needing a second adb shasum round-trip. The `[FIXTURE]` tag is what the script greps.
-        android.util.Log.i(
-            LOG_TAG,
-            "[FIXTURE] path=${target.absolutePath} size=${target.length()} sha256=${sha256(target)}",
+            "Generated fixture ${target.length()} B exceeds the 1 MB LFS budget",
         )
     }
 
@@ -55,24 +48,8 @@ class GenerateHdr10Fixture {
         return File(dir, FIXTURE_FILENAME)
     }
 
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { stream ->
-            val buf = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val n = stream.read(buf)
-                if (n <= 0) break
-                digest.update(buf, 0, n)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-
     private companion object {
         const val FIXTURE_FILENAME = "hdr10_p010.mp4"
-        const val MAX_FIXTURE_MB = 1L
-        const val MAX_FIXTURE_BYTES = MAX_FIXTURE_MB * 1_048_576L
-        const val DEFAULT_BUFFER_SIZE = 8192
-        const val LOG_TAG = "Hdr10FixtureGen"
+        const val MAX_FIXTURE_BYTES = 1_048_576L
     }
 }

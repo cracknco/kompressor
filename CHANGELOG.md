@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 * **test:** HDR10 pixel-fidelity round-trip test — canonical P010/HEVC Main10 fixture generator (`scripts/generate-hdr10-fixture.sh` + on-device instrumented generator), `Hdr10PixelFidelityRoundTripTest` asserts BT.2020 primaries survive compression within ΔE ≤ 2 (CIEDE2000) and `MediaFormat` color metadata (BT.2020 primaries/matrix + ST.2084 transfer) is preserved end-to-end [CRA-6]
 * **test/docs:** `Bs775DownmixMatrixTest` host-side conformance check pinning the 7.1 → stereo / 7.1 → 5.1 surround downmix matrices against ITU-R BS.775-3 reference coefficients (±0.01 tolerance, intentional divergences pinned with rationale), canonical 7.1 PCM fixture generator, and `docs/audio-downmix.md` documenting the impl / BS.775-3 / Dolby (ATSC A/52) matrices and every divergence [CRA-13]
 * **test:** reproducible M1 edge-case fixtures (VBR MP3, FLAC with embedded cover art, CMYK JPEG) and round-trip tests pinning compressor contract (Xing VBR round-trip, FLAC PICTURE block dropped from AAC output, CMYK → RGB conversion or typed `ImageCompressionError`) [CRA-5]

@@ -77,8 +77,7 @@ class Hdr10PixelFidelityRoundTripTest {
         val fixture = File(testDir, "hdr10_p010.mp4").also { Hdr10Mp4Generator.generate(it) }
         assertTrue(
             fixture.length() <= MAX_FIXTURE_BYTES,
-            "HDR10 fixture must stay under ${MAX_FIXTURE_BYTES / BYTES_PER_MEGABYTE} MB " +
-                "(was ${fixture.length()} B)",
+            "HDR10 fixture must stay under 1 MB (was ${fixture.length()} B)",
         )
 
         val output = File(testDir, "hdr10_out.mp4")
@@ -193,8 +192,7 @@ class Hdr10PixelFidelityRoundTripTest {
     ): QuadrantSamples {
         val info = MediaCodec.BufferInfo()
         val frames = mutableListOf<QuadrantSamples>()
-        var width = 0
-        var height = 0
+        var layout: PlaneLayout? = null
         var endOfInput = false
         var endOfOutput = false
 
@@ -210,13 +208,13 @@ class Hdr10PixelFidelityRoundTripTest {
                             "pixel-fidelity check on this hardware",
                         colorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUVP010,
                     )
-                    width = outFormat.getInteger(MediaFormat.KEY_WIDTH)
-                    height = outFormat.getInteger(MediaFormat.KEY_HEIGHT)
+                    layout = PlaneLayout.fromFormat(outFormat)
                 }
                 outIdx >= 0 -> {
-                    if (info.size > 0 && width > 0 && height > 0) {
+                    val l = layout
+                    if (info.size > 0 && l != null) {
                         val buf = decoder.getOutputBuffer(outIdx) ?: error("No output buffer")
-                        frames += sampleQuadrants(buf, width, height)
+                        frames += sampleQuadrants(buf, l)
                     }
                     decoder.releaseOutputBuffer(outIdx, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) endOfOutput = true
@@ -247,43 +245,75 @@ class Hdr10PixelFidelityRoundTripTest {
     }
 
     /**
+     * Plane layout captured from `decoder.outputFormat` — hardware decoders routinely pad the
+     * Y row stride and slice height beyond `KEY_WIDTH` / `KEY_HEIGHT`, so we must read
+     * `KEY_STRIDE` / `KEY_SLICE_HEIGHT` (set by MediaCodec since API 23) rather than assume
+     * packed layout. Falls back to `width`/`height` when the decoder omits the keys.
+     */
+    private data class PlaneLayout(
+        val width: Int,
+        val height: Int,
+        val yRowStrideBytes: Int,
+        val uvPlaneOffsetBytes: Int,
+        val uvRowStrideBytes: Int,
+    ) {
+        companion object {
+            fun fromFormat(format: MediaFormat): PlaneLayout {
+                val w = format.getInteger(MediaFormat.KEY_WIDTH)
+                val h = format.getInteger(MediaFormat.KEY_HEIGHT)
+                val stridePx =
+                    if (format.containsKey(MediaFormat.KEY_STRIDE)) format.getInteger(MediaFormat.KEY_STRIDE) else w
+                val sliceH =
+                    if (format.containsKey(MediaFormat.KEY_SLICE_HEIGHT)) format.getInteger(MediaFormat.KEY_SLICE_HEIGHT) else h
+                val yRowBytes = stridePx * P010_BYTES_PER_SAMPLE
+                return PlaneLayout(
+                    width = w,
+                    height = h,
+                    yRowStrideBytes = yRowBytes,
+                    uvPlaneOffsetBytes = yRowBytes * sliceH,
+                    uvRowStrideBytes = yRowBytes,
+                )
+            }
+        }
+    }
+
+    /**
      * Sample the centre of each quadrant from a P010 buffer (high-10-bits-in-LE-16 layout,
      * Y plane followed by interleaved UV at ½×½ resolution). Averages a 16×16 luma block and
      * its matching 8×8 chroma block so we're not at the mercy of one possibly-on-a-block-edge
      * pixel — block artefacts near quadrant boundaries are normal even on the reference encoder.
      */
-    private fun sampleQuadrants(buf: ByteBuffer, width: Int, height: Int): QuadrantSamples {
+    private fun sampleQuadrants(buf: ByteBuffer, layout: PlaneLayout): QuadrantSamples {
         buf.order(ByteOrder.LITTLE_ENDIAN)
-        val quartW = width / 4
-        val quartH = height / 4
+        val quartW = layout.width / 4
+        val quartH = layout.height / 4
         return QuadrantSamples(
-            red = samplePatch(buf, width, height, quartW, quartH),
-            green = samplePatch(buf, width, height, 3 * quartW, quartH),
-            blue = samplePatch(buf, width, height, quartW, 3 * quartH),
-            white = samplePatch(buf, width, height, 3 * quartW, 3 * quartH),
+            red = samplePatch(buf, layout, quartW, quartH),
+            green = samplePatch(buf, layout, 3 * quartW, quartH),
+            blue = samplePatch(buf, layout, quartW, 3 * quartH),
+            white = samplePatch(buf, layout, 3 * quartW, 3 * quartH),
         )
     }
 
     private fun samplePatch(
         buf: ByteBuffer,
-        width: Int,
-        height: Int,
+        layout: PlaneLayout,
         centerX: Int,
         centerY: Int,
     ): Hdr10Mp4Generator.PatchYuv10 {
-        val y = averageLuma(buf, width, centerX, centerY)
-        val (cb, cr) = averageChroma(buf, width, height, centerX, centerY)
+        val y = averageLuma(buf, layout, centerX, centerY)
+        val (cb, cr) = averageChroma(buf, layout, centerX, centerY)
         return Hdr10Mp4Generator.PatchYuv10(y, cb, cr)
     }
 
-    private fun averageLuma(buf: ByteBuffer, width: Int, centerX: Int, centerY: Int): Int {
+    private fun averageLuma(buf: ByteBuffer, layout: PlaneLayout, centerX: Int, centerY: Int): Int {
         var sum = 0L
         var count = 0
         for (dy in -LUMA_HALF_WINDOW until LUMA_HALF_WINDOW) {
             for (dx in -LUMA_HALF_WINDOW until LUMA_HALF_WINDOW) {
                 val y = centerY + dy
                 val x = centerX + dx
-                val byteOffset = (y * width + x) * P010_BYTES_PER_SAMPLE
+                val byteOffset = y * layout.yRowStrideBytes + x * P010_BYTES_PER_SAMPLE
                 val sample16 = buf.getShort(byteOffset).toInt() and UINT16_MASK
                 sum += sample16 ushr P010_SHIFT
                 count++
@@ -294,13 +324,10 @@ class Hdr10PixelFidelityRoundTripTest {
 
     private fun averageChroma(
         buf: ByteBuffer,
-        width: Int,
-        height: Int,
+        layout: PlaneLayout,
         centerX: Int,
         centerY: Int,
     ): Pair<Int, Int> {
-        val uvPlaneOffset = width * height * P010_BYTES_PER_SAMPLE
-        val uvStrideBytes = width * P010_BYTES_PER_SAMPLE // (W/2) pairs × 2 B/sample × 2 samples
         val chromaCx = centerX / 2
         val chromaCy = centerY / 2
         var cbSum = 0L
@@ -310,7 +337,7 @@ class Hdr10PixelFidelityRoundTripTest {
             for (dx in -CHROMA_HALF_WINDOW until CHROMA_HALF_WINDOW) {
                 val cy = chromaCy + dy
                 val cx = chromaCx + dx
-                val base = uvPlaneOffset + cy * uvStrideBytes + cx * P010_UV_PAIR_BYTES
+                val base = layout.uvPlaneOffsetBytes + cy * layout.uvRowStrideBytes + cx * P010_UV_PAIR_BYTES
                 val cb16 = buf.getShort(base).toInt() and UINT16_MASK
                 val cr16 = buf.getShort(base + P010_BYTES_PER_SAMPLE).toInt() and UINT16_MASK
                 cbSum += cb16 ushr P010_SHIFT
@@ -324,7 +351,6 @@ class Hdr10PixelFidelityRoundTripTest {
     private companion object {
         const val DELTA_E_TOLERANCE = 2.0
         const val MAX_FIXTURE_BYTES = 1_048_576L
-        const val BYTES_PER_MEGABYTE = 1_048_576L
         const val DEQUEUE_TIMEOUT_US = 10_000L
         const val LUMA_HALF_WINDOW = 8  // 16×16 luma patch
         const val CHROMA_HALF_WINDOW = 4 // matching 8×8 chroma patch
