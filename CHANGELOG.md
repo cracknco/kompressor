@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * GitHub issue templates: bug report, feature request, regression (form-based `.yml`) [CRA-34]
 * GitHub issue template config with link to Discussions for questions [CRA-34]
 * Pull request template with DoD checklist and changelog entry section [CRA-34]
+* **test:** reproducible M1 edge-case fixtures (VBR MP3, FLAC with embedded cover art, CMYK JPEG) and round-trip tests pinning compressor contract (Xing VBR round-trip, FLAC PICTURE block dropped from AAC output, CMYK → RGB conversion or typed `ImageCompressionError`) [CRA-5]
 
 ### Fixed
 

@@ -44,3 +44,4 @@ kompressor/src/androidDeviceTest/resources/**/*.flac filter=lfs diff=lfs merge=l
 kompressor/src/androidDeviceTest/resources/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
 kompressor/src/androidDeviceTest/resources/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 kompressor/src/androidDeviceTest/resources/**/*.aac filter=lfs diff=lfs merge=lfs -text
+kompressor/src/androidDeviceTest/resources/**/*.jpg filter=lfs diff=lfs merge=lfs -text
