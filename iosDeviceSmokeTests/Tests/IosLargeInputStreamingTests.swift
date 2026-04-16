@@ -21,11 +21,13 @@ final class IosLargeInputStreamingTests: XCTestCase {
     private var testDir: URL!
     private var kompressor: (any Kompressor)!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         testDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("large-streaming-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
+        // Fail fast if the temp directory can't be created — downstream file writes
+        // would otherwise fail with a confusing "no such file" error.
+        try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
         kompressor = IosKompressorKt.createKompressor()
     }
 
