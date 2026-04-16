@@ -218,8 +218,17 @@ internal class AndroidVideoCompressor(
 }
 
 /**
- * Returns true when the device's `MediaCodecList` advertises at least one HEVC encoder
- * supporting the Main10 or Main10HDR10 profile. Used to pre-flight HDR10 compression requests.
+ * Returns true when the device has at least one HEVC encoder that can actually keep an HDR10
+ * source HDR10 through Media3 — i.e. it advertises a Main10 / Main10HDR10 profile AND (on
+ * API 33+) the `FEATURE_HdrEditing` MediaCodec feature.
+ *
+ * The `FEATURE_HdrEditing` check is what Media3's `HDR_MODE_KEEP_HDR` gates on internally
+ * (`TransformerUtil.getOutputMimeTypeAndHdrModeAfterFallback`): without it, Media3 silently
+ * falls back to `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` and re-encodes the stream as
+ * SDR BT.709. Keeping the pre-flight aligned with Media3's own criteria means
+ * [VideoCompressionError.UnsupportedSourceFormat] surfaces to callers instead of a
+ * surprise-SDR output — caught by `Hdr10PixelFidelityRoundTripTest` on Pixel 6 API 33, which
+ * advertises Main10 but NOT `FEATURE_HdrEditing`.
  *
  * Cached after the first probe — `MediaCodecList(REGULAR_CODECS)` enumerates every encoder on
  * the device and is non-trivial; on hot HDR10 paths (re-encode loops) the result is invariant
@@ -235,7 +244,13 @@ private val hdr10HevcSupported: Boolean by lazy {
     codecs.any { info ->
         if (!info.isEncoder) return@any false
         val caps = runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull() ?: return@any false
-        caps.profileLevels.any { pl -> pl.profile in main10Profiles }
+        val hasMain10 = caps.profileLevels.any { pl -> pl.profile in main10Profiles }
+        if (!hasMain10) return@any false
+        // FEATURE_HdrEditing is the API 33+ signal for "encoder will actually preserve HDR,
+        // not tonemap to SDR". On earlier SDKs Media3's KEEP_HDR path isn't gated on it, so
+        // Main10-profile advertisement alone is the best signal we can get.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return@any true
+        caps.isFeatureSupported(android.media.MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)
     }
 }
 

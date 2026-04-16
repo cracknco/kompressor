@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **video:** tighten Android HDR10 pre-flight to also require `MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing` on API 33+ — aligns with Media3's internal `HDR_MODE_KEEP_HDR` gate, so devices that advertise HEVC Main10 but lack the feature now surface `VideoCompressionError.UnsupportedSourceFormat` instead of silently tone-mapping to SDR BT.709 [CRA-6]
 * **video:** catch ObjC NSException from AVAssetWriterInput.init via cinterop @try/@catch — prevents crash when HEVC Main10 output settings are rejected by the hardware encoder [CRA-7]
 
 ## 1.0.0 (2026-04-15)
