@@ -156,12 +156,6 @@ private fun androidWebPFormat(): Bitmap.CompressFormat =
 private fun androidAvifFormat(): Bitmap.CompressFormat =
     Bitmap.CompressFormat.valueOf("AVIF")
 
-private fun fileExtension(inputPath: String): String {
-    val lastDot = inputPath.lastIndexOf('.')
-    if (lastDot < 0 || lastDot == inputPath.length - 1) return ""
-    return inputPath.substring(lastDot + 1).lowercase()
-}
-
 /**
  * Describes the EXIF orientation transform to apply to raw pixel data.
  * Defaults to identity (no transform).

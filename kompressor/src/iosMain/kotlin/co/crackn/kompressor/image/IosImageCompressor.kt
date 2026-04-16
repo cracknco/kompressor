@@ -178,11 +178,7 @@ internal class IosImageCompressor : ImageCompressor {
         ImageFormat.JPEG -> writeJpeg(image, path, config.quality)
         ImageFormat.HEIC -> writeViaImageIO(image, path, config.quality, UTI_HEIC, "heic")
         ImageFormat.AVIF -> writeViaImageIO(image, path, config.quality, UTI_AVIF, "avif")
-        ImageFormat.WEBP -> throw ImageCompressionError.UnsupportedOutputFormat(
-            format = "webp",
-            platform = PLATFORM_IOS,
-            minApi = WEBP_OUTPUT_MIN_IOS,
-        )
+        ImageFormat.WEBP -> error("WEBP output should be rejected by iosOutputGate before reaching here")
     }
 
     private fun writeJpeg(image: UIImage, path: String, quality: Int) {
@@ -326,12 +322,6 @@ private fun minVersionForUti(uti: String): Int = when (uti) {
     "public.heic" -> HEIC_OUTPUT_MIN_IOS
     "public.avif" -> AVIF_OUTPUT_MIN_IOS
     else -> 0
-}
-
-private fun fileExtension(inputPath: String): String {
-    val lastDot = inputPath.lastIndexOf('.')
-    if (lastDot < 0 || lastDot == inputPath.length - 1) return ""
-    return inputPath.substring(lastDot + 1).lowercase()
 }
 
 private const val IOS_MAX_QUALITY = 100.0
