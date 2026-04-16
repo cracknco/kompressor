@@ -51,19 +51,24 @@ import kotlin.test.Test
  * Characterization test that empirically discovers which bitrate / channel-count combinations
  * Apple's AudioToolbox AAC-LC encoder accepts via [AVAssetWriterInput]. Sweeps the grid
  * {channels × bitrate: 32k–1280k, step 32k} at 44.1 kHz.
- * Surround (6, 8) is gated to hardware runs — see [CHANNEL_COUNTS] for why.
  *
  * This is a **discovery tool**, not a regression gate — it always passes. Results are printed
  * to stdout. When the `KOMPRESSOR_DOCS_DIR` environment variable is set, the matrix is also
  * written to `$KOMPRESSOR_DOCS_DIR/audio-bitrate-matrix.md`; otherwise it falls back to a
  * UUID-suffixed file in `NSTemporaryDirectory()`.
  *
- * Hardware run with surround + repo write-back:
- * ```
- * KOMPRESSOR_DOCS_DIR=/path/to/kompressor/docs \
- *   xcodebuild test -scheme kompressor -destination 'platform=iOS,name=<device>' \
- *   -only-testing:AudioToolboxBitrateCharacterizationTest
- * ```
+ * **Channel scope — simulator only:** this Kotlin test ships in the Kotlin/Native `iosTest`
+ * target, which runs on the iOS Simulator in CI (see [CHANNEL_COUNTS]). Simulator's AAC encoder
+ * rejects 5.1/7.1 layouts with an uncatchable `NSInvalidArgumentException`, so surround columns
+ * are gated to `[1, 2]`. This is a cheap mono/stereo sanity guardrail — it cannot fill 6ch/8ch
+ * cells.
+ *
+ * **Surround discovery — Swift sibling on Device Farm:** the full 4×40 sweep (including 6ch/8ch)
+ * runs as an XCTest Swift port in
+ * `iosDeviceSmokeTests/Tests/AudioBitrateCharacterizationTests.swift`, triggered via the
+ * `ios-audio-characterization.yml` workflow_dispatch workflow on A15+ hardware. Paste the
+ * `audio-bitrate-matrix-*` artifact into `docs/audio-bitrate-matrix.md` between the
+ * `<!-- ACCEPTANCE_MATRIX -->` markers.
  */
 class AudioToolboxBitrateCharacterizationTest {
 
@@ -323,8 +328,8 @@ class AudioToolboxBitrateCharacterizationTest {
         const val SPLICE_END_MARKER = "<!-- /ACCEPTANCE_MATRIX -->"
         val ALL_CHANNELS = listOf(1, 2, 6, 8)
         // Surround (6, 8) excluded: iOS simulator's AAC encoder rejects surround channel
-        // layouts with an uncatchable NSInvalidArgumentException. Run on a real device (A10+)
-        // to probe surround caps — add 6 and 8 back to this list when running on hardware.
+        // layouts with an uncatchable NSInvalidArgumentException. Surround discovery runs in
+        // the Swift sibling (AudioBitrateCharacterizationTests.swift) on Device Farm hardware.
         val CHANNEL_COUNTS = listOf(1, 2)
     }
 }
