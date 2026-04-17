@@ -64,6 +64,21 @@ class IosAudioBitrateValidationTest {
     }
 
     @Test
+    fun monoAt44kHz_atEmpiricalCap_accepted() {
+        // Empirical override: mono at 44.1 kHz accepts up to 256 kbps (Device Farm run 24536970778).
+        checkSupportedIosBitrate(config(bitrate = 256_000, sampleRate = 44_100, channels = AudioChannels.MONO))
+    }
+
+    @Test
+    fun monoAt44kHz_aboveEmpiricalCap_rejected() {
+        // 288 kbps is the first rejected bitrate in the Device Farm sweep — assert the cap is
+        // the empirical 256k ceiling, not the old 160k linear projection.
+        assertUnsupportedBitrate {
+            checkSupportedIosBitrate(config(bitrate = 288_000, sampleRate = 44_100, channels = AudioChannels.MONO))
+        }
+    }
+
+    @Test
     fun stereoAt48kHz_320kbps_accepted() {
         // cap = 192 kbps x 2 ch = 384 000
         checkSupportedIosBitrate(config(bitrate = 320_000, sampleRate = 48_000, channels = AudioChannels.STEREO))
@@ -151,6 +166,31 @@ class IosAudioBitrateValidationTest {
     fun iosAacMaxBitrate_monoLowRate() {
         val max = iosAacMaxBitrate(22_050, AudioChannels.MONO)
         assertTrue(max == 64_000, "Expected 64000, got $max")
+    }
+
+    @Test
+    fun iosAacMaxBitrate_monoHighRate_usesEmpiricalOverride() {
+        // Mono-at-44.1kHz is a non-linear cell — the linear model would predict 160k, but
+        // the Device Farm run proves AudioToolbox accepts up to 256k.
+        val max = iosAacMaxBitrate(44_100, AudioChannels.MONO)
+        assertTrue(max == 256_000, "Expected 256000 (empirical mono @ 44.1 kHz), got $max")
+    }
+
+    @Test
+    fun iosAacMaxBitrate_monoAt32kHz_doesNotUseOverride() {
+        // Guard is pinned to sampleRate == 44_100 — 32 kHz mono must fall through to the
+        // linear MID-tier cap (96 kbps/ch × 1 = 96 000). If someone later widens the guard
+        // without re-sweeping 32 kHz on device, this assertion flips red.
+        val max = iosAacMaxBitrate(32_000, AudioChannels.MONO)
+        assertTrue(max == 96_000, "Expected 96000 (linear 32 kHz mono), got $max")
+    }
+
+    @Test
+    fun iosAacMaxBitrate_monoAt48kHz_doesNotUseOverride() {
+        // 48 kHz mono sits in the VERY_HIGH tier — must use the linear 192 kbps/ch × 1 cap,
+        // not the empirical 256 kbps 44.1 kHz override.
+        val max = iosAacMaxBitrate(48_000, AudioChannels.MONO)
+        assertTrue(max == 192_000, "Expected 192000 (linear 48 kHz mono), got $max")
     }
 
     @Test
