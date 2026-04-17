@@ -36,6 +36,10 @@ run_case() {
   local tmp out actual
   tmp=$(mktemp -d)
   out=$(mktemp)
+  # Cleanup on any exit from this function — success, failure, or
+  # interrupt (Ctrl-C / SIGTERM mid-case). Scoped per-invocation because
+  # `run_case` is a shell function.
+  trap 'rm -rf "${tmp}" "${out}"' RETURN INT TERM
 
   (
     cd "${tmp}"
@@ -66,14 +70,13 @@ run_case() {
 
   if [ "${actual}" -eq "${expected}" ]; then
     echo "PASS  ${name}"
-    rm -rf "${tmp}" "${out}"
     return 0
   else
     echo "FAIL  ${name} (expected exit ${expected}, got ${actual})"
     sed 's/^/      /' "${out}"
-    rm -rf "${tmp}" "${out}"
     return 1
   fi
+  # Cleanup handled by the RETURN trap.
 }
 
 # --- Case 1: PR #83 pre-fix layout ---------------------------------------
@@ -276,6 +279,26 @@ head_new=$(cat <<'EOF'
 EOF
 )
 if run_case "CHANGELOG introduced in this PR (no base revision)" 0 "${base_none}" "${head_new}"; then
+  pass_count=$((pass_count + 1))
+else
+  fail_count=$((fail_count + 1))
+fi
+
+# --- Case 9: empty-but-present Unreleased section ------------------------
+# Header is there, but the section body is empty (just a blank line
+# before the next release heading). The checker must reject this — a
+# present-but-empty section is not an entry. Pins the behaviour so a
+# future refactor of extract_unreleased or the blank-line filter can't
+# regress it silently.
+head_empty_unreleased=$(cat <<'EOF'
+## [Unreleased]
+
+## 1.0.0
+
+* entry
+EOF
+)
+if run_case "empty Unreleased section (header present, no entries)" 1 "${base_same}" "${head_empty_unreleased}"; then
   pass_count=$((pass_count + 1))
 else
   fail_count=$((fail_count + 1))
