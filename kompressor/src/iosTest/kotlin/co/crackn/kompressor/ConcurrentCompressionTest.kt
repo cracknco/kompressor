@@ -34,14 +34,12 @@ import kotlin.test.assertTrue
  * audio exports, a 2+2 audio/image mix, and a 16-coroutine stress grid all finish successfully
  * with distinct outputs.
  *
- * **Inter-process coverage.** The Android side has a real subprocess test
- * ([`ConcurrentCompressInterProcessTest`][ConcurrentCompressInterProcessTest] in `androidHostTest`)
- * that catches regressions introduced by a process-wide lock in shared commonMain code. The
- * equivalent on iOS is blocked by the absence of `NSTask` on the iOS SDK and the build infra
- * needed to spawn a signed Kotlin/Native executable via `posix_spawn`. As a partial mitigation
- * we lift the intra-process bar here to 16 concurrent coroutines — a dispatcher-level lock at
- * that scale would show up as a hang or wall-time regression. A dedicated iOS inter-process
- * test is tracked as a follow-up. See `docs/threading-model.md`.
+ * **Inter-process coverage.** Both sides now have real subprocess tests:
+ * [`ConcurrentCompressInterProcessTest`][ConcurrentCompressInterProcessTest] in `androidHostTest`
+ * for JVM-launched `ProcessBuilder` workers and in `iosTest` for `posix_spawn`-launched K/N
+ * `compressWorker` executables. The 16-coroutine stress test below is kept as a complementary
+ * intra-process check — it catches dispatcher-level locks that a cross-process test would miss
+ * because its workers don't share a dispatcher pool. See `docs/threading-model.md`.
  */
 class ConcurrentCompressionTest {
 
