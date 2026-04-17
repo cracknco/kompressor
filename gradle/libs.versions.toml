@@ -28,7 +28,7 @@ gadulka = "1.11.0"
 composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
 mockk = "1.14.9"
-dependencyLicenseReport = "2.9"
+dependencyLicenseReport = "3.1.2"
 cyclonedxGradle = "3.2.4"
 
 [libraries]
