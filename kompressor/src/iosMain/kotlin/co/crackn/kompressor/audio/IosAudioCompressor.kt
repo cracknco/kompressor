@@ -258,10 +258,17 @@ internal class IosAudioCompressor : AudioCompressor {
  * Per-channel caps derived from Apple's AudioToolbox AAC-LC documentation and empirically
  * confirmed by property-test shrinks (32 kHz mono @ 131 kbps, 22.05 kHz stereo @ 145 kbps
  * both reproduce the opaque "failed to append sample buffer" above their respective cap).
- * Surround (5.1 / 7.1) is rejected outright — Device Farm run 24536970778 (iPhone 13 /
- * A15 / iOS 18) confirmed AudioToolbox refuses every tested bitrate (32k–1280k) for ≥3
- * channels. Returns 0 for surround; `checkSupportedIosBitrate` converts that into
- * [AudioCompressionError.UnsupportedConfiguration].
+ *
+ * Two Device Farm findings (run 24536970778, iPhone 13 / A15 / iOS 18) refine the table:
+ *
+ *  - **Mono at 44.1 kHz** is the one empirically-confirmed non-linear cell — AudioToolbox
+ *    AAC-LC accepts up to 256 kbps (60% above the per-channel model's 160 kbps). Encoded
+ *    as a targeted override in [iosAacMaxBitrate]; other rates retain the linear model.
+ *  - **Surround (5.1 / 7.1)** is rejected outright — every tested bitrate (32k–1280k) fails
+ *    for ≥3 channels. [iosAacMaxBitrate] / [iosAacMinBitrate] return 0 for surround, which
+ *    [checkSupportedIosBitrate] converts into [AudioCompressionError.UnsupportedConfiguration].
+ *
+ * See `docs/audio-bitrate-matrix.md` for the full empirical grid.
  */
 @Suppress("ThrowsCount")
 internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
@@ -293,17 +300,32 @@ internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
 /**
  * Maximum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
  * [sampleRate] and [channels]. Returns 0 for surround (≥3 channels) — AudioToolbox rejects
- * multichannel AAC output at every bitrate on real hardware. See `docs/audio-bitrate-matrix.md`.
+ * multichannel AAC output at every bitrate on real hardware.
+ *
+ * Mono at exactly 44.1 kHz returns the empirically-measured 256 kbps ceiling — the one
+ * non-linear cell in the grid. AAC-LC allocates a larger VBR budget to single-channel
+ * streams there than the linear 160 kbps/ch projection predicts. The guard pins the
+ * exact measured sample rate: 22.05 / 32 kHz mono retain the linear per-channel model
+ * until a follow-up Device Farm sweep widens the empirical evidence for those rates.
+ * See `docs/audio-bitrate-matrix.md`.
  */
 internal fun iosAacMaxBitrate(sampleRate: Int, channels: AudioChannels): Int {
     if (channels.count > 2) return 0
-    val maxPerChannelKbps = when {
-        sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
-        sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
-        sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
-        else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
+    val maxKbps = when {
+        // Empirical non-linear cell: mono at exactly 44.1 kHz returns 256 kbps total
+        // (Device Farm run 24536970778). Skip the linear per-channel projection.
+        channels == AudioChannels.MONO && sampleRate == IOS_AAC_HIGH_RATE_HZ ->
+            IOS_AAC_MAX_KBPS_MONO_HIGH_RATE
+        else -> linearPerChannelMaxKbps(sampleRate) * channels.count
     }
-    return maxPerChannelKbps * IOS_KBPS_TO_BPS * channels.count
+    return maxKbps * IOS_KBPS_TO_BPS
+}
+
+private fun linearPerChannelMaxKbps(sampleRate: Int): Int = when {
+    sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
+    sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
+    sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
+    else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
 }
 
 /**
@@ -328,6 +350,11 @@ private const val IOS_AAC_MAX_KBPS_LOW_RATE = 64
 private const val IOS_AAC_MAX_KBPS_MID_RATE = 96
 private const val IOS_AAC_MAX_KBPS_HIGH_RATE = 160
 private const val IOS_AAC_MAX_KBPS_VERY_HIGH_RATE = 192
+
+// Empirical override: AudioToolbox AAC-LC accepts up to 256 kbps for mono at 44.1 kHz
+// (measured on A15+ via `AudioBitrateCharacterizationTests.swift` on AWS Device Farm).
+// Above the linear-per-channel projection of 160 kbps/ch × 1 = 160 kbps.
+private const val IOS_AAC_MAX_KBPS_MONO_HIGH_RATE = 256
 private const val IOS_AAC_MIN_KBPS_LOW_RATE = 16
 private const val IOS_AAC_MIN_KBPS_MID_RATE = 24
 private const val IOS_AAC_MIN_KBPS_HIGH_RATE = 32

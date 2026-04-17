@@ -13,10 +13,19 @@ reached via `AVAssetWriterInput` with `kAudioFormatMPEG4AAC`. The characterizati
 
 ## Acceptance Matrix
 
-> Table populated from Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) and simulator
-> baseline. To re-run on a different device tier, dispatch `ios-audio-characterization.yml`
-> or run `AudioToolboxBitrateCharacterizationTest` locally with `KOMPRESSOR_DOCS_DIR` set
-> to the repo's `docs/` directory.
+> Empirical results below are from **AWS Device Farm run [24536970778](https://github.com/cracknco/kompressor/actions/runs/24536970778)**
+> (2026-04-16, iPhone 13 / A15 Bionic, iOS 18.x, Xcode 16). Produced by the Swift
+> characterization test `iosDeviceSmokeTests/Tests/AudioBitrateCharacterizationTests.swift`
+> running on real hardware. The Kotlin sibling (`AudioToolboxBitrateCharacterizationTest`)
+> stays gated to the `[1, 2]` simulator-safe channel range — surround on the Simulator
+> throws `NSInvalidArgumentException` from `AVAssetWriterInput.init` (K/N can't catch),
+> so the full `[1, 2, 6, 8]` grid must run on device.
+>
+> To re-run on a different device tier: dispatch `ios-audio-characterization.yml`
+> (branch `main`); the resulting `audio-bitrate-matrix-full-<run-id>` artifact carries
+> a splice-ready table. Or run `AudioToolboxBitrateCharacterizationTest` locally with
+> `KOMPRESSOR_DOCS_DIR` set to the repo's `docs/` directory (mono/stereo only —
+> simulator rejects surround).
 
 <!-- ACCEPTANCE_MATRIX -->
 | Bitrate (bps) | Mono (1ch) | Stereo (2ch) | 5.1 (6ch) | 7.1 (8ch) |
@@ -70,12 +79,18 @@ Derived from the characterization test results and encoded in
 
 ### Maximum bitrate (per sample-rate tier)
 
-| Sample Rate   | Mono (1ch) | Stereo (2ch) | 5.1 (6ch)      | 7.1 (8ch)      |
-|---------------|:----------:|:------------:|:--------------:|:--------------:|
-| ≤ 24,000 Hz   | 64 kbps    | 128 kbps     | — (rejected)  | — (rejected)  |
-| ≤ 32,000 Hz   | 96 kbps    | 192 kbps     | — (rejected)  | — (rejected)  |
-| ≤ 44,100 Hz   | 160 kbps   | 320 kbps     | — (rejected)  | — (rejected)  |
-| > 44,100 Hz   | 192 kbps   | 384 kbps     | — (rejected)  | — (rejected)  |
+| Sample Rate   | Mono (1ch)                   | Stereo (2ch) | 5.1 (6ch)     | 7.1 (8ch)     |
+|---------------|:----------------------------:|:------------:|:-------------:|:-------------:|
+| ≤ 24,000 Hz   | 64 kbps                      | 128 kbps     | — (rejected) | — (rejected) |
+| ≤ 32,000 Hz   | 96 kbps                      | 192 kbps     | — (rejected) | — (rejected) |
+| ≤ 44,100 Hz   | **256 kbps** (empirical)\*   | 320 kbps     | — (rejected) | — (rejected) |
+| > 44,100 Hz   | 192 kbps                     | 384 kbps     | — (rejected) | — (rejected) |
+
+\* The 256 kbps mono cap is only empirically confirmed at exactly 44.1 kHz. The
+[`iosAacMaxBitrate`](../kompressor/src/iosMain/kotlin/co/crackn/kompressor/audio/IosAudioCompressor.kt)
+override pins the guard to `sampleRate == 44_100`; 22.05 / 32 kHz mono retain the
+linear per-channel caps from the rows above. A follow-up Device Farm sweep is needed
+before extending the override to other rates.
 
 ### Minimum bitrate (per sample-rate tier)
 
@@ -92,7 +107,15 @@ Derived from the characterization test results and encoded in
 > `checkSupportedIosBitrate` surfaces `UnsupportedConfiguration` before the hardware
 > encoder probe is reached. Surround AAC encoding remains supported on Android. [CRA-82]
 >
-> **Note on mono headroom**: At 44.1 kHz, mono empirically accepts up to 256 kbps while
-> the per-channel model predicts 160 kbps (160 kbps/ch × 1). Stereo matches exactly
-> (160 kbps/ch × 2 = 320 kbps). The current cap is conservatively safe — it rejects
-> valid mono bitrates (161–256k) but never accepts invalid ones.
+> **Note on mono headroom (empirically confirmed, 44.1 kHz)**: Mono accepts up to
+> 256 kbps at 44.1 kHz — 60% more than the linear per-channel model predicts
+> (160 kbps/ch × 1). Stereo matches the linear model exactly (160 kbps/ch × 2 =
+> 320 kbps). The implementation encodes mono-at-exactly-44.1 kHz as a per-(rate, ch)
+> override (guard: `sampleRate == 44_100`); other cells still use the linear model.
+>
+> **Sample-rate coverage caveat**: the Device Farm sweep covered a single sample rate
+> (44.1 kHz). Caps for 22.05 / 32 / 48 kHz are **estimates** derived from the linear
+> per-channel model + property-test shrinks, not direct hardware sweeps. They are
+> validated against simulator results but have not been confirmed on device for the
+> non-44.1 kHz rates. A follow-up Device Farm sweep is needed before shipping any
+> caller-facing guarantee that the non-44.1 rate caps are tight.

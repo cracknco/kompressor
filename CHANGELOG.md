@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * **audio:** zero out iOS surround (5.1/7.1) AAC caps — Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) confirmed AudioToolbox rejects multichannel AAC output at every tested bitrate (32k–1280k). `iosAacMaxBitrate` / `iosAacMinBitrate` now return 0 for ≥3 channels, and `checkSupportedIosBitrate` surfaces `UnsupportedConfiguration` instead of letting the request reach the hardware encoder probe. Surround AAC remains supported on Android [CRA-82, CRA-78]
+* **audio/ios:** encode mono-at-44.1 kHz AAC-LC non-linear cap — the same Device Farm run ([run 24536970778](https://github.com/cracknco/kompressor/actions/runs/24536970778)) found AudioToolbox allocates a larger VBR budget to single-channel streams at 44.1 kHz than the linear per-channel model predicts: up to **256 kbps** accepted (60% above the old 160 kbps cap). `iosAacMaxBitrate` adds a targeted `sampleRate == 44_100` override; other rates retain the linear model. `docs/audio-bitrate-matrix.md` spliced with the full empirical Y/N grid [CRA-78]
 
 ### Fixed
 
