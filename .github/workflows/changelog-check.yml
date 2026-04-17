@@ -21,16 +21,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # -U1000 widens diff context so `## [Unreleased]` header appears
-          # in the hunk regardless of where the new entry sits within the
-          # section — the sed range pattern relies on seeing the header.
-          unreleased=$(git diff -U1000 "$BASE_SHA"..."$HEAD_SHA" -- CHANGELOG.md \
-            | sed -n '/^[ +-]## \[Unreleased\]/,/^[ +-]## \[/p' \
-            | grep -cE '^\+[^+]' || true)
-          if [ "$unreleased" -gt 0 ]; then
-            echo "Changelog gate passed — $unreleased line(s) added under ## [Unreleased]."
-          else
-            echo "::error::PRs that modify kompressor/src/ must add an entry under '## [Unreleased]' in CHANGELOG.md. Add the 'skip-changelog' label to bypass (docs-only, ci-only changes)."
-            exit 1
-          fi
+        # Extracts the `## [Unreleased]` section from the base and head
+        # revisions of CHANGELOG.md directly (not from `git diff` output),
+        # so the check is independent of the unified-diff context window.
+        # See scripts/ci/check-unreleased-entry.sh for details.
+        run: scripts/ci/check-unreleased-entry.sh "$BASE_SHA" "$HEAD_SHA"

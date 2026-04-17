@@ -87,6 +87,9 @@ public final class co/crackn/kompressor/DeviceCapabilities {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface annotation class co/crackn/kompressor/ExperimentalKompressorApi : java/lang/annotation/Annotation {
+}
+
 public abstract interface class co/crackn/kompressor/Kompressor {
 	public abstract fun canCompress (Lco/crackn/kompressor/SourceMediaInfo;)Lco/crackn/kompressor/Supportability;
 	public abstract fun getAudio ()Lco/crackn/kompressor/audio/AudioCompressor;
@@ -298,8 +301,13 @@ public final class co/crackn/kompressor/image/ImageCompressionConfig {
 }
 
 public abstract class co/crackn/kompressor/image/ImageCompressionError : java/lang/RuntimeException {
+	public static final field Companion Lco/crackn/kompressor/image/ImageCompressionError$Companion;
+	public static final field NOT_IMPLEMENTED I
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$Companion {
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$DecodingFailed : co/crackn/kompressor/image/ImageCompressionError {
@@ -326,6 +334,24 @@ public final class co/crackn/kompressor/image/ImageCompressionError$Unknown : co
 	public final fun getDetails ()Ljava/lang/String;
 }
 
+public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedInputFormat : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getFormat ()Ljava/lang/String;
+	public final fun getMinApi ()I
+	public final fun getPlatform ()Ljava/lang/String;
+	public final fun isNotImplementedOnPlatform ()Z
+}
+
+public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedOutputFormat : co/crackn/kompressor/image/ImageCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getFormat ()Ljava/lang/String;
+	public final fun getMinApi ()I
+	public final fun getPlatform ()Ljava/lang/String;
+	public final fun isNotImplementedOnPlatform ()Z
+}
+
 public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -342,7 +368,10 @@ public final class co/crackn/kompressor/image/ImageCompressor$DefaultImpls {
 }
 
 public final class co/crackn/kompressor/image/ImageFormat : java/lang/Enum {
+	public static final field AVIF Lco/crackn/kompressor/image/ImageFormat;
+	public static final field HEIC Lco/crackn/kompressor/image/ImageFormat;
 	public static final field JPEG Lco/crackn/kompressor/image/ImageFormat;
+	public static final field WEBP Lco/crackn/kompressor/image/ImageFormat;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lco/crackn/kompressor/image/ImageFormat;
 	public static fun values ()[Lco/crackn/kompressor/image/ImageFormat;

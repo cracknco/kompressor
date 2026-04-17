@@ -35,11 +35,19 @@ public interface AudioCompressor {
      * Failures surface as [AudioCompressionError] subtypes wrapped in [Result.failure]: callers
      * can `when`-branch on the concrete type to show actionable UI.
      *
+     * Contract violations on [config] (programmer error, e.g. passing a non-AAC
+     * [AudioCompressionConfig.codec] on an implementation that only supports AAC) surface as
+     * an [IllegalArgumentException] wrapped in [Result.failure] rather than the typed
+     * [AudioCompressionError] hierarchy. This mirrors the Kotlin convention for pre-condition
+     * failures and is stable across platforms — audit tracked under CRA-21.
+     *
      * @param inputPath Absolute filesystem path to the source audio.
      * @param outputPath Absolute filesystem path for the compressed output.
      * @param config Compression settings (codec, bitrate, sample rate, channels).
      * @param onProgress Called with a value between 0.0 and 1.0 as compression progresses.
      * @return [Result] wrapping [CompressionResult] on success, or an [AudioCompressionError] on failure.
+     *         [IllegalArgumentException] may be wrapped in [Result.failure] for programmer-error
+     *         configs (e.g. requesting a non-AAC codec).
      *
      * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
      * calls from different coroutines or OS processes on the same instance are safe provided
