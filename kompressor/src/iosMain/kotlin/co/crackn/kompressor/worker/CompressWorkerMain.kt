@@ -123,13 +123,12 @@ private suspend fun runCompressionGrid(args: WorkerArgs) {
         (0 until args.coroutineCount).map { i ->
             async(Dispatchers.Default) {
                 val outputPath = "${args.outputDir}/out_$i.jpg"
-                val result = kompressor.image.compress(args.inputPath, outputPath, config)
-                if (result.isFailure) {
-                    throw IllegalStateException(
-                        "coroutine $i failed: ${result.exceptionOrNull()?.message}",
-                        result.exceptionOrNull(),
-                    )
-                }
+                // Let the typed *CompressionError from compress() propagate as-is — CRA-21's
+                // detekt `TooGenericExceptionThrown` rule blocks rewrapping it in an
+                // IllegalStateException, and there's nothing useful to add: the coroutine
+                // index is already in the stacktrace frame, and main()'s catch-all prints
+                // the cause message to stdout for the test report.
+                kompressor.image.compress(args.inputPath, outputPath, config).getOrThrow()
             }
         }.awaitAll()
     }
