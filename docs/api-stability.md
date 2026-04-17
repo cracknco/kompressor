@@ -89,6 +89,10 @@ The `test` job in [`.github/workflows/pr.yml`](../.github/workflows/pr.yml) runs
 
 There is no bypass flag. An unintentional ABI change blocks merge.
 
+### Opt-in annotations and the JVM ABI dump
+
+`kompressor/api/kompressor.api` contains the `@ExperimentalKompressorApi` **annotation class** itself, but **not** the per-symbol markers applied to incubating APIs (e.g. `DynamicRange.HDR10`, `AudioChannels.FIVE_POINT_ONE`). This is a BCV format limitation: the JVM dump serialises JVM signatures, and Kotlin opt-in markers live in `.kotlin_metadata` inside the compiled `.class`, not in the JVM signature. Consumer-side enforcement is unaffected — the Kotlin compiler reads the per-symbol markers directly from `.kotlin_metadata` and emits the opt-in WARNING whenever consumers touch a non-annotated experimental symbol without `@OptIn`. If you need per-symbol marker visibility in a committed baseline (e.g. for a tooling dashboard), enable BCV's klib validation (`apiValidation { klib { enabled = true } }`) — tracked out of band; not required for correctness.
+
 ### How to update the ABI baseline
 
 When you intentionally change the public API (new feature, deprecation, removal in a MAJOR release, …):

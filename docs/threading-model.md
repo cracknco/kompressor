@@ -75,40 +75,48 @@ call. AVFoundation is auto-initialised by the OS on first use.
 | Intra-process, 2 audio + 2 image coroutines | `androidDeviceTest/ConcurrentCompressionTest#mixedAudioAndImageCompressions_allSucceed` | `iosTest/ConcurrentCompressionTest#mixedAudioAndImageCompressions_allSucceed` |
 | Intra-process, 16 parallel coroutines (stress) | `androidDeviceTest/ConcurrentCompressionTest#sixteenParallelCoroutines_allSucceed` | `iosTest/ConcurrentCompressionTest#sixteenParallelCoroutines_allSucceed` |
 | Idempotent Android init under 32-thread contention | [`androidHostTest/KompressorInitializerConcurrencyTest`](../kompressor/src/androidHostTest/kotlin/co/crackn/kompressor/KompressorInitializerConcurrencyTest.kt) | n/a (iOS has no init) |
-| **Inter-process, 4 processes × 4 coroutines (16 parallel) — real subprocesses** | [`androidHostTest/ConcurrentCompressInterProcessTest`](../kompressor/src/androidHostTest/kotlin/co/crackn/kompressor/ConcurrentCompressInterProcessTest.kt) | ⚠ not covered — see next section |
+| **Inter-process, 4 processes × 4 coroutines (16 parallel) — real subprocesses** | [`androidHostTest/ConcurrentCompressInterProcessTest`](../kompressor/src/androidHostTest/kotlin/co/crackn/kompressor/ConcurrentCompressInterProcessTest.kt) | [`iosTest/ConcurrentCompressInterProcessTest`](../kompressor/src/iosTest/kotlin/co/crackn/kompressor/ConcurrentCompressInterProcessTest.kt) |
 
-## iOS inter-process coverage — known gap
+## iOS inter-process coverage — how we got here
 
-The ticket DoD (CRA-14) asked for NSTask-based inter-process coverage on iOS.
-In practice:
+The original CRA-14 DoD asked for NSTask-based inter-process coverage on
+iOS. That delivery slipped because:
 
-- `NSTask` is **not available on iOS**. It lives in the macOS Foundation SDK
-  and is not exposed to iOS apps or to Kotlin/Native's iOS targets.
-- `posix_spawn` is technically callable from Kotlin/Native on the simulator,
-  but a meaningful child must itself run `AVAssetWriter` — which requires
-  compiling and signing a separate Kotlin/Native executable target, bundled
-  alongside the simulator test binary and invoked by path.
+- `NSTask` is **not available on iOS** — it lives in the macOS Foundation
+  SDK and is not exposed to iOS apps or to Kotlin/Native's iOS targets.
+- A meaningful `posix_spawn` child must itself run `AVAssetWriter` /
+  `UIGraphicsBeginImageContextWithOptions` / … which requires a separate
+  Kotlin/Native executable target, compiled and bundled alongside the
+  simulator test binary.
 
-That build infrastructure is non-trivial and out of scope for CRA-14.
+That build infrastructure was out of scope for CRA-14 and shipped as a
+documented gap, partially mitigated by lifting the intra-process iOS bar to
+16 concurrent coroutines (`iosTest/ConcurrentCompressionTest#sixteenParallel
+Coroutines_allSucceed`).
 
-**The gap is intentional, not accidental.** The Android inter-process test
-covers the class of regression the ticket cares about: a global lock
-introduced in Kompressor's shared commonMain code (e.g. a static
-`FileLock`, a named `Semaphore`, a rendezvous file). Such a lock would show
-up in any cross-process test, Android or iOS, because the culprit lives in
-shared code. The Android-side coverage is therefore sufficient as a
-regression guard for the shared layer.
+**Closed in CRA-80.** [PR #97](https://github.com/cracknco/kompressor/pull/97)
+added:
 
-What the iOS gap genuinely misses is an iOS-specific regression introduced
-only in `iosMain` platform code (e.g. a static lock around `AVAssetWriter`
-in `IosVideoCompressor`). We lift the intra-process bar to 16 concurrent
-coroutines as a partial mitigation — a coroutine-dispatcher-level lock at
-that scale would be visible — but a true iOS inter-process test remains
-future work.
+- A dedicated `compressWorker` K/N executable binary on the
+  `iosSimulatorArm64` target, wired in
+  [`kompressor/build.gradle.kts`](../kompressor/build.gradle.kts) with
+  `entryPoint = "co.crackn.kompressor.worker.main"` pointing at the
+  top-level `main()` in
+  [`CompressWorkerMain.kt`](../kompressor/src/iosMain/kotlin/co/crackn/kompressor/worker/CompressWorkerMain.kt)
+  (public, not `internal` — K/N's entry-point resolver can't reliably
+  look up mangled internal-function names).
+- Env-var plumbing (`KOMPRESSOR_COMPRESS_WORKER_PATH`) on the
+  `iosSimulatorArm64Test` task so the test host can discover the worker
+  binary at runtime without hard-coding a build path.
+- [`ConcurrentCompressInterProcessTest`](../kompressor/src/iosTest/kotlin/co/crackn/kompressor/ConcurrentCompressInterProcessTest.kt)
+  that `posix_spawn`s 4 workers, each running 4 coroutines, asserts
+  distinct PIDs, valid JPEG outputs, and a 90-second wall-time ceiling.
 
-**Follow-up:** a subsequent PR will add a dedicated Kotlin/Native executable
-target (`iosSimulatorArm64CompressWorker`), invoke it via `posix_spawn`
-from the iOS simulator test, and close this gap.
+Device-side inter-process coverage remains out of scope — the compiled
+`iosMain` code is identical between simulator and device, so an
+`iosMain`-specific lock regression shows up in the simulator job first.
+Device hardware-contention stress is tracked separately under the device
+CI budget.
 
 ## Adding a new compressor — thread-safety checklist
 

@@ -258,12 +258,21 @@ internal class IosAudioCompressor : AudioCompressor {
  * Per-channel caps derived from Apple's AudioToolbox AAC-LC documentation and empirically
  * confirmed by property-test shrinks (32 kHz mono @ 131 kbps, 22.05 kHz stereo @ 145 kbps
  * both reproduce the opaque "failed to append sample buffer" above their respective cap).
- * Surround (5.1 / 7.1) caps use linear per-channel scaling as a starting point — run
- * `AudioToolboxBitrateCharacterizationTest` to discover whether AudioToolbox imposes
- * nonlinear total-bitrate caps for multichannel layouts, then update the table below.
+ * Surround (5.1 / 7.1) is rejected outright — Device Farm run 24536970778 (iPhone 13 /
+ * A15 / iOS 18) confirmed AudioToolbox refuses every tested bitrate (32k–1280k) for ≥3
+ * channels. Returns 0 for surround; `checkSupportedIosBitrate` converts that into
+ * [AudioCompressionError.UnsupportedConfiguration].
  */
+@Suppress("ThrowsCount")
 internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
     val maxBitrate = iosAacMaxBitrate(config.sampleRate, config.channels)
+    if (maxBitrate == 0) {
+        throw AudioCompressionError.UnsupportedConfiguration(
+            "iOS AAC encoder does not support ${config.channels.count}-channel " +
+                "(${config.channels.name}) output — empirically rejected at every bitrate " +
+                "on A15 / iOS 18 (Device Farm run 24536970778). Use stereo or mono.",
+        )
+    }
     if (config.bitrate > maxBitrate) {
         throw AudioCompressionError.UnsupportedBitrate(
             "iOS AAC encoder does not support ${config.bitrate} bps at " +
@@ -283,10 +292,11 @@ internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
 
 /**
  * Maximum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
- * [sampleRate] and [channels]. The table is structured per (sample-rate tier, channel count)
- * so that nonlinear surround caps can be encoded directly — see `docs/audio-bitrate-matrix.md`.
+ * [sampleRate] and [channels]. Returns 0 for surround (≥3 channels) — AudioToolbox rejects
+ * multichannel AAC output at every bitrate on real hardware. See `docs/audio-bitrate-matrix.md`.
  */
 internal fun iosAacMaxBitrate(sampleRate: Int, channels: AudioChannels): Int {
+    if (channels.count > 2) return 0
     val maxPerChannelKbps = when {
         sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
         sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
@@ -298,10 +308,10 @@ internal fun iosAacMaxBitrate(sampleRate: Int, channels: AudioChannels): Int {
 
 /**
  * Minimum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
- * [sampleRate] and [channels]. Below this floor, `AVAssetWriterInput` fails mid-encode
- * with the same opaque error as the over-cap case.
+ * [sampleRate] and [channels]. Returns 0 for surround (≥3 channels) — see [iosAacMaxBitrate].
  */
 internal fun iosAacMinBitrate(sampleRate: Int, channels: AudioChannels): Int {
+    if (channels.count > 2) return 0
     val minPerChannelKbps = when {
         sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
         sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE

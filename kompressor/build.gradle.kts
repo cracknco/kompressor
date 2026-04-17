@@ -2,6 +2,8 @@ import com.android.build.api.dsl.androidLibrary
 import com.github.jk1.license.filter.LicenseBundleNormalizer
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import com.github.jk1.license.render.JsonReportRenderer
+import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -83,8 +85,30 @@ kotlin {
                     includeDirs(interopDir)
                     extraOpts("-libraryPath", interopDir.resolve("libs/$targetLibDir").absolutePath)
                 }
+                // CRA-80: `posix_spawn` / `waitpid` are not in K/N's built-in iOS posix
+                // binding. These static-inline shims expose them to `iosMain` (and by
+                // extension the iosTest source set) so the inter-process test can launch
+                // the `compressWorker` binary. Header-only — no static library dependency.
+                create("PosixSpawn") {
+                    defFile(interopDir.resolve("PosixSpawn.def"))
+                    includeDirs(interopDir)
+                }
             }
         }
+    }
+
+    // Standalone K/N executable target used by `iosTest/ConcurrentCompressInterProcessTest`
+    // (CRA-80) to get real cross-process coverage of `createKompressor().image.compress(...)`.
+    // Only the simulator variant ships the executable — on-device inter-process testing is
+    // out of scope and `posix_spawn` requires code-signing on real iOS hardware anyway.
+    // `entryPoint` resolves to the top-level `fun main(Array<String>)` in
+    // `iosMain/.../worker/CompressWorkerMain.kt`. The function is left `public` (not
+    // `internal`) because K/N mangles internal-function names in a way that its entry-point
+    // resolver can't reliably look up; the symbol is namespaced under `co.crackn.kompressor
+    // .worker` so the leak into the framework's ObjC header is cosmetic rather than a
+    // public-API risk.
+    iosSimulatorArm64().binaries.executable("compressWorker") {
+        entryPoint = "co.crackn.kompressor.worker.main"
     }
 
     sourceSets {
@@ -136,6 +160,32 @@ kotlin {
             implementation(libs.androidx.test.rules)
         }
     }
+}
+
+// Wire the `compressWorker` K/N executable into `iosSimulatorArm64Test` (CRA-80).
+//
+// The inter-process test (`iosTest/ConcurrentCompressInterProcessTest`) `posix_spawn`s this
+// binary, so the test task must (a) trigger the link step for it, and (b) pass the resulting
+// absolute path as an env var the test binary can read via `platform.posix.getenv`.
+//
+// DEBUG build type matches the test binary's own build type — a mismatch would double the
+// K/N link cost per CI run (debug + release link tasks both fire) without any diagnostic
+// benefit.
+//
+// `simctl` env var convention: `KotlinNativeSimulatorTest.environment(...)` sets env on the
+// `xcrun simctl spawn` invocation, but `simctl spawn` itself only forwards env vars to the
+// simulator process when they carry the `SIMCTL_CHILD_` prefix (see `man simctl`). We set
+// both the prefixed and unprefixed form — prefixed for simctl's forwarding and unprefixed as
+// a safety net for anyone running the raw `.kexe` directly (e.g. from an IDE attach).
+val iosSimWorkerBinary = kotlin.iosSimulatorArm64().binaries.getExecutable(
+    "compressWorker",
+    NativeBuildType.DEBUG,
+)
+tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
+    dependsOn(iosSimWorkerBinary.linkTaskProvider)
+    val workerPath = iosSimWorkerBinary.outputFile.absolutePath
+    environment("KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
+    environment("SIMCTL_CHILD_KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
 }
 
 // Kover has two gate modes:
