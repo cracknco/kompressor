@@ -9,6 +9,14 @@ exclude:
   - "**/androidInstrumentedTest/**"
   - "**/iosTest/**"
   - "**/sample/**"
+  # Format-support matrix: the `codecPath` fields are documentation-only strings that
+  # mention "MediaCodec" / "BitmapFactory" / "AVAssetWriter" etc. by name. The Joern
+  # `resource-leak` rule matches on identifier substrings and flags every row as a
+  # false positive even though there is no actual codec usage in this file (it's a
+  # pure `data class` catalogue consumed by a Markdown renderer). Per-line
+  # suppressions would mean 14+ annotations on a single data-only file; a targeted
+  # exclude is cleaner. CRA-43.
+  - "**/matrix/FormatSupportMatrix.kt"
 
 # Inline suppression settings
 suppression:
