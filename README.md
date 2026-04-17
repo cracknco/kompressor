@@ -393,6 +393,31 @@ Binary compatibility is maintained across MINOR and PATCH releases for all artif
 
 ---
 
+## SBOM & supply chain
+
+Every Kompressor release ships a **CycloneDX 1.5** Software Bill of Materials
+as a GitHub Release asset:
+
+```
+https://github.com/cracknco/kompressor/releases/download/vX.Y.Z/kompressor-X.Y.Z.sbom.json
+```
+
+The SBOM lists every runtime dependency with its `purl`, version, license, and
+SHA-1/256/384/512 hashes — enough to answer *"am I exposed to this CVE?"* in
+under five minutes. It's reproducible from Maven Central via
+`syft packages maven-central:co.crackn.kompressor:kompressor:X.Y.Z` and can be
+ingested into [Dependency-Track](https://dependencytrack.org/) for continuous
+vulnerability tracking.
+
+Full guide — verification with `syft`, Dependency-Track integration, and the
+regulatory context (US EO 14028 / EU Cyber Resilience Act) — lives in
+**[docs/supply-chain.md](docs/supply-chain.md)**.
+
+> Adjacent asset: `kompressor-spdx.json` (SPDX 2.3 license report). SPDX covers
+> licenses; CycloneDX covers components and vulnerabilities.
+
+---
+
 ## Contributing
 
 We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup

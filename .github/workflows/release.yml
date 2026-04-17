@@ -88,6 +88,46 @@ jobs:
           VERSION: ${{ needs.release.outputs.new_release_version }}
         run: gh release upload "v${VERSION}" build/reports/dependency-license/kompressor-spdx.json
 
+  # ── CycloneDX SBOM (release asset) ───────────────────────
+  # CRA-27 — supply-chain transparency for US EO 14028 / EU Cyber Resilience Act. The published
+  # asset `kompressor-x.y.z.sbom.json` is the authoritative CycloneDX 1.5 SBOM for the Maven
+  # Central artifact and is what consumers ingest into Dependency-Track / audit with syft.
+  sbom:
+    name: CycloneDX SBOM
+    runs-on: ubuntu-latest
+    needs: [ release ]
+    if: needs.release.outputs.new_release_published == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: main
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - name: Generate SBOM
+        # `-PsbomVersion=...` stamps the SBOM's `metadata.component.version` with the authoritative
+        # semantic-release version so `syft packages maven-central:...:x.y.z` reproducibility
+        # comparisons line up. We can't use `ORG_GRADLE_PROJECT_version` because the `:kompressor`
+        # build script re-assigns `version` to a literal at configuration time — same constraint
+        # the SPDX job works around via its `$VERSION` env var. `--no-configuration-cache`
+        # mirrors the SPDX job because AGP is not config-cache-compatible in this project.
+        env:
+          VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: ./gradlew :kompressor:cyclonedxBom --no-configuration-cache "-PsbomVersion=${VERSION}"
+      - name: Rename SBOM with version suffix
+        env:
+          VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: cp kompressor/build/reports/bom.json "kompressor-${VERSION}.sbom.json"
+      - name: Upload SBOM to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: gh release upload "v${VERSION}" "kompressor-${VERSION}.sbom.json"
+
   # ── Publication Maven Central ────────────────────────────
   publish:
     name: Publish
