@@ -94,15 +94,17 @@ documented gap, partially mitigated by lifting the intra-process iOS bar to
 16 concurrent coroutines (`iosTest/ConcurrentCompressionTest#sixteenParallel
 Coroutines_allSucceed`).
 
-**Closed in CRA-80.** [PR #92](https://github.com/cracknco/kompressor/pull/92)
+**Closed in CRA-80.** [PR #97](https://github.com/cracknco/kompressor/pull/97)
 added:
 
 - A dedicated `compressWorker` K/N executable binary on the
   `iosSimulatorArm64` target, wired in
   [`kompressor/build.gradle.kts`](../kompressor/build.gradle.kts) with
   `entryPoint = "co.crackn.kompressor.worker.main"` pointing at the
-  `internal` `main()` in
-  [`CompressWorkerMain.kt`](../kompressor/src/iosMain/kotlin/co/crackn/kompressor/worker/CompressWorkerMain.kt).
+  top-level `main()` in
+  [`CompressWorkerMain.kt`](../kompressor/src/iosMain/kotlin/co/crackn/kompressor/worker/CompressWorkerMain.kt)
+  (public, not `internal` — K/N's entry-point resolver can't reliably
+  look up mangled internal-function names).
 - Env-var plumbing (`KOMPRESSOR_COMPRESS_WORKER_PATH`) on the
   `iosSimulatorArm64Test` task so the test host can discover the worker
   binary at runtime without hard-coding a build path.

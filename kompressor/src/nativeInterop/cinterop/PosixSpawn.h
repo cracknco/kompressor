@@ -40,8 +40,10 @@
  * Minimal posix_spawn wrapper. `argv` must be NULL-terminated; the convention on
  * Darwin is that argv[0] is the executable basename, not the full path — but the
  * `path` argument is the absolute path used for the actual exec. Pass NULL for
- * `envp` to inherit the parent's environment (required on iOS simulator so the
- * child picks up DYLD_* settings that keep it inside the simulator bootstrap).
+ * `envp` to inherit the parent's environment — the shim substitutes
+ * `*_NSGetEnviron()` because Darwin `posix_spawn` with NULL envp is "unspecified"
+ * and empirically drops DYLD_* on the iOS simulator (see the implementation-body
+ * comment below for the full rationale).
  *
  * Returns the child pid on success, or -1 with `errno` set to the POSIX error
  * code that posix_spawn returned. The kernel puts the error in the return value,

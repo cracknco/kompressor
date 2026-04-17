@@ -137,9 +137,10 @@ private suspend fun runCompressionGrid(args: WorkerArgs) {
 
 private fun logErr(message: String) {
     // K/N on iOS routes `println` to stdout, and exposing `platform.posix.stderr` reliably
-    // across SDK versions is more pain than it's worth for a test helper. The parent test
-    // captures stdout via `posix_spawn_file_actions_adddup2` and greps for this marker to
-    // surface worker failures in the Kotlin test report.
+    // across SDK versions is more pain than it's worth for a test helper. The parent
+    // inherits fd 1 by default (our `kmp_posix_spawn` shim passes NULL for `file_actions`),
+    // so this marker surfaces in the Kotlin test report without any plumbing on the host
+    // side. The `[compressWorker-ERR]` prefix is the handle a future reader greps for.
     println("[compressWorker-ERR] $message")
 }
 

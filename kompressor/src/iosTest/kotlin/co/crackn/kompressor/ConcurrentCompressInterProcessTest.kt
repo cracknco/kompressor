@@ -20,7 +20,6 @@ import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.cstr
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
 import kotlinx.cinterop.set
 import kotlinx.cinterop.toKString
 import platform.Foundation.NSFileManager
@@ -49,8 +48,8 @@ import kotlin.time.TimeSource
  * serialise on such a lock because all coroutines share the same dispatcher pool; a true
  * cross-process grid forces each worker to hold its own instance and trip a process-wide lock
  * if one exists. See the Android mirror at
- * [`androidHostTest/ConcurrentCompressInterProcessTest`][ConcurrentCompressInterProcessTest]
- * for the corresponding coverage on the JVM side.
+ * `androidHostTest/ConcurrentCompressInterProcessTest` for the corresponding coverage on the
+ * JVM side (no cross-platform KDoc link — the sibling is not in iosTest's resolver scope).
  *
  * **Scope.** Simulator-only. On-device inter-process coverage is out of scope — the compiled
  * `iosMain` code is identical between simulator and device, so a static-lock regression would
