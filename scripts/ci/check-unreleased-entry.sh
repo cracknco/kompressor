@@ -33,6 +33,22 @@ base_ref="${1:?base ref required (e.g. origin/main or \$BASE_SHA)}"
 head_ref="${2:?head ref required (e.g. HEAD or \$HEAD_SHA)}"
 changelog_path="${3:-CHANGELOG.md}"
 
+# Defense-in-depth against future callers that pass untrusted input:
+# restrict refs to characters git accepts in branch/tag/SHA names. The
+# GitHub Actions caller always passes 40-char SHAs, so this never fires
+# in the PR path — but a local pre-push hook or a dev running the script
+# by hand could pass arbitrary strings, and `git show "<ref>:<path>"`
+# treats the ref as an opaque token.
+validate_ref() {
+  local ref="$1" label="$2"
+  if ! [[ "${ref}" =~ ^[[:alnum:]/._@{}^~-]+$ ]]; then
+    echo "::error::invalid ${label} ref: ${ref}" >&2
+    exit 1
+  fi
+}
+validate_ref "${base_ref}" base
+validate_ref "${head_ref}" head
+
 # Prints the `## [Unreleased]` section on stdin: every line from the
 # header (exclusive) up to the next `## `-prefixed heading (exclusive).
 # The terminator intentionally matches *any* H2, not just `## […]`, because
@@ -64,8 +80,8 @@ fi
 # satisfy the gate.
 #
 # `diff` exits 1 when the inputs differ — the normal case here — which
-# would otherwise trip `set -e`/`pipefail`. `{ diff …; true; }` absorbs
-# the non-zero status while still surfacing real errors (exit 2+).
+# would otherwise trip `set -e`/`pipefail`. `|| [ $? -eq 1 ]` absorbs
+# exit-1 while still surfacing real errors (exit 2+) from the pipeline.
 added=$({ diff <(printf '%s\n' "${base_section}") <(printf '%s\n' "${head_section}") || [ $? -eq 1 ]; } \
   | awk '/^> [^[:space:]]/ { n++ } END { print n + 0 }')
 
