@@ -57,9 +57,14 @@ public data class SourceMediaInfo(
      * as [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] to choose which track
      * to compress.
      *
+     * Gated by [ExperimentalKompressorApi] together with
+     * [co.crackn.kompressor.audio.AudioCompressionConfig.audioTrackIndex] — the multi-track
+     * probe contract is still being stabilised pre-1.0.
+     *
      * Appended last to keep the positional ABI of pre-existing fields stable for Java / non-Kotlin
      * KMP consumers — Kotlin named-arg callers are unaffected either way.
      */
+    @property:ExperimentalKompressorApi
     public val audioTrackCount: Int = 0,
 )
 

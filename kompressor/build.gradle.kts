@@ -112,6 +112,18 @@ kotlin {
     }
 
     sourceSets {
+        // Tests freely exercise experimental (`@ExperimentalKompressorApi`) surface — opt in at
+        // the module level so individual `@OptIn` on every test class is unnecessary. The
+        // propagation is scoped to every test source set (common + android host/device +
+        // per-target iosX64/iosArm64/iosSimulatorArm64Test); production
+        // `commonMain`/`androidMain`/`iosMain` must still opt in explicitly so accidental use of
+        // experimental API from stable code is still caught at compile time. See
+        // docs/api-stability.md for the stability contract.
+        val experimentalOptIn = "co.crackn.kompressor.ExperimentalKompressorApi"
+        matching { it.name.endsWith("Test") }.configureEach {
+            languageSettings.optIn(experimentalOptIn)
+        }
+
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
         }

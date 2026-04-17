@@ -34,7 +34,9 @@ Only symbols that meet **all** of the following criteria are covered by the semv
 
 APIs annotated with `@ExperimentalKompressorApi` are opt-in and may change or be removed in any MINOR release without a MAJOR version bump. Opt-in is required at the call site, so breakage is always explicit.
 
-Once an experimental API is stabilized, the annotation is removed in a MINOR release — this is considered additive, not breaking.
+The current experimental surface (inventory + per-symbol rationale + opt-in recipes) lives in [`docs/api-inventory.md`](api-inventory.md). That doc is kept in lockstep with the annotations in source so reviewers can cross-check an ABI diff against a single list.
+
+Once an experimental API is stabilized, the annotation is removed in a MINOR release — this is considered additive, not breaking. Bump `docs/api-inventory.md` in the same commit.
 
 ### Internal APIs
 
@@ -86,6 +88,10 @@ The `test` job in [`.github/workflows/pr.yml`](../.github/workflows/pr.yml) runs
 > **ABI baseline drift** — Public ABI diverged from `kompressor/api/kompressor.api`. Run `./gradlew apiDump` and commit the result if intentional. See `docs/api-stability.md` for the S/E/I review checklist.
 
 There is no bypass flag. An unintentional ABI change blocks merge.
+
+### Opt-in annotations and the JVM ABI dump
+
+`kompressor/api/kompressor.api` contains the `@ExperimentalKompressorApi` **annotation class** itself, but **not** the per-symbol markers applied to incubating APIs (e.g. `DynamicRange.HDR10`, `AudioChannels.FIVE_POINT_ONE`). This is a BCV format limitation: the JVM dump serialises JVM signatures, and Kotlin opt-in markers live in `.kotlin_metadata` inside the compiled `.class`, not in the JVM signature. Consumer-side enforcement is unaffected — the Kotlin compiler reads the per-symbol markers directly from `.kotlin_metadata` and emits the opt-in WARNING whenever consumers touch a non-annotated experimental symbol without `@OptIn`. If you need per-symbol marker visibility in a committed baseline (e.g. for a tooling dashboard), enable BCV's klib validation (`apiValidation { klib { enabled = true } }`) — tracked out of band; not required for correctness.
 
 ### How to update the ABI baseline
 
