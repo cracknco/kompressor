@@ -11,7 +11,7 @@ package co.crackn.kompressor.matrix
  *
  * Each list below enumerates one row of the documented table. The shape mirrors the DoD
  * for CRA-43: `Format in`, `Format out`, `Android min-API`, `iOS min-version`, `Codec
- * path`, `Fast-path eligible?`.
+ * path`, `Fast-path (Android)`, `Fast-path (iOS)`.
  *
  * `FormatSupportMatrixConsistencyTest` in `commonTest` cross-references every row
  * against the actual gate constants (`ImageFormatGates`) and MIME constants
@@ -27,15 +27,17 @@ internal object FormatSupportMatrix {
 
     /**
      * Image input × output combinations. One row per common input container (DoD:
-     * JPEG, PNG, WebP, HEIC, AVIF + siblings). The output column names the primary
-     * target (`JPEG`) because every non-experimental output target honours the same
-     * decode gate — platform-specific encoder gates are documented separately in the
-     * narrative.
+     * JPEG, PNG, WebP, HEIC, AVIF + siblings). The output column names only the
+     * universal target (`JPEG`) because the other outputs — WEBP, HEIC, AVIF — carry
+     * their own encoder gates that do not line up with the decode gates in this row
+     * (e.g. AVIF output needs Android 34 / iOS 16, HEIC output is NOT_IMPLEMENTED on
+     * Android, WEBP output is NOT_IMPLEMENTED on iOS). The full encoder matrix lives
+     * in the `Image output gate detail` section of `docs/format-support.md`.
      */
     val image: List<ImageMatrixRow> = listOf(
         ImageMatrixRow(
             formatIn = "JPEG",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -45,7 +47,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "PNG",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -55,7 +57,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "WEBP",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -66,7 +68,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "HEIC",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = HEIC_INPUT_MIN_API_ANDROID,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -76,7 +78,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "HEIF",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = HEIC_INPUT_MIN_API_ANDROID,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -86,7 +88,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "AVIF",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = AVIF_INPUT_MIN_API_ANDROID,
             iosMinVersion = AVIF_INPUT_MIN_IOS,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -97,7 +99,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "GIF",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -107,7 +109,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "BMP",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
@@ -117,7 +119,7 @@ internal object FormatSupportMatrix {
         ),
         ImageMatrixRow(
             formatIn = "DNG (raw)",
-            formatOut = "JPEG / WEBP (Android) / HEIC (iOS) / AVIF",
+            formatOut = "JPEG",
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Extension-only sniffer → platform RAW pipeline",

@@ -60,15 +60,15 @@ by hand — run `./scripts/regenerate-format-support-doc.sh` and commit the resu
 
 | Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path (Android) | Fast-path (iOS) | Notes |
 |-----------|------------|-----------------|-----------------|------------|---------------------|-----------------|-------|
-| JPEG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Universal baseline. Always decodable. |
-| PNG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Alpha channel is dropped when transcoding to JPEG (no alpha support). |
-| WEBP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Lossy + lossless both accepted on decode. WebP output is Android-only (iOS ImageIO lacks a destination UTI). |
-| HEIC | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android gate: OEM HEIC decoder coverage is spotty below API 30. |
-| HEIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Same gate as HEIC. |
-| AVIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **31** | **16** | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android decode added in `BitmapFactory` at API 31; iOS ImageIO in 16.0. |
-| GIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Animations are flattened — only the first frame is decoded. |
-| BMP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Rarely encountered; cheap to decode. |
-| DNG (raw) | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Extension-only sniffer → platform RAW pipeline | No | No | TIFF-based container; magic-byte sniffing falls back to the `.dng` extension. Decode quality depends on the device's RAW pipeline. |
+| JPEG | JPEG | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Universal baseline. Always decodable. |
+| PNG | JPEG | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Alpha channel is dropped when transcoding to JPEG (no alpha support). |
+| WEBP | JPEG | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Lossy + lossless both accepted on decode. WebP output is Android-only (iOS ImageIO lacks a destination UTI). |
+| HEIC | JPEG | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android gate: OEM HEIC decoder coverage is spotty below API 30. |
+| HEIF | JPEG | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Same gate as HEIC. |
+| AVIF | JPEG | **31** | **16** | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android decode added in `BitmapFactory` at API 31; iOS ImageIO in 16.0. |
+| GIF | JPEG | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Animations are flattened — only the first frame is decoded. |
+| BMP | JPEG | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Rarely encountered; cheap to decode. |
+| DNG (raw) | JPEG | 24 | 15 | Extension-only sniffer → platform RAW pipeline | No | No | TIFF-based container; magic-byte sniffing falls back to the `.dng` extension. Decode quality depends on the device's RAW pipeline. |
 
 ### Audio formats
 
