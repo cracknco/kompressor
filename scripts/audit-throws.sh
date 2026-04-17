@@ -21,6 +21,15 @@
 #
 # Exit status: 0 = clean; 1 = unclassified hit(s).
 #
+# Scope note: the grep regex (`throw |error\(`) intentionally omits `require(` and `check(`.
+# Those two are the *documented* IllegalArgumentException / IllegalStateException contract
+# surface for programmer-error config validation (see e.g. AudioCompressor KDoc and the
+# `require(config.codec == AudioCodec.AAC)` guards in AndroidAudioCompressor.kt / IosAudioCompressor.kt).
+# They are allowed to surface unwrapped as `Result.failure(IllegalArgumentException)` —
+# callers match on the typed sealed hierarchy *or* these two well-known contract types.
+# Detekt's `TooGenericExceptionThrown` blocks the direct `throw IllegalArgumentException(...)`
+# form; the `require`/`check` form remains the one sanctioned way to signal contract breach.
+#
 # Usage: scripts/audit-throws.sh [--report PATH]
 
 set -euo pipefail
