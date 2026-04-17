@@ -13,7 +13,6 @@ import co.crackn.kompressor.image.AVIF_INPUT_MIN_API_ANDROID
 import co.crackn.kompressor.image.AVIF_INPUT_MIN_IOS
 import co.crackn.kompressor.image.HEIC_INPUT_MIN_API_ANDROID
 import co.crackn.kompressor.video.VideoCodec
-import io.kotest.matchers.collections.shouldNotContainAnyOf
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kotlin.test.Test
@@ -85,16 +84,26 @@ class FormatSupportMatrixConsistencyTest {
     }
 
     @Test
-    fun iosUnsupportedRowsAreNeverFastPathEligible() {
+    fun iosUnsupportedRowsAreNeverFastPathEligibleOnIos() {
         // A fast path requires a working decoder on the target platform. Catch the trivial
-        // contradiction of "unsupported on iOS but has fast-path = Yes" — would silently
-        // surface wrong "yes" to platform callers reading the matrix.
+        // contradiction of "unsupported on iOS but has fast-path (iOS) = Yes" — would silently
+        // surface a wrong "yes" to platform callers reading the matrix.
         val contradictions = FormatSupportMatrix.audio.filter {
-            it.iosMinVersion == FormatSupportMatrix.IOS_UNSUPPORTED && it.fastPathEligible
+            it.iosMinVersion == FormatSupportMatrix.IOS_UNSUPPORTED && it.fastPathIos
         } + FormatSupportMatrix.video.filter {
-            it.iosMinVersion == FormatSupportMatrix.IOS_UNSUPPORTED && it.fastPathEligible
+            it.iosMinVersion == FormatSupportMatrix.IOS_UNSUPPORTED && it.fastPathIos
         }
         contradictions.map { it.formatIn } shouldBe emptyList()
+    }
+
+    @Test
+    fun videoRowsNeverAdvertiseFastPathOnAndroid() {
+        // Narrative contract in `docs/format-support.md`: Android Media3 Transformer always
+        // re-encodes video — the fast path is iOS-only. If a future refactor wires up an
+        // Android passthrough (or a new video row forgets the rule), this assertion forces
+        // the decision to go through a test update rather than silently landing in the doc.
+        val violators = FormatSupportMatrix.video.filter { it.fastPathAndroid }.map { it.formatIn }
+        violators shouldBe emptyList()
     }
 
     @Test
@@ -171,10 +180,11 @@ class FormatSupportMatrixConsistencyTest {
 
     @Test
     fun notesCellsNeverContainPipeCharactersThatWouldBreakTheMarkdownTable() {
-        val allRows = FormatSupportMatrix.image.map { it.notes } +
+        val allNotes = FormatSupportMatrix.image.map { it.notes } +
             FormatSupportMatrix.audio.map { it.notes } +
             FormatSupportMatrix.video.map { it.notes }
-        allRows.shouldNotContainAnyOf(allRows.filter { "|" in it })
+        val withPipes = allNotes.filter { "|" in it }
+        withPipes shouldBe emptyList()
     }
 
     @Test

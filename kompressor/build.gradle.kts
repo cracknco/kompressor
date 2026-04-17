@@ -200,8 +200,17 @@ tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
 val docsDir = rootProject.file("docs").absolutePath
 val regenerateFormatSupportDoc =
     providers.gradleProperty("regenerateFormatSupportDoc").orNull == "true"
+// CRA-43 (follow-up to peer review): expose the authoritative build-time platform floors to
+// host tests so `FormatSupportMatrixBuildVersionPinTest` can assert the hand-mirrored
+// `FormatSupportMatrix.ANDROID_MIN_SDK` / `IOS_MIN_VERSION` constants haven't drifted. Any
+// future change to these versions (typically in `libs.versions.toml`) will fail CI until the
+// matrix is regenerated, matching the existing HEIC / AVIF gate pinning.
+val matrixBuildAndroidMinSdk = libs.versions.android.minSdk.get()
+val matrixBuildIosDeploymentTarget = libs.versions.ios.deploymentTarget.get()
 tasks.withType<Test>().configureEach {
     systemProperty("kompressor.docsDir", docsDir)
+    systemProperty("kompressor.buildAndroidMinSdk", matrixBuildAndroidMinSdk)
+    systemProperty("kompressor.buildIosDeploymentTarget", matrixBuildIosDeploymentTarget)
     if (regenerateFormatSupportDoc) {
         systemProperty("kompressor.regenerateFormatSupportDoc", "true")
         // Test outputs are cacheable by default; a cached "verify passed" run skips the

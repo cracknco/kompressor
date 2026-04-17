@@ -39,7 +39,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Universal baseline. Always decodable.",
         ),
         ImageMatrixRow(
@@ -48,7 +49,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Alpha channel is dropped when transcoding to JPEG (no alpha support).",
         ),
         ImageMatrixRow(
@@ -57,7 +59,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Lossy + lossless both accepted on decode. WebP output is Android-only " +
                 "(iOS ImageIO lacks a destination UTI).",
         ),
@@ -67,7 +70,8 @@ internal object FormatSupportMatrix {
             androidMinApi = HEIC_INPUT_MIN_API_ANDROID,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "`@ExperimentalKompressorApi`. Android gate: OEM HEIC decoder coverage is spotty below API 30.",
         ),
         ImageMatrixRow(
@@ -76,7 +80,8 @@ internal object FormatSupportMatrix {
             androidMinApi = HEIC_INPUT_MIN_API_ANDROID,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Same gate as HEIC.",
         ),
         ImageMatrixRow(
@@ -85,7 +90,8 @@ internal object FormatSupportMatrix {
             androidMinApi = AVIF_INPUT_MIN_API_ANDROID,
             iosMinVersion = AVIF_INPUT_MIN_IOS,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "`@ExperimentalKompressorApi`. Android decode added in `BitmapFactory` at API 31; " +
                 "iOS ImageIO in 16.0.",
         ),
@@ -95,7 +101,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Animations are flattened — only the first frame is decoded.",
         ),
         ImageMatrixRow(
@@ -104,7 +111,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Rarely encountered; cheap to decode.",
         ),
         ImageMatrixRow(
@@ -113,7 +121,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Extension-only sniffer → platform RAW pipeline",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "TIFF-based container; magic-byte sniffing falls back to the `.dng` extension. " +
                 "Decode quality depends on the device's RAW pipeline.",
         ),
@@ -132,7 +141,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android Media3 `MediaExtractor` → AAC encoder / iOS `AVAssetReader` → `AVAssetWriter`",
-            fastPathEligible = true,
+            fastPathAndroid = true,
+            fastPathIos = true,
             notes = "Bitstream-copy passthrough when input config (sample rate / channels / bitrate " +
                 "within ±20%) matches the requested output.",
         ),
@@ -142,7 +152,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 MP3 extractor → AAC encoder",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "iOS: AVFoundation's built-in extractors do not decode MP3 in the Kompressor " +
                 "pipeline (M4A / WAV / AIF only).",
         ),
@@ -152,7 +163,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 FLAC extractor → AAC encoder",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "iOS: not supported (same reason as MP3).",
         ),
         AudioMatrixRow(
@@ -161,7 +173,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 OGG extractor → AAC encoder",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "iOS: not supported.",
         ),
         AudioMatrixRow(
@@ -170,7 +183,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 OGG extractor → AAC encoder",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "iOS: not supported. Multi-track Opus sources additionally fail on Android because " +
                 "`MediaMuxer`'s MP4 container only accepts AAC / AMR — see " +
                 "`AudioCompressionConfig.audioTrackIndex` docs.",
@@ -181,7 +195,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 AMR extractor → AAC encoder",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Phone-call codec (8 kHz mono). iOS: not supported.",
         ),
         AudioMatrixRow(
@@ -190,7 +205,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android Media3 WAV extractor → AAC encoder / iOS `AVAudioFile`",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Supported on both platforms. Kompressor resamples 24-bit PCM losslessly to the " +
                 "encoder input format.",
         ),
@@ -209,7 +225,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter`",
-            fastPathEligible = true,
+            fastPathAndroid = false,
+            fastPathIos = true,
             notes = "iOS fast path: `AVAssetExportSession` passthrough at default config (no " +
                 "bitrate / resolution change). Android always re-encodes via Media3.",
         ),
@@ -219,7 +236,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_MIN_VERSION,
             codecPath = "Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter`",
-            fastPathEligible = true,
+            fastPathAndroid = false,
+            fastPathIos = true,
             notes = "HDR10 preservation requires HEVC output (see `VideoPresets.HDR10_1080P`). " +
                 "iOS fast path applies at default config.",
         ),
@@ -229,7 +247,8 @@ internal object FormatSupportMatrix {
             androidMinApi = ANDROID_MIN_SDK,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 `Transformer` (MediaCodec, device-dependent decoder)",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Android support is device-dependent — advertised by `MediaCodecList` on most " +
                 "modern devices. Not part of the iOS guarantee.",
         ),
@@ -239,7 +258,8 @@ internal object FormatSupportMatrix {
             androidMinApi = AV1_INPUT_MIN_API_ANDROID,
             iosMinVersion = IOS_UNSUPPORTED,
             codecPath = "Android Media3 `Transformer` (MediaCodec AV1 decoder, API 29+)",
-            fastPathEligible = false,
+            fastPathAndroid = false,
+            fastPathIos = false,
             notes = "Android: AV1 decoder is platform-level from API 29. Not part of the iOS guarantee.",
         ),
     )
@@ -284,6 +304,11 @@ internal object FormatSupportMatrix {
  * (you can't accidentally append a video row to the image list). The renderer consumes
  * rows through this interface so it doesn't need one overload per subtype — and so detekt's
  * `LongParameterList` stays satisfied with a single-argument signature.
+ *
+ * Fast-path eligibility is tracked per platform. Video is a concrete example of why: Android
+ * Media3 Transformer always re-encodes, while iOS `AVAssetExportSession` can bit-stream copy
+ * the container at default config — collapsing the two into a single boolean would advertise
+ * `Yes` on Android where the reality is `No`.
  */
 internal sealed interface MatrixRow {
     val formatIn: String
@@ -291,7 +316,8 @@ internal sealed interface MatrixRow {
     val androidMinApi: Int
     val iosMinVersion: Int
     val codecPath: String
-    val fastPathEligible: Boolean
+    val fastPathAndroid: Boolean
+    val fastPathIos: Boolean
     val notes: String
 }
 
@@ -302,7 +328,8 @@ internal data class ImageMatrixRow(
     override val androidMinApi: Int,
     override val iosMinVersion: Int,
     override val codecPath: String,
-    override val fastPathEligible: Boolean,
+    override val fastPathAndroid: Boolean,
+    override val fastPathIos: Boolean,
     override val notes: String,
 ) : MatrixRow
 
@@ -313,7 +340,8 @@ internal data class AudioMatrixRow(
     override val androidMinApi: Int,
     override val iosMinVersion: Int,
     override val codecPath: String,
-    override val fastPathEligible: Boolean,
+    override val fastPathAndroid: Boolean,
+    override val fastPathIos: Boolean,
     override val notes: String,
 ) : MatrixRow
 
@@ -324,6 +352,7 @@ internal data class VideoMatrixRow(
     override val androidMinApi: Int,
     override val iosMinVersion: Int,
     override val codecPath: String,
-    override val fastPathEligible: Boolean,
+    override val fastPathAndroid: Boolean,
+    override val fastPathIos: Boolean,
     override val notes: String,
 ) : MatrixRow

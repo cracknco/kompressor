@@ -36,6 +36,10 @@ on:
       - 'kompressor/src/commonTest/kotlin/co/crackn/kompressor/matrix/**'
       - 'kompressor/src/androidHostTest/kotlin/co/crackn/kompressor/matrix/**'
       - 'kompressor/build.gradle.kts'
+      # `gradle/libs.versions.toml` feeds `FormatSupportMatrixBuildVersionPinTest`
+      # (android-minSdk / ios-deploymentTarget). A bump here without matrix
+      # regeneration is exactly the kind of drift this workflow exists to catch.
+      - 'gradle/libs.versions.toml'
       - 'docs/format-support.md'
       - 'scripts/regenerate-format-support-doc.sh'
       - '.github/workflows/format-support-check.yml'
@@ -69,9 +73,14 @@ jobs:
       - name: Assert docs/format-support.md matches the renderer
         run: |
           set -e
+          # Runs two tests in one invocation: the doc byte-identical check AND the
+          # build-version pin that asserts FormatSupportMatrix.ANDROID_MIN_SDK /
+          # IOS_MIN_VERSION track gradle/libs.versions.toml. Both are drift surfaces
+          # for the matrix and share the same workflow.
           if ! ./gradlew :kompressor:testAndroidHostTest \
-              --tests 'co.crackn.kompressor.matrix.FormatSupportDocUpToDateTest'; then
-            echo "::error title=format-support.md drift::docs/format-support.md is out of date with FormatSupportMatrix. Run \`./scripts/regenerate-format-support-doc.sh\` and commit the result."
+              --tests 'co.crackn.kompressor.matrix.FormatSupportDocUpToDateTest' \
+              --tests 'co.crackn.kompressor.matrix.FormatSupportMatrixBuildVersionPinTest'; then
+            echo "::error title=format-support.md drift::docs/format-support.md is out of date with FormatSupportMatrix or its build-version pin failed. Run \`./scripts/regenerate-format-support-doc.sh\` and commit the result; if the pin test failed, update FormatSupportMatrix.ANDROID_MIN_SDK / IOS_MIN_VERSION to match gradle/libs.versions.toml."
             exit 1
           fi
 

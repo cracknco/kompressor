@@ -26,8 +26,10 @@ because the caller usually wants to control the user-facing message.
 
 ### Fast path
 
-"Fast-path eligible?" in the tables below refers to Kompressor's bitstream-copy shortcut that
-skips the decoder/encoder round trip when the requested output matches the source closely enough:
+The `Fast-path (Android)` / `Fast-path (iOS)` columns in the tables below refer to Kompressor's
+bitstream-copy shortcut, tracked per platform because the two SDKs differ materially (see the
+Video bullet). `—` means the format is unsupported on that platform; `Yes` / `No` mean the
+format decodes but the fast path is / isn't available:
 
 - **Audio**: AAC-in / AAC-out when sample rate, channel count, and bitrate match the config
   within ±20 % — Media3 activates a passthrough on Android, `AVAssetExportSession` does the same
@@ -56,38 +58,38 @@ by hand — run `./scripts/regenerate-format-support-doc.sh` and commit the resu
 
 ### Image formats
 
-| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path eligible? | Notes |
-|-----------|------------|-----------------|-----------------|------------|---------------------|-------|
-| JPEG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Universal baseline. Always decodable. |
-| PNG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Alpha channel is dropped when transcoding to JPEG (no alpha support). |
-| WEBP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Lossy + lossless both accepted on decode. WebP output is Android-only (iOS ImageIO lacks a destination UTI). |
-| HEIC | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | `@ExperimentalKompressorApi`. Android gate: OEM HEIC decoder coverage is spotty below API 30. |
-| HEIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Same gate as HEIC. |
-| AVIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **31** | **16** | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | `@ExperimentalKompressorApi`. Android decode added in `BitmapFactory` at API 31; iOS ImageIO in 16.0. |
-| GIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Animations are flattened — only the first frame is decoded. |
-| BMP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | Rarely encountered; cheap to decode. |
-| DNG (raw) | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Extension-only sniffer → platform RAW pipeline | No | TIFF-based container; magic-byte sniffing falls back to the `.dng` extension. Decode quality depends on the device's RAW pipeline. |
+| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path (Android) | Fast-path (iOS) | Notes |
+|-----------|------------|-----------------|-----------------|------------|---------------------|-----------------|-------|
+| JPEG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Universal baseline. Always decodable. |
+| PNG | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Alpha channel is dropped when transcoding to JPEG (no alpha support). |
+| WEBP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Lossy + lossless both accepted on decode. WebP output is Android-only (iOS ImageIO lacks a destination UTI). |
+| HEIC | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android gate: OEM HEIC decoder coverage is spotty below API 30. |
+| HEIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **30** | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Same gate as HEIC. |
+| AVIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | **31** | **16** | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | `@ExperimentalKompressorApi`. Android decode added in `BitmapFactory` at API 31; iOS ImageIO in 16.0. |
+| GIF | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Animations are flattened — only the first frame is decoded. |
+| BMP | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Android `BitmapFactory` + `Bitmap.compress` / iOS `CGImageSource` + `CGImageDestination` | No | No | Rarely encountered; cheap to decode. |
+| DNG (raw) | JPEG / WEBP (Android) / HEIC (iOS) / AVIF | 24 | 15 | Extension-only sniffer → platform RAW pipeline | No | No | TIFF-based container; magic-byte sniffing falls back to the `.dng` extension. Decode quality depends on the device's RAW pipeline. |
 
 ### Audio formats
 
-| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path eligible? | Notes |
-|-----------|------------|-----------------|-----------------|------------|---------------------|-------|
-| AAC (M4A / MP4) | AAC | 24 | 15 | Android Media3 `MediaExtractor` → AAC encoder / iOS `AVAssetReader` → `AVAssetWriter` | Yes | Bitstream-copy passthrough when input config (sample rate / channels / bitrate within ±20%) matches the requested output. |
-| MP3 | AAC | 24 | — | Android Media3 MP3 extractor → AAC encoder | No | iOS: AVFoundation's built-in extractors do not decode MP3 in the Kompressor pipeline (M4A / WAV / AIF only). |
-| FLAC | AAC | 24 | — | Android Media3 FLAC extractor → AAC encoder | No | iOS: not supported (same reason as MP3). |
-| OGG (Vorbis) | AAC | 24 | — | Android Media3 OGG extractor → AAC encoder | No | iOS: not supported. |
-| Opus (OGG container) | AAC | 24 | — | Android Media3 OGG extractor → AAC encoder | No | iOS: not supported. Multi-track Opus sources additionally fail on Android because `MediaMuxer`'s MP4 container only accepts AAC / AMR — see `AudioCompressionConfig.audioTrackIndex` docs. |
-| AMR-NB | AAC | 24 | — | Android Media3 AMR extractor → AAC encoder | No | Phone-call codec (8 kHz mono). iOS: not supported. |
-| WAV (PCM) | AAC | 24 | 15 | Android Media3 WAV extractor → AAC encoder / iOS `AVAudioFile` | No | Supported on both platforms. Kompressor resamples 24-bit PCM losslessly to the encoder input format. |
+| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path (Android) | Fast-path (iOS) | Notes |
+|-----------|------------|-----------------|-----------------|------------|---------------------|-----------------|-------|
+| AAC (M4A / MP4) | AAC | 24 | 15 | Android Media3 `MediaExtractor` → AAC encoder / iOS `AVAssetReader` → `AVAssetWriter` | Yes | Yes | Bitstream-copy passthrough when input config (sample rate / channels / bitrate within ±20%) matches the requested output. |
+| MP3 | AAC | 24 | — | Android Media3 MP3 extractor → AAC encoder | No | — | iOS: AVFoundation's built-in extractors do not decode MP3 in the Kompressor pipeline (M4A / WAV / AIF only). |
+| FLAC | AAC | 24 | — | Android Media3 FLAC extractor → AAC encoder | No | — | iOS: not supported (same reason as MP3). |
+| OGG (Vorbis) | AAC | 24 | — | Android Media3 OGG extractor → AAC encoder | No | — | iOS: not supported. |
+| Opus (OGG container) | AAC | 24 | — | Android Media3 OGG extractor → AAC encoder | No | — | iOS: not supported. Multi-track Opus sources additionally fail on Android because `MediaMuxer`'s MP4 container only accepts AAC / AMR — see `AudioCompressionConfig.audioTrackIndex` docs. |
+| AMR-NB | AAC | 24 | — | Android Media3 AMR extractor → AAC encoder | No | — | Phone-call codec (8 kHz mono). iOS: not supported. |
+| WAV (PCM) | AAC | 24 | 15 | Android Media3 WAV extractor → AAC encoder / iOS `AVAudioFile` | No | No | Supported on both platforms. Kompressor resamples 24-bit PCM losslessly to the encoder input format. |
 
 ### Video formats
 
-| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path eligible? | Notes |
-|-----------|------------|-----------------|-----------------|------------|---------------------|-------|
-| H.264 (AVC) | H.264 / HEVC | 24 | 15 | Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter` | Yes | iOS fast path: `AVAssetExportSession` passthrough at default config (no bitrate / resolution change). Android always re-encodes via Media3. |
-| H.265 / HEVC | H.264 / HEVC | 24 | 15 | Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter` | Yes | HDR10 preservation requires HEVC output (see `VideoPresets.HDR10_1080P`). iOS fast path applies at default config. |
-| VP9 | H.264 / HEVC | 24 | — | Android Media3 `Transformer` (MediaCodec, device-dependent decoder) | No | Android support is device-dependent — advertised by `MediaCodecList` on most modern devices. Not part of the iOS guarantee. |
-| AV1 | H.264 / HEVC | **29** | — | Android Media3 `Transformer` (MediaCodec AV1 decoder, API 29+) | No | Android: AV1 decoder is platform-level from API 29. Not part of the iOS guarantee. |
+| Format in | Format out | Android min-API | iOS min-version | Codec path | Fast-path (Android) | Fast-path (iOS) | Notes |
+|-----------|------------|-----------------|-----------------|------------|---------------------|-----------------|-------|
+| H.264 (AVC) | H.264 / HEVC | 24 | 15 | Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter` | No | Yes | iOS fast path: `AVAssetExportSession` passthrough at default config (no bitrate / resolution change). Android always re-encodes via Media3. |
+| H.265 / HEVC | H.264 / HEVC | 24 | 15 | Android Media3 `Transformer` (MediaCodec) / iOS `AVAssetReader` + `AVAssetWriter` | No | Yes | HDR10 preservation requires HEVC output (see `VideoPresets.HDR10_1080P`). iOS fast path applies at default config. |
+| VP9 | H.264 / HEVC | 24 | — | Android Media3 `Transformer` (MediaCodec, device-dependent decoder) | No | — | Android support is device-dependent — advertised by `MediaCodecList` on most modern devices. Not part of the iOS guarantee. |
+| AV1 | H.264 / HEVC | **29** | — | Android Media3 `Transformer` (MediaCodec AV1 decoder, API 29+) | No | — | Android: AV1 decoder is platform-level from API 29. Not part of the iOS guarantee. |
 
 <!-- END GENERATED: format-support-matrix (CRA-43) -->
 
