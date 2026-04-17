@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **audio:** zero out iOS surround (5.1/7.1) AAC caps — Device Farm run 24536970778 (iPhone 13 / A15 / iOS 18) confirmed AudioToolbox rejects multichannel AAC output at every tested bitrate (32k–1280k). `iosAacMaxBitrate` / `iosAacMinBitrate` now return 0 for ≥3 channels, and `checkSupportedIosBitrate` surfaces `UnsupportedConfiguration` instead of letting the request reach the hardware encoder probe. Surround AAC remains supported on Android [CRA-82, CRA-78]
+
+### Fixed
+
+* **ci:** add `CUSTOMER_ARTIFACT` type to Device Farm artifact download in `ios-audio-characterization.yml` and unzip before scanning — XCTAttachments are packaged inside CUSTOMER_ARTIFACT zips, not as FILE type [CRA-82]
+
 ### Added
 
 * **test:** iOS inter-process `compress()` regression guard — `iosTest/ConcurrentCompressInterProcessTest` spawns 4 real OS processes (verified by distinct PIDs) × 4 coroutines = 16 parallel `createKompressor().image.compress(...)` calls via a dedicated `compressWorker` K/N executable (`iosMain/.../worker/CompressWorkerMain.kt`) launched through `posix_spawn(2)`. A cinterop shim (`PosixSpawn.h`/`.def`) bridges `posix_spawn`/`waitpid` + `WIFEXITED`/`WEXITSTATUS` since K/N's iOS `platform.posix` binding omits them, and forwards `*_NSGetEnviron()` to preserve the simulator's `DYLD_ROOT_PATH` through the spawn. Gradle wires the linked worker binary into the `iosSimulatorArm64Test` task via `KOMPRESSOR_COMPRESS_WORKER_PATH` (both plain and `SIMCTL_CHILD_`-prefixed so `simctl spawn` forwards it to the simulator child). Closes the `iosMain`-specific static-lock regression gap documented in `docs/threading-model.md#ios-inter-process-coverage--known-gap` [CRA-80]
