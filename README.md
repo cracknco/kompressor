@@ -139,11 +139,25 @@ val result = kompressor.image.compress(inputPath, outputPath, config)
 
 ### Formats
 
+Input containers (auto-detected from magic bytes, with an extension fallback for DNG):
+
+| Input | Android | iOS | Notes |
+|-------|---------|-----|-------|
+| JPEG / PNG / WebP / GIF / BMP | ✅ API 24+ | ✅ iOS 15+ | Universal. |
+| HEIC / HEIF | ✅ API **30+** | ✅ iOS 15+ | Below API 30, Kompressor fails with `UnsupportedInputFormat(minApi = 30)` rather than gamble on OEM decoder coverage. |
+| AVIF | ✅ API **31+** | ✅ iOS **16+** | Typed `UnsupportedInputFormat` on older platforms. |
+| DNG (raw) | ✅ API 24+ | ✅ iOS 15+ | Extension-based detection; quality depends on the device's RAW pipeline. |
+
+Output formats:
+
 | `ImageFormat` | Android | iOS | Notes |
 |--------------|---------|-----|-------|
-| `JPEG` | ✅ | ✅ | Lossy. Best for photos. |
+| `JPEG` | ✅ API 24+ | ✅ iOS 15+ | Lossy. Best for photos. |
+| `WEBP` | ✅ API 24+ | ❌ | Lossy WebP (deprecated `WEBP` constant below API 30, `WEBP_LOSSY` above). iOS surfaces `UnsupportedOutputFormat`. |
+| `HEIC` (`@ExperimentalKompressorApi`) | ❌ | ✅ iOS 15+ | Android has no stable `Bitmap.CompressFormat.HEIC` in this release. |
+| `AVIF` (`@ExperimentalKompressorApi`) | ✅ API **34+** | ✅ iOS **16+** | Best ratio. Typed `UnsupportedOutputFormat` on older platforms. |
 
-> PNG and WebP support is planned for a future release.
+Full matrix, decision rationale, and sentinel `minApi` values: see [`docs/format-support.md`](docs/format-support.md).
 
 ### Presets
 

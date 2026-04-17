@@ -87,6 +87,8 @@ class ErrorTaxonomyCompletenessTest {
     fun imageCompressionError_everySubtypeIsConstructibleAndPreservesCause() {
         val samples: List<ImageCompressionError> = listOf(
             ImageCompressionError.UnsupportedSourceFormat("random-bytes", root),
+            ImageCompressionError.UnsupportedInputFormat(format = "heic", platform = "android", minApi = 30, cause = root),
+            ImageCompressionError.UnsupportedOutputFormat(format = "avif", platform = "ios", minApi = 16, cause = root),
             ImageCompressionError.DecodingFailed("truncated-jpeg", root),
             ImageCompressionError.EncodingFailed("bitmap-compress-false", root),
             ImageCompressionError.IoFailed("content-uri-revoked", root),
@@ -98,6 +100,16 @@ class ErrorTaxonomyCompletenessTest {
             @Suppress("UNUSED_EXPRESSION")
             when (it) {
                 is ImageCompressionError.UnsupportedSourceFormat -> it.details shouldBe "random-bytes"
+                is ImageCompressionError.UnsupportedInputFormat -> {
+                    it.format shouldBe "heic"
+                    it.platform shouldBe "android"
+                    it.minApi shouldBe 30
+                }
+                is ImageCompressionError.UnsupportedOutputFormat -> {
+                    it.format shouldBe "avif"
+                    it.platform shouldBe "ios"
+                    it.minApi shouldBe 16
+                }
                 is ImageCompressionError.DecodingFailed -> it.details shouldBe "truncated-jpeg"
                 is ImageCompressionError.EncodingFailed -> it.details shouldBe "bitmap-compress-false"
                 is ImageCompressionError.IoFailed -> it.details shouldBe "content-uri-revoked"
@@ -117,7 +129,9 @@ class ErrorTaxonomyCompletenessTest {
     }
 
     private fun Throwable.assertTypedErrorContract() {
-        val details = when (this) {
+        // The version-gated image subtypes carry structured fields instead of a `details`
+        // string — the message still embeds the format id, which is what callers see.
+        val expectedInMessage: String = when (this) {
             is VideoCompressionError.UnsupportedSourceFormat -> details
             is VideoCompressionError.DecodingFailed -> details
             is VideoCompressionError.EncodingFailed -> details
@@ -131,13 +145,15 @@ class ErrorTaxonomyCompletenessTest {
             is AudioCompressionError.UnsupportedBitrate -> details
             is AudioCompressionError.Unknown -> details
             is ImageCompressionError.UnsupportedSourceFormat -> details
+            is ImageCompressionError.UnsupportedInputFormat -> format
+            is ImageCompressionError.UnsupportedOutputFormat -> format
             is ImageCompressionError.DecodingFailed -> details
             is ImageCompressionError.EncodingFailed -> details
             is ImageCompressionError.IoFailed -> details
             is ImageCompressionError.Unknown -> details
             else -> error("Not a typed kompressor error: ${this::class.simpleName}")
         }
-        (message ?: "") shouldContain details
+        (message ?: "") shouldContain expectedInMessage
         cause shouldBe root
     }
 }

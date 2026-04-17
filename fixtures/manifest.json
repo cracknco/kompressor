@@ -268,6 +268,47 @@
       "category": "hdr/video",
       "tags": ["hevc", "main10", "hdr10", "p010", "bt2020", "st2084", "1080p", "30fps"],
       "test_cases": ["Hdr10PixelFidelityRoundTripTest.hdr10RoundTrip_preservesBt2020PrimariesAndColorMetadata"]
+    },
+    {
+      "name": "sample_1024x768.heic",
+      "source_url": "https://filesamples.com/samples/image/heic/sample_1024%C3%97768.heic",
+      "license": "Public domain (filesamples.com)",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/image",
+      "tags": ["heic", "heif", "hevc", "1024x768", "ios-captured"],
+      "test_cases": [
+        "ImageFormatMatrixTest.heicInputSniff_passesGateOnApi30Plus_thenDecoderFailsOnSyntheticPayload",
+        "IosImageCompressorTest.compressHeicInputRoundTrip"
+      ]
+    },
+    {
+      "name": "sample_1024x768.avif",
+      "source_url": "https://filesamples.com/samples/image/avif/sample_1024%C3%97768.avif",
+      "license": "Public domain (filesamples.com)",
+      "sha256": "",
+      "size": 0,
+      "storage": "lfs",
+      "category": "happy-path/image",
+      "tags": ["avif", "av1", "1024x768"],
+      "test_cases": [
+        "ImageFormatMatrixTest.avifInputSniff_passesGateOnApi31Plus_thenDecoderFailsOnSyntheticPayload",
+        "IosImageCompressorTest.compressAvifInputRoundTrip"
+      ]
+    },
+    {
+      "name": "sample_canon_5d_mk2.dng",
+      "source_url": "https://raw.pixls.us/data/Canon/EOS 5D Mark II/IMG_5355.CR2",
+      "license": "CC0 (raw.pixls.us)",
+      "sha256": "",
+      "size": 0,
+      "storage": "r2",
+      "category": "happy-path/image",
+      "tags": ["dng", "raw", "canon", "tiff-container"],
+      "test_cases": [
+        "ImageFormatMatrixTest.dngExtension_routesThroughDecoderAndFailsOnSyntheticTiff"
+      ]
     }
   ]
 }

@@ -68,11 +68,19 @@ ALLOWLIST=(
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/audio/AndroidAudioCompressor.kt\tthrow AudioCompressionError.IoFailed("Permission denied probing audio input:'
   $'RETHROW\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow e'
   $'REMAPPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow classifyAndroidImageError(inputPath, e)'
+  # Gate helpers return `ImageCompressionError.Unsupported{Input,Output}Format?` — the thrown
+  # value is statically typed, so these are TYPED even though the syntactic form is `throw it`.
+  $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tandroidOutputGate(config.format, Build.VERSION.SDK_INT)?.let { throw it }'
+  $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tandroidInputGate(detectedFormat, Build.VERSION.SDK_INT)?.let { throw it }'
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow ImageCompressionError.EncodingFailed('
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow ImageCompressionError.IoFailed("Input file not found:'
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow ImageCompressionError.DecodingFailed("Cannot decode image dimensions:'
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow ImageCompressionError.DecodingFailed("Failed to decode image:'
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\tthrow ImageCompressionError.IoFailed("ContentResolver returned null input stream'
+  # Unreachable-branch assertion in a private `when`-over-ImageFormat helper; the outer
+  # `doCompress` is wrapped by catch-Throwable -> `classifyAndroidImageError`, so any
+  # accidental escape is remapped before surfacing to callers.
+  $'INTERNAL\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/image/AndroidImageCompressor.kt\terror("HEIC output should be rejected by androidOutputGate before reaching here")'
   $'TYPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/video/AndroidVideoCompressor.kt\tthrow VideoCompressionError.UnsupportedSourceFormat('
   $'REMAPPED\tkompressor/src/androidMain/kotlin/co/crackn/kompressor/video/AndroidVideoCompressor.kt\tthrow e.toVideoCompressionError(description)'
 
@@ -101,11 +109,18 @@ ALLOWLIST=(
   $'RETHROW\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow e'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.DecodingFailed('
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.Unknown('
+  # Gate helpers — same contract as Android (see note above).
+  $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tiosOutputGate(config.format, iosVersion)?.let { throw it }'
+  $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tiosInputGate(detectedFormat, iosVersion)?.let { throw it }'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.IoFailed("Input file not found:'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.DecodingFailed("Failed to decode image:'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.EncodingFailed("Failed to draw image into context")'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.EncodingFailed("UIImageJPEGRepresentation returned nil")'
   $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.EncodingFailed('
+  $'TYPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\tthrow ImageCompressionError.UnsupportedOutputFormat('
+  # Unreachable-branch assertion — outer `compress()` catches Throwable and remaps to
+  # `ImageCompressionError.Unknown` (IosImageCompressor.kt:91-93), so this cannot leak untyped.
+  $'INTERNAL\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/image/IosImageCompressor.kt\terror("WEBP output should be rejected by iosOutputGate before reaching here")'
   $'RETHROW\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/video/IosVideoCompressor.kt\tthrow ce'
   $'RETHROW\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/video/IosVideoCompressor.kt\tthrow typed'
   $'REMAPPED\tkompressor/src/iosMain/kotlin/co/crackn/kompressor/video/IosVideoCompressor.kt\tthrow mapToVideoError(t)'
