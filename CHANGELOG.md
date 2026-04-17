@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **docs:** `docs/format-support.md` format-support matrix — three tables (image / audio / video) answering the "does Kompressor support &lt;format&gt; on &lt;platform&gt; at &lt;version&gt;?" question for every codec the library documents. Rows carry `Format in`, `Format out`, `Android min-API`, `iOS min-version`, `Codec path`, `Fast-path eligible?`, and `Notes` columns. Authoritatively covers JPEG / PNG / WEBP / HEIC / HEIF / AVIF / GIF / BMP / DNG (image), AAC / MP3 / FLAC / OGG / Opus / AMR-NB / WAV (audio), H.264 / H.265 / VP9 / AV1 (video). Source-of-truth lives in a new `internal object FormatSupportMatrix` (`commonMain`) with a pure-Kotlin renderer; `FormatSupportMatrixConsistencyTest` (`commonTest`, 18 assertions) cross-references every row against `ImageFormatGates` constants and the `MIME_AUDIO_AAC` / `MIME_VIDEO_H264` / `MIME_VIDEO_HEVC` constants consumed by `Supportability.evaluateSupport`, and `FormatSupportDocUpToDateTest` (`androidHostTest`) asserts the committed markdown is byte-identical to the renderer output. A new `scripts/regenerate-format-support-doc.sh` wrapper rewrites the file via `-PregenerateFormatSupportDoc=true`; a dedicated `.github/workflows/format-support-check.yml` runs the up-to-date test without the `docs/` paths-ignore filter so doc-only PRs cannot sneak a stale matrix through. README "Formats" section gains a pointer to the new matrix [CRA-43]
+
 ### Changed
 
 * **docs/api:** expand `docs/api-inventory.md` into the full 1.0 S/E/I freeze list. Every line of `kompressor/api/kompressor.api` is now classified Stable or Experimental with a justification; Internal symbols (absent from the dump by construction) are enumerated separately as a review trail. No symbol was reclassified — the existing ABI dump was audited and every entry stands as intentional public surface. Adds a maintainer sign-off checklist at the bottom of the doc so the 1.0 freeze PR carries explicit two-approver attestation [CRA-17]

@@ -191,6 +191,25 @@ tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
     environment("SIMCTL_CHILD_KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
 }
 
+// CRA-43: `FormatSupportDocUpToDateTest` (in `androidHostTest`) compares the auto-generated
+// section of `docs/format-support.md` against `renderFormatSupportMatrixTables()`. The test
+// needs to know where `docs/` lives regardless of where Gradle is invoked from, so we inject
+// the absolute path via a JVM system property rather than have the test walk up from the CWD.
+// `-PregenerateFormatSupportDoc=true` flips the test from verify-mode into rewrite-mode —
+// driven by `scripts/regenerate-format-support-doc.sh`.
+val docsDir = rootProject.file("docs").absolutePath
+val regenerateFormatSupportDoc =
+    providers.gradleProperty("regenerateFormatSupportDoc").orNull == "true"
+tasks.withType<Test>().configureEach {
+    systemProperty("kompressor.docsDir", docsDir)
+    if (regenerateFormatSupportDoc) {
+        systemProperty("kompressor.regenerateFormatSupportDoc", "true")
+        // Test outputs are cacheable by default; a cached "verify passed" run skips the
+        // file write in regenerate mode. Force re-execution whenever we're rewriting.
+        outputs.upToDateWhen { false }
+    }
+}
+
 // Kover has two gate modes:
 //   * Default (host-only): excludes every class that can only run on a device or simulator
 //     because `testAndroidHostTest` alone can't exercise them. 85 % is the bar for this mode.
