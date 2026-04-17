@@ -5,6 +5,8 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.ExperimentalKompressorApi
+
 /**
  * Dynamic-range envelope of a video stream.
  *
@@ -14,7 +16,9 @@ package co.crackn.kompressor.video
  * [HDR10] is 10-bit BT.2020 primaries with the SMPTE ST 2084 (PQ) transfer function. It
  * preserves the wider luminance range of modern phone captures (iPhone XS+, Pixel 4+) but
  * requires a 10-bit codec: HDR10 is only valid in combination with [VideoCodec.HEVC]. The
- * [VideoCompressionConfig] constructor rejects HDR10 + H.264 at build time.
+ * [VideoCompressionConfig] constructor rejects HDR10 + H.264 at build time. HDR10 is gated
+ * by [ExperimentalKompressorApi] because the tonemapping / metadata preservation contract
+ * across devices is still being tuned pre-1.0 — see `docs/api-inventory.md`.
  *
  * Device support: callers can inspect
  * [co.crackn.kompressor.CodecSupport.supports10Bit] and
@@ -26,5 +30,6 @@ public enum class DynamicRange {
     SDR,
 
     /** High dynamic range: 10-bit BT.2020 + SMPTE ST 2084 (PQ). Requires HEVC. */
+    @ExperimentalKompressorApi
     HDR10,
 }

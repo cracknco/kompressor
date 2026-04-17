@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:OptIn(co.crackn.kompressor.ExperimentalKompressorApi::class)
+
 package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.AudioCodec

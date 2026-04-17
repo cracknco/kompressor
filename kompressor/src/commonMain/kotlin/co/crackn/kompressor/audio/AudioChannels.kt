@@ -5,6 +5,8 @@
 
 package co.crackn.kompressor.audio
 
+import co.crackn.kompressor.ExperimentalKompressorApi
+
 /**
  * Audio channel layout for compression output.
  *
@@ -15,6 +17,10 @@ package co.crackn.kompressor.audio
  * **not supported** and surfaces a typed
  * [AudioCompressionError.UnsupportedConfiguration]; only same-count passthrough or downmix
  * (e.g. 5.1 → stereo) is allowed.
+ *
+ * Surround entries are gated by [ExperimentalKompressorApi] because the BS.775-3 downmix
+ * matrix and per-device encoder coverage are still being validated pre-1.0 — see
+ * `docs/api-inventory.md`.
  */
 enum class AudioChannels(
     /** Number of audio channels represented by this layout. */
@@ -30,11 +36,13 @@ enum class AudioChannels(
      * 5.1 surround: front-left, front-right, front-center, LFE, back-left, back-right.
      * Channel order follows the ITU / ISO/IEC 23001-8 Mpeg5_1_D layout.
      */
+    @ExperimentalKompressorApi
     FIVE_POINT_ONE(6),
 
     /**
      * 7.1 surround: front-left, front-right, front-center, LFE, back-left, back-right,
      * side-left, side-right.
      */
+    @ExperimentalKompressorApi
     SEVEN_POINT_ONE(8),
 }

@@ -3,9 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:OptIn(ExperimentalKompressorApi::class)
+
 package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.AudioCodec
+import co.crackn.kompressor.ExperimentalKompressorApi
 
 /**
  * Configuration for audio compression.
@@ -17,7 +20,10 @@ import co.crackn.kompressor.AudioCodec
  * @property audioTrackIndex Zero-based index of the audio track to compress when the source has
  * multiple audio tracks. Defaults to the first track (`0`). If the source has fewer tracks than
  * `audioTrackIndex + 1`, compression fails with
- * [co.crackn.kompressor.audio.AudioCompressionError.UnsupportedSourceFormat].
+ * [co.crackn.kompressor.audio.AudioCompressionError.UnsupportedSourceFormat]. Gated by
+ * [ExperimentalKompressorApi] because the multi-track selection semantics (stream-copy
+ * restrictions on Android, probe-ordering across containers) are still being stabilised
+ * pre-1.0 — see `docs/api-inventory.md`.
  *
  * **Codec restriction (Android only):** when `audioTrackIndex > 0` (or the source has more than
  * one audio track), the Android implementation pre-extracts the selected track to a temporary
@@ -31,6 +37,7 @@ public data class AudioCompressionConfig(
     val bitrate: Int = 128_000,
     val sampleRate: Int = 44_100,
     val channels: AudioChannels = AudioChannels.STEREO,
+    @property:ExperimentalKompressorApi
     val audioTrackIndex: Int = 0,
 ) {
     init {

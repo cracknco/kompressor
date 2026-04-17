@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:OptIn(ExperimentalKompressorApi::class)
+
 package co.crackn.kompressor
 
 import android.media.MediaExtractor

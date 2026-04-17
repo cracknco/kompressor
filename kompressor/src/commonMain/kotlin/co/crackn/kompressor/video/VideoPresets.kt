@@ -5,6 +5,8 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.ExperimentalKompressorApi
+
 /** Ready-to-use [VideoCompressionConfig] presets for common use cases. */
 object VideoPresets {
 
@@ -44,7 +46,10 @@ object VideoPresets {
      * encoder. Callers can check via [co.crackn.kompressor.queryDeviceCapabilities] — the
      * compressor surfaces `VideoCompressionError.UnsupportedSourceFormat` if the selected
      * device cannot encode HDR10.
+     *
+     * Gated by [ExperimentalKompressorApi] transitively through [DynamicRange.HDR10].
      */
+    @ExperimentalKompressorApi
     val HDR10_1080P = VideoCompressionConfig(
         codec = VideoCodec.HEVC,
         maxResolution = MaxResolution.HD_1080,
