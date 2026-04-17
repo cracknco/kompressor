@@ -2,6 +2,8 @@ import com.android.build.api.dsl.androidLibrary
 import com.github.jk1.license.filter.LicenseBundleNormalizer
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import com.github.jk1.license.render.JsonReportRenderer
+import org.cyclonedx.Version
+import org.cyclonedx.model.Component
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 
@@ -12,6 +14,7 @@ plugins {
     alias(libs.plugins.kover)
     alias(libs.plugins.binaryCompatibilityValidator)
     alias(libs.plugins.dependencyLicenseReport)
+    alias(libs.plugins.cyclonedxBom)
 }
 
 group = "co.crackn.kompressor"
@@ -337,4 +340,43 @@ licenseReport {
     // system frameworks (AVFoundation, CoreImage, …) shipped with the OS rather than
     // Maven artifacts — there is no iOS configuration with transitive Maven deps to scan.
     configurations = arrayOf("androidRuntimeClasspath")
+}
+
+// CRA-27 — CycloneDX SBOM for the published library. `:kompressor:cyclonedxBom` is the task CI
+// uploads to the GitHub Release as `kompressor-x.y.z.sbom.json`; the per-module output is the
+// authoritative SBOM for the Maven-Central artifact (`co.crackn.kompressor:kompressor:x.y.z`)
+// because it is scoped to the module's own aggregated runtime dependency graph rather than the
+// entire repo (which would include the `:sample` app's deps).
+//
+// Schema 1.5 is pinned to satisfy the DoD (US EO 14028 / EU CRA reference the 1.5 profile). The
+// plugin itself defaults to 1.6; we override to 1.5 explicitly so the contract is visible and
+// future plugin upgrades don't silently bump the schema.
+//
+// Reproducibility vs. `syft packages maven-central:...:kompressor:x.y.z`: keep the scanned
+// configuration aligned with what Maven Central publishes (`androidRuntimeClasspath`, which is
+// what the `.aar` + POM declare). The `includeBomSerialNumber = false` opt-out removes the only
+// non-deterministic field in the BOM so byte-for-byte comparison with syft's output is feasible
+// modulo the `timestamp` field (syft and this plugin both stamp it — exclude from diff).
+tasks.cyclonedxBom {
+    schemaVersion.set(Version.VERSION_15)
+    jsonOutput.set(layout.buildDirectory.file("reports/bom.json"))
+    xmlOutput.unsetConvention()
+    // Omit BOM serial number: it's a random UUID per run, defeating any by-hash reproducibility
+    // check against `syft`. The BOM is still valid CycloneDX 1.5 without it (the field is
+    // Optional per the schema).
+    includeBomSerialNumber.set(false)
+    includeLicenseText.set(false)
+    projectType.set(Component.Type.LIBRARY)
+    componentGroup.set(project.group.toString())
+    componentName.set("kompressor")
+    // The `version = "0.1.0"` literal at the top of this file wins over `ORG_GRADLE_PROJECT_version`
+    // (configuration-time re-assignment beats Gradle's property-injection), so CI cannot stamp
+    // the SBOM with the release version through that channel — same constraint the SPDX script
+    // works around via a `$VERSION` env var. Honour an explicit `-PsbomVersion=x.y.z` property
+    // instead, falling back to the project version for local runs.
+    componentVersion.set(
+        providers.gradleProperty("sbomVersion").orElse(
+            providers.provider { project.version.toString() },
+        ),
+    )
 }
