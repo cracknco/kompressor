@@ -108,7 +108,11 @@ internal class IosVideoCompressor : VideoCompressor {
             }
         }
         onProgress(1f)
-        val outputSize = nsFileSize(outputPath)
+        // Route the output-size read through `sizeOrTypedError` too: a race that loses the
+        // output file between pipeline success and this read would otherwise leak the untyped
+        // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
+        // `Result.failure`, which `suspendRunCatching` passes through unchanged.
+        val outputSize = sizeOrTypedError(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
     }
@@ -232,8 +236,15 @@ private class IosVideoTranscodePipeline(
 
     @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
+        // Throw the typed error directly rather than an untyped IllegalArgumentException so
+        // this site is compliant with the "no raw throws from public-API code paths" taxonomy
+        // audit (CRA-21) instead of relying on the outer `runPipelineWithTypedErrors` to remap
+        // — a future refactor that moves the call site out of that wrapper would otherwise
+        // silently regress the typed-error contract.
         val videoTrack = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
-            ?: throw IllegalArgumentException("No video track found in input file")
+            ?: throw VideoCompressionError.UnsupportedSourceFormat(
+                "No video track found in input file",
+            )
         val audioTrack = asset.tracksWithMediaType(AVMediaTypeAudio).firstOrNull() as? AVAssetTrack
 
         val totalDurationSec = CMTimeGetSeconds(asset.duration)
