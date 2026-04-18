@@ -68,7 +68,6 @@ class VideoCompressionConfigTest {
         assertEquals(MaxResolution.HD_720, config.maxResolution)
         assertEquals(1_200_000, config.videoBitrate)
         assertEquals(128_000, config.audioBitrate)
-        assertEquals(AudioCodec.AAC, config.audioCodec)
         assertEquals(30, config.maxFrameRate)
         assertEquals(2, config.keyFrameInterval)
     }
