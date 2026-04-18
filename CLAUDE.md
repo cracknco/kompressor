@@ -63,7 +63,7 @@ The `iosApp/` directory at the repo root is a standalone Xcode project that cons
 
 ### Source Set Layout
 
-```
+```text
 kompressor/src/
 ├── commonMain/              # Shared API: Kompressor interface, configs, result types
 ├── commonTest/              # Shared tests (Kotest + Turbine)
@@ -125,8 +125,8 @@ Platform-native calls (`MediaCodecList`, `MediaMetadataRetriever`, `AVURLAsset`,
 - **Gradle** with version catalog at `gradle/libs.versions.toml`
 - **Kotlin 2.3.20**, **AGP 8.13.2**
 - Uses `com.android.kotlin.multiplatform.library` plugin (not the legacy `com.android.library`)
-- Publishing via `com.vanniktech.maven.publish` (0.36.0) + Fastlane (`fastlane/Fastfile`)
-- Configuration cache is enabled (disabled for publishing via Fastlane `--no-configuration-cache` flag)
+- Publishing via `com.vanniktech.maven.publish` (0.36.0) — `./gradlew publishToMavenCentral --no-configuration-cache`
+- Configuration cache is enabled (disabled for the publish task because the `com.vanniktech.maven.publish` plugin can't serialise its signing config)
 
 ### Code Quality
 
@@ -144,11 +144,9 @@ The project configures MCP servers in `.mcp.json` for AI-assisted development:
 
 ## CI
 
-PR checks (`.github/workflows/pr.yml`) — 7 jobs, Java 21, all fetch fixtures via `./scripts/fetch-fixtures.sh`:
+PR checks (`.github/workflows/pr.yml`) — 5 jobs, Java 21. Device tests + merged-coverage gates were retired per `docs/adr/002-decline-level-3-supply-chain.md` (see PR #104).
 - **Ktlint**, **Detekt**, **Gitleaks** — `ubuntu-latest`.
-- **Tests & coverage (host)** — `ubuntu-latest`. Runs `testAndroidHostTest` + `apiCheck` + `koverVerify` (≥85%). Fast feedback gate (~3 min).
-- **Android device tests (FTL)** — `ubuntu-latest`. Assembles `:kompressor:assembleAndroidDeviceTest` and runs it on **Firebase Test Lab** (Pixel 6 / `oriole`, API 33). Physical hardware replaced the old x86_64 emulator because the emulator's codec stack lacked `setBitrate` fidelity. `AACoverageBootstrapTest` runs first alphabetically to create the app-scoped dir where JaCoCo writes `coverage.ec`.
-- **Merged coverage** — waits on `test` + FTL, drops the FTL `.ec` into `kompressor/build/kover/bin-reports/connectedAndroidDeviceTest.exec`, and enforces a merged **90%** gate via `-PkoverMergedGate=true koverVerify`. Host gate stays at 85%.
-- **iOS simulator tests** — `macos-latest`. Runs `iosSimulatorArm64Test` on every PR (previously only in release).
+- **Tests & coverage (host)** — `ubuntu-latest`. Fetches LFS fixtures, runs `testAndroidHostTest` + `apiCheck` + `koverXmlReport` + `koverVerify` (≥85%). `apiCheck` failures are surfaced as GitHub annotations pointing callers at `./gradlew apiDump`. Fast feedback gate (~3–5 min).
+- **iOS simulator tests** — `macos-latest`. Fetches LFS fixtures, caches `~/.konan`, runs `./gradlew :kompressor:iosSimulatorArm64Test` (~6–10 min).
 
-Release pipeline (`.github/workflows/release.yml`): triggers on push to `main` → iOS simulator tests on `macOS-latest` → Fastlane publish to Maven Central → semantic-release GitHub Release. The iOS test gate is duplicated in `pr.yml` and `release.yml` on purpose: PR gate catches regressions before merge, release gate is a safety net before publishing.
+Release pipeline (`.github/workflows/release.yml`): push to `main` → `test-native` (iOS simulator tests on `macos-latest`) → `release` (`semantic-release` cuts a GitHub Release + CHANGELOG bump) → `publish` (`./gradlew publishToMavenCentral --no-configuration-cache` with signing keys from repo secrets). The iOS test gate is duplicated across `pr.yml` and `release.yml` on purpose: PR gate catches regressions before merge, release gate is a safety net before publishing.
