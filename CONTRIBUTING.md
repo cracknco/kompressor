@@ -214,6 +214,23 @@ submitting the PR.
 
 ---
 
+## What we intentionally don't do
+
+Kompressor is a solo-maintained indie KMP library. We explicitly decline the scope
+of a **supply-chain-regulated project** (Kubernetes / cosign / OpenTelemetry):
+no SLSA provenance, no published SBOM, no OpenSSF Scorecard / CII badges, no
+Gradle hash-pinning, no bit-identical reproducible builds, no multi-tool secret
+scanning, no hardware GPG key custody.
+
+Rationale, benchmark against FileKit / Kermit / Turbine / Coil-KMP / Koin, and
+reversal criteria: **[docs/adr/002-decline-level-3-supply-chain.md](docs/adr/002-decline-level-3-supply-chain.md)**.
+
+If you want to propose adding one of those items, open a discussion referencing
+the ADR — "the ADR is wrong because …" is a valid first sentence; "let's add
+SLSA" without addressing the ADR is not.
+
+---
+
 ## Getting Help
 
 - Open an issue on [GitHub](https://github.com/cracknco/kompressor/issues) for bugs or feature requests.
