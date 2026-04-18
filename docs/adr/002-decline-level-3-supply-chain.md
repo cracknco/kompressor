@@ -41,7 +41,7 @@ Cross-check of five widely-adopted, small-team / solo-maintained KMP libraries:
 | **Multi-tool secret scanning (trufflehog + GG + Gitleaks)** | ❌ | ❌ | ❌ | ❌ | ❌ | **❌ (decline)** |
 | **GPG custody + hardware-key rotation plan** | ❌ | ❌ | ❌ | ❌ | ❌ | **❌ (decline)** |
 
-The five "decline" items are what characterise a **regulated supply-chain
+The nine "decline" items are what characterise a **regulated supply-chain
 project**. None of the listed indie KMP libs apply them. Our users (mobile app
 developers picking a KMP compression lib on Maven Central) do not ask for them
 either — they ask for "does it compile, does it work, is the API stable."
@@ -49,7 +49,7 @@ either — they ask for "does it compile, does it work, is the API stable."
 ## Decision
 
 **Kompressor v1.0 ships at the indie OSS-library level, not the regulated
-supply-chain level.** Every item in the bottom eight rows of the table above is
+supply-chain level.** Every item in the bottom nine rows of the table above is
 **out of scope** and will remain so unless a concrete enterprise-adoption signal
 justifies revisiting.
 
@@ -130,8 +130,8 @@ Absent any of those three, leave this decision standing.
 - **CRA-30** — this ADR (the decline documentation).
 - **CRA-37, CRA-38, CRA-52, CRA-57, CRA-65, CRA-69** — Linear tickets covering
   out-of-scope level-3 items (Scorecard, CII, hash-pinning, extended secret
-  scanning, bit-identical builds, GPG custody). All placeholderised rather than
-  cancelled, so the CRA numbers remain available for future recycling.
+  scanning, bit-identical builds, GPG custody). All kept as placeholders rather
+  than cancelled, so the CRA numbers remain available for future recycling.
 - [FileKit](https://github.com/vinceglb/FileKit), [Kermit](https://github.com/touchlab/Kermit),
   [Turbine](https://github.com/cashapp/turbine), [Coil-KMP](https://github.com/coil-kt/coil),
   [Koin](https://github.com/InsertKoinIO/koin) — indie KMP benchmark references.
