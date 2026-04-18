@@ -34,7 +34,7 @@ import java.io.File
  * identifier.
  *
  * Fixture: `with_cover_art.flac` — FLAC stream with a PICTURE block whose payload is a 32x32
- * PNG. See `scripts/generate-fixtures.sh` for the reproducible recipe.
+ * PNG. Reproducible recipe: `flac --picture`.
  */
 class FlacCoverArtDroppedTest {
 
