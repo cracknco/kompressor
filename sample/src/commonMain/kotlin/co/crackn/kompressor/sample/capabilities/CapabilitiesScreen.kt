@@ -144,8 +144,10 @@ private fun CodecRow(codec: CodecSupport) {
                 ),
                 highlight = codec.hardwareAccelerated,
             )
-            if (codec.supports10Bit) Badge(stringResource(Res.string.capabilities_10bit), highlight = true)
-            if (codec.supportsHdr) Badge(stringResource(Res.string.capabilities_hdr), highlight = true)
+            if (codec is CodecSupport.Video) {
+                if (codec.supports10Bit) Badge(stringResource(Res.string.capabilities_10bit), highlight = true)
+                if (codec.supportsHdr) Badge(stringResource(Res.string.capabilities_hdr), highlight = true)
+            }
         }
         codec.codecName?.let {
             Text(
@@ -162,13 +164,15 @@ private fun CodecRow(codec: CodecSupport) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        codec.maxResolution?.let { (w, h) ->
-            val fps = codec.maxFrameRate?.let { " @ ${it}fps" }.orEmpty()
-            Text(
-                text = "${w}x$h$fps",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (codec is CodecSupport.Video) {
+            codec.maxResolution?.let { (w, h) ->
+                val fps = codec.maxFrameRate?.let { " @ ${it}fps" }.orEmpty()
+                Text(
+                    text = "${w}x$h$fps",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

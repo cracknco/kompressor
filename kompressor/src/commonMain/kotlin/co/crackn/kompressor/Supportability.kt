@@ -81,7 +81,7 @@ private fun videoTrackIssues(
 private fun decoderVerdictAcrossCandidates(
     info: SourceMediaInfo,
     videoMime: String,
-    decoders: List<CodecSupport>,
+    decoders: List<CodecSupport.Video>,
 ): Pair<List<String>, List<String>> {
     val results = decoders.map { decoderIssues(info, videoMime, it) }
     return when {
@@ -94,7 +94,7 @@ private fun decoderVerdictAcrossCandidates(
 private fun decoderIssues(
     info: SourceMediaInfo,
     videoMime: String,
-    decoder: CodecSupport,
+    decoder: CodecSupport.Video,
 ): Pair<List<String>, List<String>> {
     val hard = mutableListOf<String>()
     val soft = mutableListOf<String>()
@@ -118,7 +118,7 @@ private fun decoderIssues(
 private fun bitDepthIssues(
     info: SourceMediaInfo,
     videoMime: String,
-    decoder: CodecSupport,
+    decoder: CodecSupport.Video,
 ): Pair<List<String>, List<String>> {
     val hard = mutableListOf<String>()
     val soft = mutableListOf<String>()
@@ -142,7 +142,7 @@ private fun bitDepthIssues(
 
 private fun resolutionIssues(
     info: SourceMediaInfo,
-    decoder: CodecSupport,
+    decoder: CodecSupport.Video,
 ): Pair<List<String>, List<String>> {
     val hard = mutableListOf<String>()
     val soft = mutableListOf<String>()
