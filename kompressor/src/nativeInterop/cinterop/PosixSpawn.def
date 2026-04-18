@@ -1,4 +1,0 @@
-language = C
-package = co.crackn.kompressor.cinterop.spawn
-headers = PosixSpawn.h
-headerFilter = PosixSpawn.h

@@ -11,17 +11,14 @@ import co.crackn.kompressor.ExperimentalKompressorApi
  * Audio channel layout for compression output.
  *
  * Mono and stereo are universally supported. Surround layouts ([FIVE_POINT_ONE],
- * [SEVEN_POINT_ONE]) are supported on Android (every device exposing the standard
- * `audio/mp4a-latm` encoder), but **not on iOS** — AudioToolbox's AAC-LC encoder rejects
- * multichannel output at every bitrate on real hardware (empirically confirmed on A15 / iOS 18,
- * Device Farm run 24536970778). Requesting surround on iOS surfaces a typed
- * [AudioCompressionError.UnsupportedConfiguration]. Upmix (e.g. mono source → stereo output,
- * or stereo source → 5.1 output) is also not supported on either platform; only same-count
- * passthrough or downmix (e.g. 5.1 → stereo) is allowed.
+ * [SEVEN_POINT_ONE]) are supported on Android via Media3's `ChannelMixingAudioProcessor`; on
+ * iOS, support depends on the device's AudioToolbox AAC-LC encoder — configurations that are
+ * not honoured surface as [AudioCompressionError] at compress time. Upmix (e.g. stereo
+ * source → 5.1 output) is not supported on either platform; only same-count passthrough or
+ * downmix (e.g. 5.1 → stereo) is allowed.
  *
- * Surround entries are gated by [ExperimentalKompressorApi] because the BS.775-3 downmix
- * matrix and per-device encoder coverage are still being validated pre-1.0 — see
- * `docs/api-inventory.md`.
+ * Surround entries are gated by [ExperimentalKompressorApi] because per-device encoder
+ * coverage is still stabilising pre-1.0.
  */
 enum class AudioChannels(
     /** Number of audio channels represented by this layout. */

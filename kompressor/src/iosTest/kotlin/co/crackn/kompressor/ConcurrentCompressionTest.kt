@@ -32,14 +32,7 @@ import kotlin.test.assertTrue
 /**
  * iOS mirror of `androidDeviceTest/.../ConcurrentCompressionTest.kt`. Confirms that 4 parallel
  * audio exports, a 2+2 audio/image mix, and a 16-coroutine stress grid all finish successfully
- * with distinct outputs.
- *
- * **Inter-process coverage.** Both sides now have real subprocess tests:
- * [`ConcurrentCompressInterProcessTest`][ConcurrentCompressInterProcessTest] in `androidHostTest`
- * for JVM-launched `ProcessBuilder` workers and in `iosTest` for `posix_spawn`-launched K/N
- * `compressWorker` executables. The 16-coroutine stress test below is kept as a complementary
- * intra-process check — it catches dispatcher-level locks that a cross-process test would miss
- * because its workers don't share a dispatcher pool. See `docs/threading-model.md`.
+ * with distinct outputs. See `docs/threading-model.md`.
  */
 class ConcurrentCompressionTest {
 
