@@ -184,71 +184,55 @@ tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
     environment("SIMCTL_CHILD_KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
 }
 
-// Kover has two gate modes:
-//   * Default (host-only): excludes every class that can only run on a device or simulator
-//     because `testAndroidHostTest` alone can't exercise them. 85 % is the bar for this mode.
-//   * Merged (host + FTL device `.ec`): triggered by `-PkoverMergedGate=true`, trims the
-//     excludes for device-testable classes (Android*/Ios* compressors, `Media3ExportRunner`,
-//     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
-//     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
-//     before invoking `koverXmlReport`, so those classes show up in the merged report.
+// Kover host-only gate at 85 %. Device tests are not wired into CI; if someone runs
+// `connectedAndroidDeviceTest` locally, coverage is emitted but not merged into this gate.
 //
 // LOCKSTEP: `koverExcludedClasses` below must stay in sync with the root `build.gradle.kts`'s
 // `rootKoverExcludes`. The root filters win over the module's for `:kompressor:koverVerify`,
 // so any drift silently changes what the quality gate evaluates. Only `sample.*` is allowed
 // to differ (root-only because the sample app isn't part of this module).
-val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
-
-// `reports.filters` cascades to every variant including `verify` per Kover 0.9.8's
-// `KoverReportsConfig` docs — `KoverVerifyRule` exposes no `filters { }` DSL of its own, so
-// declaring the excludes once here is both correct and the only option. Empirical check:
-// host-only mode passes 85 % and `-PkoverMergedGate=true` fails at ~52 % locally, which is
-// only possible if `koverVerify` is reading the `reports.filters` excludes.
-val koverExcludedClasses = buildList {
-    // Platform glue — device or simulator only, no equivalent pure logic available
-    // host-side. Excluded irrespective of host-only vs merged mode.
-    add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.MediaCodecUtilsKt")
-    add("co.crackn.kompressor.IosDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.IosFileUtils*")
-    add("co.crackn.kompressor.IosKompressor")
-    add("co.crackn.kompressor.IosKompressorKt")
-    add("co.crackn.kompressor.AndroidKompressor")
-    add("co.crackn.kompressor.AndroidKompressor\$*")
-    add("co.crackn.kompressor.AndroidKompressorKt")
-    if (!mergedCoverageGate) {
-        // Host-only mode: add all classes that require a real codec stack / native
-        // platform APIs. In merged mode, device tests cover these and they're included.
-        add("co.crackn.kompressor.*.Android*")
-        add("co.crackn.kompressor.*.Ios*")
-        add("co.crackn.kompressor.image.ImageSource")
-        add("co.crackn.kompressor.image.ImageSource\$*")
-        add("co.crackn.kompressor.image.FilePathSource")
-        add("co.crackn.kompressor.image.FilePathSource\$*")
-        add("co.crackn.kompressor.image.ContentUriSource")
-        add("co.crackn.kompressor.image.ContentUriSource\$*")
-        add("co.crackn.kompressor.image.AndroidImageCompressorKt")
-        add("co.crackn.kompressor.image.ExifRotation")
-        add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
-        add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
-        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor")
-        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*")
-        add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
-        add("co.crackn.kompressor.video.VideoProbe")
-        add("co.crackn.kompressor.Media3ExportRunnerKt")
-        add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
-        add("co.crackn.kompressor.DeletingOutputOnFailureKt")
-        add("co.crackn.kompressor.SuspendRunCatchingKt")
-        add("co.crackn.kompressor.audio.InputAudioFormat")
-        add("co.crackn.kompressor.audio.AudioProbeResult")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
-    }
-}
+val koverExcludedClasses = listOf(
+    // Platform glue — device or simulator only, no equivalent pure logic host-side.
+    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
+    "co.crackn.kompressor.MediaCodecUtilsKt",
+    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
+    "co.crackn.kompressor.IosFileUtils*",
+    "co.crackn.kompressor.IosKompressor",
+    "co.crackn.kompressor.IosKompressorKt",
+    "co.crackn.kompressor.AndroidKompressor",
+    "co.crackn.kompressor.AndroidKompressor\$*",
+    "co.crackn.kompressor.AndroidKompressorKt",
+    // Classes that need a real codec stack / native platform APIs — unreachable from
+    // `testAndroidHostTest`.
+    "co.crackn.kompressor.*.Android*",
+    "co.crackn.kompressor.*.Ios*",
+    "co.crackn.kompressor.image.ImageSource",
+    "co.crackn.kompressor.image.ImageSource\$*",
+    "co.crackn.kompressor.image.FilePathSource",
+    "co.crackn.kompressor.image.FilePathSource\$*",
+    "co.crackn.kompressor.image.ContentUriSource",
+    "co.crackn.kompressor.image.ContentUriSource\$*",
+    "co.crackn.kompressor.image.AndroidImageCompressorKt",
+    "co.crackn.kompressor.image.ExifRotation",
+    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
+    "co.crackn.kompressor.audio.AudioTrackExtractionKt",
+    "co.crackn.kompressor.audio.ForceTranscodeAudioProcessor",
+    "co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*",
+    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
+    "co.crackn.kompressor.video.VideoProbe",
+    "co.crackn.kompressor.Media3ExportRunnerKt",
+    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
+    "co.crackn.kompressor.DeletingOutputOnFailureKt",
+    "co.crackn.kompressor.SuspendRunCatchingKt",
+    "co.crackn.kompressor.audio.InputAudioFormat",
+    "co.crackn.kompressor.audio.AudioProbeResult",
+    "co.crackn.kompressor.audio.AudioProcessorPlan",
+    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
+)
 
 kover {
-    // Match the root: JaCoCo for both host and device so `connectedAndroidDeviceTest`'s `.ec`
-    // merges cleanly with `testAndroidHostTest`'s `.ec` in the aggregate report.
+    // JaCoCo for `.ec` host-side binaries. Matches AGP's `enableCoverage = true` on
+    // `withDeviceTestBuilder` so local device-test runs produce a compatible binary format.
     useJacoco()
     reports {
         filters {
@@ -257,32 +241,9 @@ kover {
         verify {
             rule {
                 bound {
-                    // 85 % host-only, 90 % merged (host + device).
-                    minValue = if (mergedCoverageGate) 90 else 85
+                    minValue = 85
                 }
             }
-        }
-    }
-}
-
-// Inject the on-device JaCoCo `.exec` from `connectedAndroidDeviceTest` into Kover's artifact
-// generator. Kover 0.9.8's Android locator (`AbstractVariantArtifacts.fromOrigin`) filters its
-// per-variant test-task list to `AndroidUnitTest` subclasses only, so `connectedAndroidDeviceTest`
-// (a `DeviceProviderInstrumentTestTask`) is invisible to the auto-locator. The binary report
-// file already sits at `build/kover/bin-reports/connectedAndroidDeviceTest.exec` (the CI places
-// it there after FTL pulls it) and JaCoCo can read it; Kover just needs to be told the file is
-// part of its `reports` FileCollection. Reflection is necessary because `KoverArtifactGenerationTask`
-// is declared `internal` in the plugin and we can't reference its type directly.
-if (mergedCoverageGate) {
-    afterEvaluate {
-        val deviceExec = layout.buildDirectory.file("kover/bin-reports/connectedAndroidDeviceTest.exec")
-        tasks.matching { it.name.startsWith("koverGenerateArtifact") }.configureEach {
-            val task = this
-            @Suppress("UNCHECKED_CAST")
-            val reports = task.javaClass.getMethod("getReports")
-                .invoke(task) as org.gradle.api.file.ConfigurableFileCollection
-            reports.from(deviceExec)
-            task.inputs.file(deviceExec).optional(true).withPropertyName("deviceBinaryReport")
         }
     }
 }
