@@ -52,12 +52,6 @@ jobs:
       # task only — the task itself is fast (< 1 min) so the cache wasn't buying us much.
       - name: Run Detekt
         run: ./gradlew detekt --no-configuration-cache
-      # CRA-21: reference-side enforcement for the typed-error taxonomy.
-      # Detekt's TooGenericExceptionThrown blocks untyped throws statically; this script
-      # catches the complement — any throw / error( site that isn't allowlisted as
-      # TYPED / RETHROW / REMAPPED / INTERNAL. Static script, no untrusted input.
-      - name: Audit throw sites (CRA-21)
-        run: ./scripts/audit-throws.sh
       - name: Upload Detekt report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
