@@ -1,6 +1,3 @@
-import org.cyclonedx.Version
-import org.cyclonedx.model.Component
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
@@ -13,23 +10,6 @@ plugins {
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.kotlinxSerialization) apply false
-    alias(libs.plugins.cyclonedxBom)
-}
-
-// CycloneDX SBOM for the aggregate multi-project graph. The per-module `:kompressor:cyclonedxBom`
-// task (configured in `kompressor/build.gradle.kts`) is what CI uploads as the release asset,
-// because it is scoped to the published library's own runtime classpath. The root-level task
-// exists so that a repo-wide SBOM is available for contributors who need to audit the full build
-// graph (sample app + library). Both tasks pin CycloneDX schema 1.5 to satisfy CRA-27 DoD.
-tasks.cyclonedxBom {
-    schemaVersion.set(Version.VERSION_15)
-    jsonOutput.set(layout.buildDirectory.file("reports/bom.json"))
-    // JSON-only: `syft` and Dependency-Track ingest JSON; the XML sibling is noise and the
-    // release asset naming (`kompressor-x.y.z.sbom.json`) commits us to a single format.
-    xmlOutput.unsetConvention()
-    includeBomSerialNumber.set(true)
-    includeLicenseText.set(false)
-    projectType.set(Component.Type.LIBRARY)
 }
 
 // Aggregate coverage from both library and sample app so that device/integration
