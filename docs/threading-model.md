@@ -17,11 +17,9 @@ Every public compressor interface guarantees:
   provided each call writes to a **distinct output path**. Concurrent calls
   that share an output path are undefined (partial file, `EncodingFailed`,
   or one writer silently wins the race).
-- **Process-concurrent `compress()` safe.** The same guarantee extends across
-  OS processes: two processes running `createKompressor().image.compress(...)`
-  on distinct output paths do not block or corrupt each other. Kompressor
-  holds no cross-process lock — no named semaphores, no file locks on shared
-  paths, no `/tmp/*` sentinels.
+
+Inter-process / cross-subprocess scenarios are **out of scope** — mobile apps
+do not spawn subprocesses to compress media. See [§ Test coverage matrix](#test-coverage-matrix).
 
 Cancellation is via structured concurrency: cancel the calling coroutine
 scope to abort. There is no blocking `cancel()` method on the instance
@@ -71,9 +69,8 @@ call. AVFoundation is auto-initialised by the OS on first use.
 | Intra-process, 2 audio + 2 image coroutines | `androidDeviceTest/ConcurrentCompressionTest#mixedAudioAndImageCompressions_allSucceed` | `iosTest/ConcurrentCompressionTest#mixedAudioAndImageCompressions_allSucceed` |
 | Intra-process, 16 parallel coroutines (stress) | `androidDeviceTest/ConcurrentCompressionTest#sixteenParallelCoroutines_allSucceed` | `iosTest/ConcurrentCompressionTest#sixteenParallelCoroutines_allSucceed` |
 
-Inter-process / cross-subprocess scenarios are explicitly **out of scope** —
-mobile apps do not spawn subprocesses to compress media. The intra-process
-coroutine coverage above is the contract Kompressor promises.
+The intra-process coroutine coverage above is the contract Kompressor
+promises; inter-process scenarios are not tested (see [§ Public API contract](#public-api-contract)).
 
 ## Adding a new compressor — thread-safety checklist
 

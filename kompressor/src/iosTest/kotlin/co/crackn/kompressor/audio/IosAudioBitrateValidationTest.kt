@@ -20,7 +20,7 @@ class IosAudioBitrateValidationTest {
     // ── Max-cap boundary tests (linear per-channel model) ─────────
 
     @Test
-    fun monoAt22kHz_belowCap_accepted() {
+    fun monoAt22kHz_atCap_accepted() {
         // cap = 64 kbps × 1 ch = 64 000
         checkSupportedIosBitrate(config(bitrate = 64_000, sampleRate = 22_050, channels = AudioChannels.MONO))
     }
@@ -51,7 +51,7 @@ class IosAudioBitrateValidationTest {
     @Test
     fun stereoAt44kHz_atCap_accepted() {
         // cap = 160 kbps × 2 ch = 320 000
-        checkSupportedIosBitrate(config(bitrate = 256_000, sampleRate = 44_100, channels = AudioChannels.STEREO))
+        checkSupportedIosBitrate(config(bitrate = 320_000, sampleRate = 44_100, channels = AudioChannels.STEREO))
     }
 
     @Test
@@ -72,7 +72,7 @@ class IosAudioBitrateValidationTest {
     @Test
     fun stereoAt48kHz_atCap_accepted() {
         // cap = 192 kbps × 2 ch = 384 000
-        checkSupportedIosBitrate(config(bitrate = 320_000, sampleRate = 48_000, channels = AudioChannels.STEREO))
+        checkSupportedIosBitrate(config(bitrate = 384_000, sampleRate = 48_000, channels = AudioChannels.STEREO))
     }
 
     @Test

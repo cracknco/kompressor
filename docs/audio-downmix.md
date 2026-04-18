@@ -14,7 +14,7 @@ count.
 
 ## 7.1 → Stereo
 
-```
+```text
 L = 1.000·FL + 0.707·FC + 0.500·LFE + 0.707·BL + 0.707·SL
 R = 1.000·FR + 0.707·FC + 0.500·LFE + 0.707·BR + 0.707·SR
 ```
@@ -26,7 +26,7 @@ BL/SL carry distinct content; over-attenuates by ~3 dB on chained material).
 
 ## 7.1 → 5.1
 
-```
+```text
 FL_5.1  = 1.000·FL            Ls_5.1  = 1.000·BL + 0.707·SL
 FR_5.1  = 1.000·FR            Rs_5.1  = 1.000·BR + 0.707·SR
 FC_5.1  = 1.000·FC            LFE_5.1 = 1.000·LFE
@@ -37,7 +37,7 @@ in BL/BR don't lose ~3 dB on the 5.1 output.
 
 ## 7.1 → Mono
 
-```
+```text
 M = 0.707·FL + 0.707·FR + 1.000·FC + 0.707·LFE + 0.500·BL + 0.500·BR + 0.500·SL + 0.500·SR
 ```
 

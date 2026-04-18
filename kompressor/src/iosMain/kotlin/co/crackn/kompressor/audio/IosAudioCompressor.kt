@@ -189,9 +189,9 @@ internal class IosAudioCompressor : AudioCompressor {
      * than let callers chase that, we reject the configuration upfront with a typed
      * [AudioCompressionError.UnsupportedBitrate].
      *
-     * The per-channel caps below were determined empirically by binary-searching the property
-     * test (see `AudioCompressionPropertyTest`). The table mirrors Apple's published AAC-LC
-     * ranges in the AudioToolbox documentation:
+     * The per-channel caps below follow a conservative linear model derived from Apple's
+     * published AAC-LC ranges in the AudioToolbox documentation — they are not device-specific
+     * empirical maxima:
      *
      * | sample rate     | max kbps / channel |
      * |-----------------|-------------------:|
