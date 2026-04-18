@@ -14,7 +14,7 @@ package co.crackn.kompressor.testutil
  * main bundle is the simulator's test-runner app, not our module's framework). Inlining keeps
  * the test self-contained — same pattern as `MinimalPngFixtures`.
  *
- * Regenerate via `scripts/generate-fixtures.sh` and refresh [BYTES] in lockstep.
+ * Regenerate via `magick -colorspace CMYK` (ImageMagick) and refresh [BYTES] in lockstep.
  *
  * SHA-256: `c0df869fc3db6a2045b661fdf6f3877583466b1add913672294079d115fb3b68` (298 bytes).
  *

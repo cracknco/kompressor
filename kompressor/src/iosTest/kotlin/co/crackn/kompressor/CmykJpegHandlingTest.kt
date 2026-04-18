@@ -99,8 +99,8 @@ class CmykJpegHandlingTest {
         val nf = readJpegComponentCount(bytes)
         assertTrue(
             nf == JPEG_CMYK_COMPONENTS,
-            "Fixture cmyk.jpg must have Nf=4 (CMYK), got Nf=$nf — did generate-fixtures.sh drop " +
-                "the -colorspace CMYK flag?",
+            "Fixture cmyk.jpg must have Nf=4 (CMYK), got Nf=$nf — did the fixture lose the " +
+                "-colorspace CMYK flag during regeneration?",
         )
     }
 

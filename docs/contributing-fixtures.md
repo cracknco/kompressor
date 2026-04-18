@@ -19,13 +19,6 @@ How to add, update, or remove test fixtures in the Kompressor fixture bank.
 Pick a file from a dataset listed in `docs/fixture-sources.md`. Ensure the
 license permits redistribution for testing purposes.
 
-**Exception — reproducible generation.** Some edge-case fixtures (currently
-`vbr_v0.mp3`, `with_cover_art.flac`, `cmyk.jpg`) are produced from a
-deterministic sine-wave input by `scripts/generate-fixtures.sh` rather than
-sourced externally. When adding a fixture that is easier to synthesise than
-to redistribute, extend that script and commit the SHA-256 in its anchor
-table. The script has a `--verify` mode that CI can use to detect drift.
-
 ### 2. Determine Storage Tier
 
 | File size | Storage | Action |

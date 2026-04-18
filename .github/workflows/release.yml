@@ -71,13 +71,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: ruby/setup-ruby@e65c17d16e57e481586a6a5a0282698790062f92 # v1
-        with:
-          ruby-version: '4.0.2'
-          bundler-cache: true
       - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
       - name: Publish to Maven Central
-        run: bundle exec fastlane publish
+        run: ./gradlew publishToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_version: ${{ needs.release.outputs.new_release_version }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}

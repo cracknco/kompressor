@@ -226,7 +226,7 @@
     {
       "name": "vbr_v0.mp3",
       "source_url": null,
-      "license": "Internal (generated via scripts/generate-fixtures.sh — LAME -V 0)",
+      "license": "Internal (LAME -V 0)",
       "sha256": "fcec20379448c9b659111642cae0a26eeba77894075a9f0481498d460143a788",
       "size": 10636,
       "storage": "lfs",
@@ -237,7 +237,7 @@
     {
       "name": "with_cover_art.flac",
       "source_url": null,
-      "license": "Internal (generated via scripts/generate-fixtures.sh — flac --picture)",
+      "license": "Internal (flac --picture)",
       "sha256": "fe029839cedfffc0e0f94bf202cacdc80f4dffb9a34828f192dde3f1e767c4b5",
       "size": 21405,
       "storage": "lfs",
@@ -248,7 +248,7 @@
     {
       "name": "cmyk.jpg",
       "source_url": null,
-      "license": "Internal (generated via scripts/generate-fixtures.sh — magick -colorspace CMYK)",
+      "license": "Internal (magick -colorspace CMYK)",
       "sha256": "c0df869fc3db6a2045b661fdf6f3877583466b1add913672294079d115fb3b68",
       "size": 298,
       "storage": "lfs",

@@ -6,13 +6,6 @@ public final class co/crackn/kompressor/AndroidKompressorKt {
 	public static final fun createKompressor ()Lco/crackn/kompressor/Kompressor;
 }
 
-public final class co/crackn/kompressor/AudioCodec : java/lang/Enum {
-	public static final field AAC Lco/crackn/kompressor/AudioCodec;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lco/crackn/kompressor/AudioCodec;
-	public static fun values ()[Lco/crackn/kompressor/AudioCodec;
-}
-
 public final class co/crackn/kompressor/CodecSupport {
 	public fun <init> (Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;)V
 	public synthetic fun <init> (Ljava/lang/String;Lco/crackn/kompressor/CodecSupport$Role;Ljava/lang/String;ZLjava/util/List;Lkotlin/Pair;Ljava/lang/Integer;Ljava/lang/Long;ZZLjava/util/List;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -193,20 +186,18 @@ public final class co/crackn/kompressor/audio/AudioChannels : java/lang/Enum {
 
 public final class co/crackn/kompressor/audio/AudioCompressionConfig {
 	public fun <init> ()V
-	public fun <init> (Lco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/audio/AudioChannels;I)V
-	public synthetic fun <init> (Lco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/audio/AudioChannels;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Lco/crackn/kompressor/AudioCodec;
+	public fun <init> (IILco/crackn/kompressor/audio/AudioChannels;I)V
+	public synthetic fun <init> (IILco/crackn/kompressor/audio/AudioChannels;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
 	public final fun component2 ()I
-	public final fun component3 ()I
-	public final fun component4 ()Lco/crackn/kompressor/audio/AudioChannels;
-	public final fun component5 ()I
-	public final fun copy (Lco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/audio/AudioChannels;I)Lco/crackn/kompressor/audio/AudioCompressionConfig;
-	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionConfig;Lco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/audio/AudioChannels;IILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionConfig;
+	public final fun component3 ()Lco/crackn/kompressor/audio/AudioChannels;
+	public final fun component4 ()I
+	public final fun copy (IILco/crackn/kompressor/audio/AudioChannels;I)Lco/crackn/kompressor/audio/AudioCompressionConfig;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionConfig;IILco/crackn/kompressor/audio/AudioChannels;IILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAudioTrackIndex ()I
 	public final fun getBitrate ()I
 	public final fun getChannels ()Lco/crackn/kompressor/audio/AudioChannels;
-	public final fun getCodec ()Lco/crackn/kompressor/AudioCodec;
 	public final fun getSampleRate ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -430,21 +421,19 @@ public final class co/crackn/kompressor/video/VideoCodec : java/lang/Enum {
 
 public final class co/crackn/kompressor/video/VideoCompressionConfig {
 	public fun <init> ()V
-	public fun <init> (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IILco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/video/DynamicRange;)V
-	public synthetic fun <init> (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IILco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/video/DynamicRange;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IIIILco/crackn/kompressor/video/DynamicRange;)V
+	public synthetic fun <init> (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IIIILco/crackn/kompressor/video/DynamicRange;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lco/crackn/kompressor/video/VideoCodec;
 	public final fun component2 ()Lco/crackn/kompressor/video/MaxResolution;
 	public final fun component3 ()I
 	public final fun component4 ()I
-	public final fun component5 ()Lco/crackn/kompressor/AudioCodec;
+	public final fun component5 ()I
 	public final fun component6 ()I
-	public final fun component7 ()I
-	public final fun component8 ()Lco/crackn/kompressor/video/DynamicRange;
-	public final fun copy (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IILco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/video/DynamicRange;)Lco/crackn/kompressor/video/VideoCompressionConfig;
-	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionConfig;Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IILco/crackn/kompressor/AudioCodec;IILco/crackn/kompressor/video/DynamicRange;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionConfig;
+	public final fun component7 ()Lco/crackn/kompressor/video/DynamicRange;
+	public final fun copy (Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IIIILco/crackn/kompressor/video/DynamicRange;)Lco/crackn/kompressor/video/VideoCompressionConfig;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionConfig;Lco/crackn/kompressor/video/VideoCodec;Lco/crackn/kompressor/video/MaxResolution;IIIILco/crackn/kompressor/video/DynamicRange;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAudioBitrate ()I
-	public final fun getAudioCodec ()Lco/crackn/kompressor/AudioCodec;
 	public final fun getCodec ()Lco/crackn/kompressor/video/VideoCodec;
 	public final fun getDynamicRange ()Lco/crackn/kompressor/video/DynamicRange;
 	public final fun getKeyFrameInterval ()I

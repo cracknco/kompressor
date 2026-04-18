@@ -4,7 +4,6 @@
 # Keep the public API package and all public/protected members
 -keep class co.crackn.kompressor.Kompressor { *; }
 -keep class co.crackn.kompressor.CompressionResult { *; }
--keep class co.crackn.kompressor.AudioCodec { *; }
 
 -keep class co.crackn.kompressor.image.ImageCompressor { *; }
 -keep class co.crackn.kompressor.image.ImageCompressionConfig { *; }
