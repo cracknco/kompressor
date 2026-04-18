@@ -7,7 +7,6 @@
 
 package co.crackn.kompressor.audio
 
-import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
@@ -72,7 +71,6 @@ internal class IosAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
         val inputSize = sizeOrTypedError(inputPath)

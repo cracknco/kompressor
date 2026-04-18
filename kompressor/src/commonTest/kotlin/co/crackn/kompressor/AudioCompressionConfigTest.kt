@@ -35,7 +35,6 @@ class AudioCompressionConfigTest {
     @Test
     fun defaultValues() {
         val config = AudioCompressionConfig()
-        assertEquals(AudioCodec.AAC, config.codec)
         assertEquals(128_000, config.bitrate)
         assertEquals(44_100, config.sampleRate)
         assertEquals(AudioChannels.STEREO, config.channels)
