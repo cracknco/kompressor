@@ -11,32 +11,32 @@ import kotlin.test.Test
 
 class SupportabilityTest {
 
-    private val h264Decoder = CodecSupport(
+    private val h264Decoder = CodecSupport.Video(
         mimeType = "video/avc",
         role = CodecSupport.Role.Decoder,
         profiles = listOf("High"),
     )
-    private val h264Encoder = CodecSupport(
+    private val h264Encoder = CodecSupport.Video(
         mimeType = "video/avc",
         role = CodecSupport.Role.Encoder,
         profiles = listOf("High"),
     )
-    private val hevcDecoderMainOnly = CodecSupport(
+    private val hevcDecoderMainOnly = CodecSupport.Video(
         mimeType = "video/hevc",
         role = CodecSupport.Role.Decoder,
         profiles = listOf("Main"),
         supports10Bit = false,
     )
-    private val aacDecoder = CodecSupport(
+    private val aacDecoder = CodecSupport.Audio(
         mimeType = "audio/mp4a-latm",
         role = CodecSupport.Role.Decoder,
     )
-    private val aacEncoder = CodecSupport(
+    private val aacEncoder = CodecSupport.Audio(
         mimeType = "audio/mp4a-latm",
         role = CodecSupport.Role.Encoder,
     )
 
-    private fun capabilitiesFor(video: List<CodecSupport>, audio: List<CodecSupport>) =
+    private fun capabilitiesFor(video: List<CodecSupport.Video>, audio: List<CodecSupport.Audio>) =
         DeviceCapabilities(video = video, audio = audio, deviceSummary = "test")
 
     @Test

@@ -11,10 +11,10 @@ import co.crackn.kompressor.Supportability
 
 data class CapabilitiesState(
     val deviceSummary: String = "",
-    val videoDecoders: List<CodecSupport> = emptyList(),
-    val videoEncoders: List<CodecSupport> = emptyList(),
-    val audioDecoders: List<CodecSupport> = emptyList(),
-    val audioEncoders: List<CodecSupport> = emptyList(),
+    val videoDecoders: List<CodecSupport.Video> = emptyList(),
+    val videoEncoders: List<CodecSupport.Video> = emptyList(),
+    val audioDecoders: List<CodecSupport.Audio> = emptyList(),
+    val audioEncoders: List<CodecSupport.Audio> = emptyList(),
     val probeFileName: String? = null,
     val probeInfo: SourceMediaInfo? = null,
     val probeVerdict: Supportability? = null,
