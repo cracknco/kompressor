@@ -153,6 +153,6 @@ I: intentional?           [yes, matches goal & CHANGELOG | no → revert]
 ## Cross-references
 
 - **[CHANGELOG.md](../CHANGELOG.md)** — documents every user-facing change per release, organized by semver category (Added / Changed / Fixed / Removed).
-- **[docs/api-inventory.md](api-inventory.md)** — exhaustive list of public API symbols, their stability tier, and experimental status.
+- **[docs/api-inventory.md](api-inventory.md)** — stability tier policy (S/E/I) and current `@ExperimentalKompressorApi` surface. The authoritative signature list is `kompressor/api/kompressor.api`.
 - **[.github/workflows/pr.yml](../.github/workflows/pr.yml)** — `test` job runs `./gradlew apiCheck` on every PR and fails on drift.
 - **[kompressor/api/kompressor.api](../kompressor/api/kompressor.api)** — the committed ABI baseline itself.
