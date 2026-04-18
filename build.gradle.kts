@@ -19,13 +19,10 @@ dependencies {
     kover(project(":kompressor"))
 }
 
-// LOCKSTEP: this exclude list must stay in sync with `kompressor/build.gradle.kts`'s
-// `koverExcludedClasses`. The root `koverXmlReport` filters win over the module's, so any class
-// excluded in one list but not the other silently leaks into or out of the aggregate report —
-// `:kompressor:koverVerify` reads the root's resolved set. The delta between them is intentional
-// and narrow: only `co.crackn.kompressor.sample.*` lives at the root level because the sample
-// app isn't part of the library module. Every other entry must match.
-val rootKoverExcludes =
+// Canonical Kover exclusion list. Shared with `:kompressor` via `rootProject.extra` so the
+// module's own `koverVerify` gate evaluates the same classes as the aggregate report here.
+// The sole delta is the sample app, which lives outside the module and is appended below.
+val baseKoverExcludes =
     listOf(
         // Native-only platform glue — no host-side equivalent on either platform.
         "co.crackn.kompressor.AndroidKompressor",
@@ -37,8 +34,6 @@ val rootKoverExcludes =
         "co.crackn.kompressor.IosKompressorKt",
         "co.crackn.kompressor.IosDeviceCapabilitiesKt",
         "co.crackn.kompressor.IosFileUtils*",
-        // Sample app — no unit tests.
-        "co.crackn.kompressor.sample.*",
         // Classes that need a real codec stack / native platform APIs — unreachable from
         // `testAndroidHostTest`; covered only when someone runs device tests locally.
         "co.crackn.kompressor.*.Android*",
@@ -67,6 +62,10 @@ val rootKoverExcludes =
         "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
     )
 
+// Export for `:kompressor/build.gradle.kts`. Root evaluates before subprojects, so the
+// extra property is available by the time the module's script runs.
+rootProject.extra["baseKoverExcludes"] = baseKoverExcludes
+
 kover {
     // JaCoCo for host-side `.ec` files; matches AGP's `enableCoverage = true` on
     // `withDeviceTestBuilder` so local runs of `connectedAndroidDeviceTest` produce a
@@ -74,7 +73,8 @@ kover {
     useJacoco()
     reports {
         filters {
-            excludes { classes(rootKoverExcludes) }
+            // Sample app has no unit tests — exclude it from the aggregate gate only.
+            excludes { classes(baseKoverExcludes + "co.crackn.kompressor.sample.*") }
         }
         verify {
             rule {

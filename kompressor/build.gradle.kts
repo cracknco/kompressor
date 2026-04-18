@@ -137,48 +137,10 @@ kotlin {
 // Kover host-only gate at 85 %. Device tests are not wired into CI; if someone runs
 // `connectedAndroidDeviceTest` locally, coverage is emitted but not merged into this gate.
 //
-// LOCKSTEP: `koverExcludedClasses` below must stay in sync with the root `build.gradle.kts`'s
-// `rootKoverExcludes`. The root filters win over the module's for `:kompressor:koverVerify`,
-// so any drift silently changes what the quality gate evaluates. Only `sample.*` is allowed
-// to differ (root-only because the sample app isn't part of this module).
-val koverExcludedClasses = listOf(
-    // Platform glue — device or simulator only, no equivalent pure logic host-side.
-    "co.crackn.kompressor.AndroidDeviceCapabilitiesKt",
-    "co.crackn.kompressor.MediaCodecUtilsKt",
-    "co.crackn.kompressor.IosDeviceCapabilitiesKt",
-    "co.crackn.kompressor.IosFileUtils*",
-    "co.crackn.kompressor.IosKompressor",
-    "co.crackn.kompressor.IosKompressorKt",
-    "co.crackn.kompressor.AndroidKompressor",
-    "co.crackn.kompressor.AndroidKompressor\$*",
-    "co.crackn.kompressor.AndroidKompressorKt",
-    // Classes that need a real codec stack / native platform APIs — unreachable from
-    // `testAndroidHostTest`.
-    "co.crackn.kompressor.*.Android*",
-    "co.crackn.kompressor.*.Ios*",
-    "co.crackn.kompressor.image.ImageSource",
-    "co.crackn.kompressor.image.ImageSource\$*",
-    "co.crackn.kompressor.image.FilePathSource",
-    "co.crackn.kompressor.image.FilePathSource\$*",
-    "co.crackn.kompressor.image.ContentUriSource",
-    "co.crackn.kompressor.image.ContentUriSource\$*",
-    "co.crackn.kompressor.image.AndroidImageCompressorKt",
-    "co.crackn.kompressor.image.ExifRotation",
-    "co.crackn.kompressor.audio.AndroidAudioCompressorKt",
-    "co.crackn.kompressor.audio.AudioTrackExtractionKt",
-    "co.crackn.kompressor.audio.ForceTranscodeAudioProcessor",
-    "co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*",
-    "co.crackn.kompressor.video.AndroidVideoCompressorKt",
-    "co.crackn.kompressor.video.VideoProbe",
-    "co.crackn.kompressor.Media3ExportRunnerKt",
-    "co.crackn.kompressor.Media3ExportRunnerKt\$*",
-    "co.crackn.kompressor.DeletingOutputOnFailureKt",
-    "co.crackn.kompressor.SuspendRunCatchingKt",
-    "co.crackn.kompressor.audio.InputAudioFormat",
-    "co.crackn.kompressor.audio.AudioProbeResult",
-    "co.crackn.kompressor.audio.AudioProcessorPlan",
-    "co.crackn.kompressor.audio.AudioProcessorPlan\$*",
-)
+// Single source of truth for the Kover exclusion set lives in the root `build.gradle.kts`,
+// which populates `rootProject.extra["baseKoverExcludes"]` before this script evaluates.
+@Suppress("UNCHECKED_CAST")
+val koverExcludedClasses = rootProject.extra["baseKoverExcludes"] as List<String>
 
 kover {
     // JaCoCo for `.ec` host-side binaries. Matches AGP's `enableCoverage = true` on
