@@ -28,7 +28,6 @@ public data class VideoCompressionConfig(
     val maxResolution: MaxResolution = MaxResolution.HD_720,
     val videoBitrate: Int = 1_200_000,
     val audioBitrate: Int = 128_000,
-    val audioCodec: AudioCodec = AudioCodec.AAC,
     val maxFrameRate: Int = 30,
     val keyFrameInterval: Int = 2,
 )
@@ -47,11 +46,7 @@ public data class VideoCompressionConfig(
 </ParamField>
 
 <ParamField path="audioBitrate" type="Int" default="128_000">
-  Target audio bitrate in bits per second. Must be `> 0`.
-</ParamField>
-
-<ParamField path="audioCodec" type="AudioCodec" default="AAC">
-  Output audio codec for the muxed audio track. Only `AAC` ships today.
+  Target audio bitrate in bits per second. Must be `> 0`. Output is always AAC-LC.
 </ParamField>
 
 <ParamField path="maxFrameRate" type="Int" default="30">

@@ -1,10 +1,11 @@
 ---
 title: Audio API
-description: "`AudioCompressor`, `AudioCompressionConfig`, `AudioCodec`, `AudioChannels`, and `AudioPresets`."
+description: "`AudioCompressor`, `AudioCompressionConfig`, `AudioChannels`, and `AudioPresets`."
 ---
 
 Package: `co.crackn.kompressor.audio`
-(`AudioCodec` is in `co.crackn.kompressor` since it's shared with video configs.)
+
+Output is always AAC-LC in an M4A container on both platforms; no codec-selection parameter is exposed.
 
 ## `AudioCompressor`
 
@@ -46,7 +47,6 @@ public interface AudioCompressor {
 
 ```kotlin
 public data class AudioCompressionConfig(
-    val codec: AudioCodec = AudioCodec.AAC,
     val bitrate: Int = 128_000,
     val sampleRate: Int = 44_100,
     val channels: AudioChannels = AudioChannels.STEREO,
@@ -56,16 +56,6 @@ public data class AudioCompressionConfig(
 ### Validation
 
 Throws `IllegalArgumentException` at construction if `bitrate ≤ 0` or `sampleRate ≤ 0`.
-
-## `AudioCodec`
-
-```kotlin
-public enum class AudioCodec {
-    AAC
-}
-```
-
-Shared by `AudioCompressionConfig` and `VideoCompressionConfig.audioCodec`. Only `AAC` today.
 
 ## `AudioChannels`
 

@@ -101,30 +101,48 @@ Returned by [`Kompressor.canCompress`](/reference/kompressor). See the [Probe & 
 
 ## `DeviceCapabilities`
 
-Available on Android (`queryDeviceCapabilities()`). Describes every encoder and decoder the platform reports.
+Available on both platforms via `queryDeviceCapabilities()` (expect/actual). Describes every encoder and decoder the platform reports.
 
 ```kotlin
 public data class DeviceCapabilities(
-    val video: List<CodecSupport>,
-    val audio: List<CodecSupport>,
+    val video: List<CodecSupport.Video>,
+    val audio: List<CodecSupport.Audio>,
     val deviceSummary: String,
 )
 
-public data class CodecSupport(
-    val codecName: String,
-    val role: Role,
-    val mimeType: String,
-    val hardwareAccelerated: Boolean,
-    val profiles: List<String>,
-    val maxResolution: Pair<Int, Int>?,
-    val maxFrameRate: Int?,
-    val maxBitrate: Long?,
-    val supportsHdr: Boolean,
-    val supports10Bit: Boolean,
-    val audioSampleRates: List<Int>?,
-    val audioMaxChannels: Int?,
-) {
-    public enum class Role { Encoder, Decoder }
+public sealed interface CodecSupport {
+    val mimeType: String
+    val role: Role
+    val codecName: String?
+    val hardwareAccelerated: Boolean
+    val profiles: List<String>
+    val maxBitrate: Long?
+
+    enum class Role { Decoder, Encoder }
+
+    data class Video(
+        override val mimeType: String,
+        override val role: Role,
+        override val codecName: String? = null,
+        override val hardwareAccelerated: Boolean = false,
+        override val profiles: List<String> = emptyList(),
+        override val maxBitrate: Long? = null,
+        val maxResolution: Pair<Int, Int>? = null,
+        val maxFrameRate: Int? = null,
+        val supports10Bit: Boolean = false,
+        val supportsHdr: Boolean = false,
+    ) : CodecSupport
+
+    data class Audio(
+        override val mimeType: String,
+        override val role: Role,
+        override val codecName: String? = null,
+        override val hardwareAccelerated: Boolean = false,
+        override val profiles: List<String> = emptyList(),
+        override val maxBitrate: Long? = null,
+        val sampleRates: List<Int> = emptyList(),
+        val maxChannels: Int? = null,
+    ) : CodecSupport
 }
 ```
 
