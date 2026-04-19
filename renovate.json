@@ -12,6 +12,18 @@
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
+    },
+    {
+      "description": "Defer AGP major bumps. AGP 9 introduces breaking changes that require an explicit migration plan — see the closed PR #17 for what happens when Renovate auto-opens the raw major. Re-enable by removing this rule when a migration ticket exists.",
+      "matchManagers": ["gradle"],
+      "matchPackageNames": [
+        "com.android.application",
+        "com.android.kotlin.multiplatform.library",
+        "com.android.library",
+        "com.android.tools.build:gradle"
+      ],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ]
 }
