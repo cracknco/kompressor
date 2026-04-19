@@ -5,7 +5,6 @@
 
 package co.crackn.kompressor.matrix
 
-import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.MIME_AUDIO_AAC
 import co.crackn.kompressor.MIME_VIDEO_H264
 import co.crackn.kompressor.MIME_VIDEO_HEVC
@@ -115,17 +114,14 @@ class FormatSupportMatrixConsistencyTest {
     }
 
     @Test
-    fun audioMatrixOutputSetMatchesAudioCodecEnumAndSupportabilityMime() {
-        // Cross-reference with the public `AudioCodec` enum and the internal `MIME_AUDIO_AAC`
-        // constant consumed by `evaluateSupport`. If a new AudioCodec entry is introduced (say
-        // `OPUS`) or the AAC MIME string is re-written, this assertion forces the matrix to be
-        // updated in lockstep — honouring the DoD clause "cross-ref with
-        // Supportability.evaluateSupport".
-        val enumNames = AudioCodec.entries.map { it.name }.toSet()
-        enumNames shouldBe setOf("AAC")
+    fun audioMatrixOutputMatchesAacMimeConstant() {
+        // Cross-reference with the internal `MIME_AUDIO_AAC` constant consumed by
+        // `evaluateSupport`. The `AudioCodec` enum was retired in PR #108 (only AAC was
+        // ever used, no discrimination at call sites), so the matrix is pinned directly
+        // against the MIME string + the single known output label.
         MIME_AUDIO_AAC shouldBe "audio/mp4a-latm"
         val matrixOutputs = FormatSupportMatrix.audio.map { it.formatOut }.toSet()
-        matrixOutputs shouldBe enumNames
+        matrixOutputs shouldBe setOf("AAC")
     }
 
     @Test
