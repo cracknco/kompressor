@@ -30,6 +30,13 @@ import kotlin.test.assertTrue
  *  * When the probe succeeds the result is cached: a second call must return the same value
  *    in well under the encoder-alloc budget (cheap SharedPreferences read).
  *
+ * CRA-88 replaced the single-frame-with-EOS protocol with a two-frame protocol (prime +
+ * EOS-on-`INFO_TRY_AGAIN_LATER`) to eliminate empty-drain false-negatives on OMX / Codec2
+ * encoders that need a priming frame before producing output. This test is black-box — it
+ * doesn't reach into the protocol — but the determinism assertion plus the per-model FTL
+ * compat matrix runs are what caught the original CRA-20 false-negatives and will catch any
+ * regression here too.
+ *
  * The device-axis compat matrix is built by running this test in CI across Firebase Test Lab
  * device models; see `docs/format-support.md` for the published results.
  */
