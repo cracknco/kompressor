@@ -17,7 +17,6 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.Transformer
-import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.awaitMedia3Export
@@ -65,9 +64,9 @@ internal class AndroidAudioCompressor(
         collectCodecMimeTypes(isEncoder = false, mediaTypePrefix = AUDIO_MIME_PREFIX)
     }
 
-    // This implementation only emits AAC (see the `require(config.codec == AudioCodec.AAC)` below
-    // and [buildTransformer] hard-coding `MimeTypes.AUDIO_AAC`). Intersect with the device's
-    // advertised encoders so we don't promise a MIME the device can't actually produce.
+    // This implementation only emits AAC ([buildTransformer] hard-codes `MimeTypes.AUDIO_AAC`).
+    // Intersect with the device's advertised encoders so we don't promise a MIME the device can't
+    // actually produce.
     override val supportedOutputFormats: Set<String> by lazy {
         collectCodecMimeTypes(isEncoder = true, mediaTypePrefix = AUDIO_MIME_PREFIX)
             .intersect(setOf(MimeTypes.AUDIO_AAC))
@@ -79,8 +78,6 @@ internal class AndroidAudioCompressor(
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
-
         val startNanos = System.nanoTime()
         onProgress(0f)
         val inputSize = resolveMediaInputSize(inputPath)

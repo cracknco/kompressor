@@ -144,8 +144,7 @@ private fun CodecRow(codec: CodecSupport) {
                 ),
                 highlight = codec.hardwareAccelerated,
             )
-            if (codec.supports10Bit) Badge(stringResource(Res.string.capabilities_10bit), highlight = true)
-            if (codec.supportsHdr) Badge(stringResource(Res.string.capabilities_hdr), highlight = true)
+            VariantBadges(codec)
         }
         codec.codecName?.let {
             Text(
@@ -162,14 +161,41 @@ private fun CodecRow(codec: CodecSupport) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        codec.maxResolution?.let { (w, h) ->
-            val fps = codec.maxFrameRate?.let { " @ ${it}fps" }.orEmpty()
-            Text(
-                text = "${w}x$h$fps",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        VariantDetails(codec)
+    }
+}
+
+@Composable
+private fun VariantBadges(codec: CodecSupport) {
+    when (codec) {
+        is CodecSupport.Video -> {
+            if (codec.supports10Bit) Badge(stringResource(Res.string.capabilities_10bit), highlight = true)
+            if (codec.supportsHdr) Badge(stringResource(Res.string.capabilities_hdr), highlight = true)
         }
+        is CodecSupport.Audio -> Unit
+    }
+}
+
+@Composable
+private fun VariantDetails(codec: CodecSupport) {
+    val text = when (codec) {
+        is CodecSupport.Video -> codec.maxResolution?.let { (w, h) ->
+            val fps = codec.maxFrameRate?.let { " @ ${it}fps" }.orEmpty()
+            "${w}x$h$fps"
+        }
+        is CodecSupport.Audio -> buildList {
+            codec.maxChannels?.let { add("${it}ch") }
+            if (codec.sampleRates.isNotEmpty()) {
+                add("${codec.sampleRates.min()}–${codec.sampleRates.max()} Hz")
+            }
+        }.takeIf { it.isNotEmpty() }?.joinToString(" • ")
+    }
+    if (text != null) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

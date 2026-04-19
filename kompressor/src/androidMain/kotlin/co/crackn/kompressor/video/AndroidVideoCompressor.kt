@@ -230,8 +230,8 @@ internal class AndroidVideoCompressor(
  * to `HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL` whenever that list is empty or the encoder
  * doesn't advertise `FEATURE_HdrEditing`). Aligning the pre-flight with Media3 means
  * `VideoCompressionError.UnsupportedSourceFormat` surfaces to callers instead of a
- * surprise-SDR output — caught by `Hdr10PixelFidelityRoundTripTest` on Pixel 6 API 33, which
- * advertises Main10 but NOT `FEATURE_HdrEditing`.
+ * surprise-SDR output on devices that advertise Main10 but not `FEATURE_HdrEditing`
+ * (Pixel 6 API 33 is one such device).
  *
  * Cached after the first probe — `MediaCodecList(REGULAR_CODECS)` enumerates every encoder on
  * the device and is non-trivial; on hot HDR10 paths (re-encode loops) the result is invariant

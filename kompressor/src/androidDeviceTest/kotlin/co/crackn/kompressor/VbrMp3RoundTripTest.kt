@@ -33,7 +33,7 @@ import java.io.File
  * encoder stall) would never surface in CBR tests.
  *
  * Fixture: `vbr_v0.mp3` — LAME -V 0 encoded 1 s 440 Hz sine, Xing VBR header confirmed at
- * offset 21. See `scripts/generate-fixtures.sh` for the reproducible recipe.
+ * offset 21. Reproducible recipe: `lame -V 0`.
  */
 class VbrMp3RoundTripTest {
 

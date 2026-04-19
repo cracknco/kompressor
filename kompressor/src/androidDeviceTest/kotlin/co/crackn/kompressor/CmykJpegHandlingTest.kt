@@ -28,8 +28,8 @@ import kotlin.test.assertTrue
  * using Adobe APP14 information). We don't pin a specific outcome — the public contract is
  * "either the compressor hands back a valid RGB JPEG or a **typed** [ImageCompressionError]".
  *
- * Fixture: `cmyk.jpg` — 32x32 solid-colour JPEG with Adobe APP14 marker and SOF `Nf=4`. See
- * `scripts/generate-fixtures.sh` for the reproducible recipe.
+ * Fixture: `cmyk.jpg` — 32x32 solid-colour JPEG with Adobe APP14 marker and SOF `Nf=4`.
+ * Reproducible recipe: `magick -colorspace CMYK`.
  */
 class CmykJpegHandlingTest {
 

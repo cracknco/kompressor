@@ -1,18 +1,6 @@
-# Gitleaks configuration. Extends the upstream defaults and whitelists the
-# known-safe high-entropy strings in our workflow files (build-cache
-# identifiers that happen to trip the generic-api-key entropy heuristic).
-#
-# The gitleaks-action pinned in .github/workflows/pr.yml loads this file
-# automatically from the repo root.
+# Gitleaks configuration. Extends the upstream defaults.
+# Loaded automatically from the repo root by the gitleaks-action
+# pinned in .github/workflows/pr.yml.
 
 [extend]
 useDefault = true
-
-[allowlist]
-description = "Build-cache identifiers in GitHub Actions workflow files — not secrets."
-paths = [
-    '''\.github/workflows/.*\.ya?ml''',
-]
-regexes = [
-    '''avd-api\d+-[a-z_]+-[a-z0-9_]+-v\d+''',
-]

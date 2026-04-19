@@ -98,19 +98,15 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
         if (bitmap.width == target.width && bitmap.height == target.height) return bitmap
-        // codebadger:suppress(resource-leak) caller (resizeAndWrite) recycles in finally block
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
     private fun writeBitmap(bitmap: Bitmap, outputPath: String, config: ImageCompressionConfig) {
         val compressFormat = androidCompressFormat(config.format)
         // Capture the compress result inside `use { }` so the stream is closed before we throw.
-        // Throwing inside the use-block works too but leaves the throw-point visibly inside the
-        // open-stream frame, which static analysers (CodeBadger/Joern) flag as a potential leak
-        // of sibling resources (e.g. the caller-owned Bitmap). Returning the boolean and then
-        // throwing after close moves the error path to a point where the I/O resource is
-        // provably released — the ownership contract for the Bitmap itself lives with the
-        // caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
+        // Returning the boolean and then throwing after close moves the error path to a point
+        // where the I/O resource is provably released — the Bitmap ownership contract lives with
+        // the caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
         val success = FileOutputStream(outputPath).use { stream ->
             bitmap.compress(compressFormat, config.quality, stream)
         }
@@ -211,7 +207,6 @@ private class FilePathSource(private val path: String) : ImageSource {
 
     override fun decodeRawDimensions(): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
         BitmapFactory.decodeFile(path, options)
         if (options.outWidth <= 0 || options.outHeight <= 0) {
             if (!File(path).exists()) {
@@ -257,7 +252,6 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     override fun decodeRawDimensions(): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         openStream().use { stream ->
-            // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
             BitmapFactory.decodeStream(stream, null, options)
         }
         if (options.outWidth <= 0 || options.outHeight <= 0) {
@@ -273,7 +267,6 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     ): Bitmap {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
         val decoded = openStream().use { stream ->
-            // codebadger:suppress(resource-leak) Bitmap ownership transfers to caller via rotateOrRecycle.
             BitmapFactory.decodeStream(stream, null, options)
                 ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $uri")
         }
@@ -281,7 +274,6 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     }
 
     private fun openStream(): InputStream =
-        // codebadger:suppress(resource-leak) Stream closed by caller via `use { }`.
         resolver.openInputStream(uri)
             ?: throw ImageCompressionError.IoFailed("ContentResolver returned null input stream for $uri")
 }

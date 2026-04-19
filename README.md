@@ -218,7 +218,6 @@ val config = VideoCompressionConfig(
     maxResolution    = MaxResolution.HD_720,
     videoBitrate     = 1_200_000,
     audioBitrate     = 128_000,
-    audioCodec       = AudioCodec.AAC,
     maxFrameRate     = 30,
     keyFrameInterval = 2,
 )
@@ -226,13 +225,14 @@ val config = VideoCompressionConfig(
 val result = kompressor.video.compress(inputPath, outputPath, config)
 ```
 
+The output audio track is always AAC-LC (muxed into the MP4 container alongside the re-encoded video).
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `codec` | `VideoCodec` | `H264` | Video codec |
 | `maxResolution` | `MaxResolution` | `HD_720` | Maximum output resolution |
 | `videoBitrate` | `Int` | `1_200_000` | Video bitrate in bps |
 | `audioBitrate` | `Int` | `128_000` | Audio bitrate in bps |
-| `audioCodec` | `AudioCodec` | `AAC` | Audio codec |
 | `maxFrameRate` | `Int` | `30` | Max frame rate |
 | `keyFrameInterval` | `Int` | `2` | Key frame interval in seconds |
 
@@ -264,7 +264,6 @@ val result = kompressor.video.compress(inputPath, outputPath, config)
 
 ```kotlin
 val config = AudioCompressionConfig(
-    codec      = AudioCodec.AAC,
     bitrate    = 128_000,
     sampleRate = 44100,
     channels   = AudioChannels.STEREO,
@@ -273,18 +272,13 @@ val config = AudioCompressionConfig(
 val result = kompressor.audio.compress(inputPath, outputPath, config)
 ```
 
+Output is always AAC-LC in an M4A container on both Android and iOS.
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `codec` | `AudioCodec` | `AAC` | Output codec |
 | `bitrate` | `Int` | `128_000` | Bitrate in bps |
 | `sampleRate` | `Int` | `44100` | Sample rate in Hz |
 | `channels` | `AudioChannels` | `STEREO` | Mono or Stereo |
-
-### Codecs
-
-| `AudioCodec` | Android | iOS | Notes |
-|-------------|---------|-----|-------|
-| `AAC` | ✅ | ✅ | Best choice for speech and music. |
 
 ### Presets
 
@@ -390,31 +384,6 @@ APIs annotated with `@ExperimentalKompressorApi` or declared `internal` are **no
 Binary compatibility is maintained across MINOR and PATCH releases for all artifact types (AAR, klib, Kotlin/Native framework).
 
 > Full policy, binary compatibility details, and exemptions: **[docs/api-stability.md](docs/api-stability.md)**
-
----
-
-## SBOM & supply chain
-
-Every Kompressor release ships a **CycloneDX 1.5** Software Bill of Materials
-as a GitHub Release asset:
-
-```
-https://github.com/cracknco/kompressor/releases/download/vX.Y.Z/kompressor-X.Y.Z.sbom.json
-```
-
-The SBOM lists every runtime dependency with its `purl`, version, license, and
-SHA-1/256/384/512 hashes — enough to answer *"am I exposed to this CVE?"* in
-under five minutes. It's reproducible from Maven Central via
-`syft packages maven-central:co.crackn.kompressor:kompressor:X.Y.Z` and can be
-ingested into [Dependency-Track](https://dependencytrack.org/) for continuous
-vulnerability tracking.
-
-Full guide — verification with `syft`, Dependency-Track integration, and the
-regulatory context (US EO 14028 / EU Cyber Resilience Act) — lives in
-**[docs/supply-chain.md](docs/supply-chain.md)**.
-
-> Adjacent asset: `kompressor-spdx.json` (SPDX 2.3 license report). SPDX covers
-> licenses; CycloneDX covers components and vulnerabilities.
 
 ---
 

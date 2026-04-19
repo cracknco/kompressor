@@ -35,7 +35,7 @@ public actual fun queryDeviceCapabilities(): DeviceCapabilities {
     )
 }
 
-private fun iosVideoCodecs(): List<CodecSupport> {
+private fun iosVideoCodecs(): List<CodecSupport.Video> {
     val hevcDecoderProfiles = listOf("Main", "Main 10")
     val hevcEncoderProfiles = listOf("Main")
     val h264Profiles = listOf("Baseline", "Main", "High")
@@ -64,7 +64,7 @@ private fun iosVideoCodecs(): List<CodecSupport> {
     )
 }
 
-private fun iosAudioCodecs(): List<CodecSupport> = listOf(
+private fun iosAudioCodecs(): List<CodecSupport.Audio> = listOf(
     audioCodec("audio/mp4a-latm", CodecSupport.Role.Decoder),
     audioCodec("audio/mp4a-latm", CodecSupport.Role.Encoder),
     audioCodec("audio/mpeg", CodecSupport.Role.Decoder),
@@ -77,7 +77,7 @@ private fun videoCodec(
     profiles: List<String>,
     supports10Bit: Boolean = false,
     supportsHdr: Boolean = false,
-): CodecSupport = CodecSupport(
+): CodecSupport.Video = CodecSupport.Video(
     mimeType = mime,
     role = role,
     hardwareAccelerated = true,
@@ -86,5 +86,5 @@ private fun videoCodec(
     supportsHdr = supportsHdr,
 )
 
-private fun audioCodec(mime: String, role: CodecSupport.Role): CodecSupport =
-    CodecSupport(mimeType = mime, role = role, hardwareAccelerated = false)
+private fun audioCodec(mime: String, role: CodecSupport.Role): CodecSupport.Audio =
+    CodecSupport.Audio(mimeType = mime, role = role, hardwareAccelerated = false)

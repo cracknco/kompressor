@@ -34,7 +34,7 @@ Only symbols that meet **all** of the following criteria are covered by the semv
 
 APIs annotated with `@ExperimentalKompressorApi` are opt-in and may change or be removed in any MINOR release without a MAJOR version bump. Opt-in is required at the call site, so breakage is always explicit.
 
-The current experimental surface (inventory + per-symbol rationale + opt-in recipes) lives in [`docs/api-inventory.md`](api-inventory.md). That doc is kept in lockstep with the annotations in source so reviewers can cross-check an ABI diff against a single list.
+The current experimental surface lives in [`docs/api-inventory.md`](api-inventory.md), which summarises the stability tier policy and lists the incubating `@ExperimentalKompressorApi` symbols grep-verified against source.
 
 Once an experimental API is stabilized, the annotation is removed in a MINOR release — this is considered additive, not breaking. Bump `docs/api-inventory.md` in the same commit.
 
@@ -153,6 +153,6 @@ I: intentional?           [yes, matches goal & CHANGELOG | no → revert]
 ## Cross-references
 
 - **[CHANGELOG.md](../CHANGELOG.md)** — documents every user-facing change per release, organized by semver category (Added / Changed / Fixed / Removed).
-- **[docs/api-inventory.md](api-inventory.md)** — exhaustive list of public API symbols, their stability tier, and experimental status.
+- **[docs/api-inventory.md](api-inventory.md)** — stability tier policy (S/E/I) and current `@ExperimentalKompressorApi` surface. The authoritative signature list is `kompressor/api/kompressor.api`.
 - **[.github/workflows/pr.yml](../.github/workflows/pr.yml)** — `test` job runs `./gradlew apiCheck` on every PR and fails on drift.
 - **[kompressor/api/kompressor.api](../kompressor/api/kompressor.api)** — the committed ABI baseline itself.

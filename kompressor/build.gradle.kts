@@ -1,11 +1,4 @@
 import com.android.build.api.dsl.androidLibrary
-import com.github.jk1.license.filter.LicenseBundleNormalizer
-import com.github.jk1.license.render.InventoryHtmlReportRenderer
-import com.github.jk1.license.render.JsonReportRenderer
-import org.cyclonedx.Version
-import org.cyclonedx.model.Component
-import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
-import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -13,8 +6,6 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kover)
     alias(libs.plugins.binaryCompatibilityValidator)
-    alias(libs.plugins.dependencyLicenseReport)
-    alias(libs.plugins.cyclonedxBom)
 }
 
 group = "co.crackn.kompressor"
@@ -88,30 +79,8 @@ kotlin {
                     includeDirs(interopDir)
                     extraOpts("-libraryPath", interopDir.resolve("libs/$targetLibDir").absolutePath)
                 }
-                // CRA-80: `posix_spawn` / `waitpid` are not in K/N's built-in iOS posix
-                // binding. These static-inline shims expose them to `iosMain` (and by
-                // extension the iosTest source set) so the inter-process test can launch
-                // the `compressWorker` binary. Header-only — no static library dependency.
-                create("PosixSpawn") {
-                    defFile(interopDir.resolve("PosixSpawn.def"))
-                    includeDirs(interopDir)
-                }
             }
         }
-    }
-
-    // Standalone K/N executable target used by `iosTest/ConcurrentCompressInterProcessTest`
-    // (CRA-80) to get real cross-process coverage of `createKompressor().image.compress(...)`.
-    // Only the simulator variant ships the executable — on-device inter-process testing is
-    // out of scope and `posix_spawn` requires code-signing on real iOS hardware anyway.
-    // `entryPoint` resolves to the top-level `fun main(Array<String>)` in
-    // `iosMain/.../worker/CompressWorkerMain.kt`. The function is left `public` (not
-    // `internal`) because K/N mangles internal-function names in a way that its entry-point
-    // resolver can't reliably look up; the symbol is namespaced under `co.crackn.kompressor
-    // .worker` so the leak into the framework's ObjC header is cosmetic rather than a
-    // public-API risk.
-    iosSimulatorArm64().binaries.executable("compressWorker") {
-        entryPoint = "co.crackn.kompressor.worker.main"
     }
 
     sourceSets {
@@ -165,32 +134,9 @@ kotlin {
     }
 }
 
-// Wire the `compressWorker` K/N executable into `iosSimulatorArm64Test` (CRA-80).
+// Kover host-only gate at 85 %. Device tests are not wired into CI; if someone runs
+// `connectedAndroidDeviceTest` locally, coverage is emitted but not merged into this gate.
 //
-// The inter-process test (`iosTest/ConcurrentCompressInterProcessTest`) `posix_spawn`s this
-// binary, so the test task must (a) trigger the link step for it, and (b) pass the resulting
-// absolute path as an env var the test binary can read via `platform.posix.getenv`.
-//
-// DEBUG build type matches the test binary's own build type — a mismatch would double the
-// K/N link cost per CI run (debug + release link tasks both fire) without any diagnostic
-// benefit.
-//
-// `simctl` env var convention: `KotlinNativeSimulatorTest.environment(...)` sets env on the
-// `xcrun simctl spawn` invocation, but `simctl spawn` itself only forwards env vars to the
-// simulator process when they carry the `SIMCTL_CHILD_` prefix (see `man simctl`). We set
-// both the prefixed and unprefixed form — prefixed for simctl's forwarding and unprefixed as
-// a safety net for anyone running the raw `.kexe` directly (e.g. from an IDE attach).
-val iosSimWorkerBinary = kotlin.iosSimulatorArm64().binaries.getExecutable(
-    "compressWorker",
-    NativeBuildType.DEBUG,
-)
-tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
-    dependsOn(iosSimWorkerBinary.linkTaskProvider)
-    val workerPath = iosSimWorkerBinary.outputFile.absolutePath
-    environment("KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
-    environment("SIMCTL_CHILD_KOMPRESSOR_COMPRESS_WORKER_PATH", workerPath)
-}
-
 // CRA-43: `FormatSupportDocUpToDateTest` (in `androidHostTest`) compares the auto-generated
 // section of `docs/format-support.md` against `renderFormatSupportMatrixTables()`. The test
 // needs to know where `docs/` lives regardless of where Gradle is invoked from, so we inject
@@ -219,71 +165,14 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// Kover has two gate modes:
-//   * Default (host-only): excludes every class that can only run on a device or simulator
-//     because `testAndroidHostTest` alone can't exercise them. 85 % is the bar for this mode.
-//   * Merged (host + FTL device `.ec`): triggered by `-PkoverMergedGate=true`, trims the
-//     excludes for device-testable classes (Android*/Ios* compressors, `Media3ExportRunner`,
-//     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
-//     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
-//     before invoking `koverXmlReport`, so those classes show up in the merged report.
-//
-// LOCKSTEP: `koverExcludedClasses` below must stay in sync with the root `build.gradle.kts`'s
-// `rootKoverExcludes`. The root filters win over the module's for `:kompressor:koverVerify`,
-// so any drift silently changes what the quality gate evaluates. Only `sample.*` is allowed
-// to differ (root-only because the sample app isn't part of this module).
-val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
-
-// `reports.filters` cascades to every variant including `verify` per Kover 0.9.8's
-// `KoverReportsConfig` docs — `KoverVerifyRule` exposes no `filters { }` DSL of its own, so
-// declaring the excludes once here is both correct and the only option. Empirical check:
-// host-only mode passes 85 % and `-PkoverMergedGate=true` fails at ~52 % locally, which is
-// only possible if `koverVerify` is reading the `reports.filters` excludes.
-val koverExcludedClasses = buildList {
-    // Platform glue — device or simulator only, no equivalent pure logic available
-    // host-side. Excluded irrespective of host-only vs merged mode.
-    add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.MediaCodecUtilsKt")
-    add("co.crackn.kompressor.IosDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.IosFileUtils*")
-    add("co.crackn.kompressor.IosKompressor")
-    add("co.crackn.kompressor.IosKompressorKt")
-    add("co.crackn.kompressor.AndroidKompressor")
-    add("co.crackn.kompressor.AndroidKompressor\$*")
-    add("co.crackn.kompressor.AndroidKompressorKt")
-    if (!mergedCoverageGate) {
-        // Host-only mode: add all classes that require a real codec stack / native
-        // platform APIs. In merged mode, device tests cover these and they're included.
-        add("co.crackn.kompressor.*.Android*")
-        add("co.crackn.kompressor.*.Ios*")
-        add("co.crackn.kompressor.image.ImageSource")
-        add("co.crackn.kompressor.image.ImageSource\$*")
-        add("co.crackn.kompressor.image.FilePathSource")
-        add("co.crackn.kompressor.image.FilePathSource\$*")
-        add("co.crackn.kompressor.image.ContentUriSource")
-        add("co.crackn.kompressor.image.ContentUriSource\$*")
-        add("co.crackn.kompressor.image.AndroidImageCompressorKt")
-        add("co.crackn.kompressor.image.ExifRotation")
-        add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
-        add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
-        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor")
-        add("co.crackn.kompressor.audio.ForceTranscodeAudioProcessor\$*")
-        add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
-        add("co.crackn.kompressor.video.VideoProbe")
-        add("co.crackn.kompressor.Media3ExportRunnerKt")
-        add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
-        add("co.crackn.kompressor.DeletingOutputOnFailureKt")
-        add("co.crackn.kompressor.SuspendRunCatchingKt")
-        add("co.crackn.kompressor.audio.InputAudioFormat")
-        add("co.crackn.kompressor.audio.AudioProbeResult")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
-    }
-}
+// Single source of truth for the Kover exclusion set lives in the root `build.gradle.kts`,
+// which populates `rootProject.extra["baseKoverExcludes"]` before this script evaluates.
+@Suppress("UNCHECKED_CAST")
+val koverExcludedClasses = rootProject.extra["baseKoverExcludes"] as List<String>
 
 kover {
-    // Match the root: JaCoCo for both host and device so `connectedAndroidDeviceTest`'s `.ec`
-    // merges cleanly with `testAndroidHostTest`'s `.ec` in the aggregate report.
+    // JaCoCo for `.ec` host-side binaries. Matches AGP's `enableCoverage = true` on
+    // `withDeviceTestBuilder` so local device-test runs produce a compatible binary format.
     useJacoco()
     reports {
         filters {
@@ -292,32 +181,9 @@ kover {
         verify {
             rule {
                 bound {
-                    // 85 % host-only, 90 % merged (host + device).
-                    minValue = if (mergedCoverageGate) 90 else 85
+                    minValue = 85
                 }
             }
-        }
-    }
-}
-
-// Inject the on-device JaCoCo `.exec` from `connectedAndroidDeviceTest` into Kover's artifact
-// generator. Kover 0.9.8's Android locator (`AbstractVariantArtifacts.fromOrigin`) filters its
-// per-variant test-task list to `AndroidUnitTest` subclasses only, so `connectedAndroidDeviceTest`
-// (a `DeviceProviderInstrumentTestTask`) is invisible to the auto-locator. The binary report
-// file already sits at `build/kover/bin-reports/connectedAndroidDeviceTest.exec` (the CI places
-// it there after FTL pulls it) and JaCoCo can read it; Kover just needs to be told the file is
-// part of its `reports` FileCollection. Reflection is necessary because `KoverArtifactGenerationTask`
-// is declared `internal` in the plugin and we can't reference its type directly.
-if (mergedCoverageGate) {
-    afterEvaluate {
-        val deviceExec = layout.buildDirectory.file("kover/bin-reports/connectedAndroidDeviceTest.exec")
-        tasks.matching { it.name.startsWith("koverGenerateArtifact") }.configureEach {
-            val task = this
-            @Suppress("UNCHECKED_CAST")
-            val reports = task.javaClass.getMethod("getReports")
-                .invoke(task) as org.gradle.api.file.ConfigurableFileCollection
-            reports.from(deviceExec)
-            task.inputs.file(deviceExec).optional(true).withPropertyName("deviceBinaryReport")
         }
     }
 }
@@ -356,55 +222,3 @@ mavenPublishing {
     }
 }
 
-licenseReport {
-    outputDir = rootProject.layout.buildDirectory.dir("reports/dependency-license").get().asFile.path
-    renderers = arrayOf<com.github.jk1.license.render.ReportRenderer>(
-        InventoryHtmlReportRenderer("index.html"),
-        JsonReportRenderer("licenses.json", false),
-    )
-    filters = arrayOf<com.github.jk1.license.filter.DependencyFilter>(LicenseBundleNormalizer())
-    excludeOwnGroup = true
-    // Scans only the Android runtime classpath because iOS-side dependencies are Apple
-    // system frameworks (AVFoundation, CoreImage, …) shipped with the OS rather than
-    // Maven artifacts — there is no iOS configuration with transitive Maven deps to scan.
-    configurations = arrayOf("androidRuntimeClasspath")
-}
-
-// CRA-27 — CycloneDX SBOM for the published library. `:kompressor:cyclonedxBom` is the task CI
-// uploads to the GitHub Release as `kompressor-x.y.z.sbom.json`; the per-module output is the
-// authoritative SBOM for the Maven-Central artifact (`co.crackn.kompressor:kompressor:x.y.z`)
-// because it is scoped to the module's own aggregated runtime dependency graph rather than the
-// entire repo (which would include the `:sample` app's deps).
-//
-// Schema 1.5 is pinned to satisfy the DoD (US EO 14028 / EU CRA reference the 1.5 profile). The
-// plugin itself defaults to 1.6; we override to 1.5 explicitly so the contract is visible and
-// future plugin upgrades don't silently bump the schema.
-//
-// Reproducibility vs. `syft packages maven-central:...:kompressor:x.y.z`: keep the scanned
-// configuration aligned with what Maven Central publishes (`androidRuntimeClasspath`, which is
-// what the `.aar` + POM declare). The `includeBomSerialNumber = false` opt-out removes the only
-// non-deterministic field in the BOM so byte-for-byte comparison with syft's output is feasible
-// modulo the `timestamp` field (syft and this plugin both stamp it — exclude from diff).
-tasks.cyclonedxBom {
-    schemaVersion.set(Version.VERSION_15)
-    jsonOutput.set(layout.buildDirectory.file("reports/bom.json"))
-    xmlOutput.unsetConvention()
-    // Omit BOM serial number: it's a random UUID per run, defeating any by-hash reproducibility
-    // check against `syft`. The BOM is still valid CycloneDX 1.5 without it (the field is
-    // Optional per the schema).
-    includeBomSerialNumber.set(false)
-    includeLicenseText.set(false)
-    projectType.set(Component.Type.LIBRARY)
-    componentGroup.set(project.group.toString())
-    componentName.set("kompressor")
-    // The `version = "0.1.0"` literal at the top of this file wins over `ORG_GRADLE_PROJECT_version`
-    // (configuration-time re-assignment beats Gradle's property-injection), so CI cannot stamp
-    // the SBOM with the release version through that channel — same constraint the SPDX script
-    // works around via a `$VERSION` env var. Honour an explicit `-PsbomVersion=x.y.z` property
-    // instead, falling back to the project version for local runs.
-    componentVersion.set(
-        providers.gradleProperty("sbomVersion").orElse(
-            providers.provider { project.version.toString() },
-        ),
-    )
-}

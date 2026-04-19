@@ -7,13 +7,11 @@
 
 package co.crackn.kompressor.audio
 
-import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.ExperimentalKompressorApi
 
 /**
- * Configuration for audio compression.
+ * Configuration for audio compression. Output codec is always AAC (AAC-LC in an M4A container).
  *
- * @property codec Audio codec to use.
  * @property bitrate Target bitrate in bits per second.
  * @property sampleRate Sample rate in Hz.
  * @property channels Output channel layout.
@@ -33,7 +31,6 @@ import co.crackn.kompressor.ExperimentalKompressorApi
  * restriction.
  */
 public data class AudioCompressionConfig(
-    val codec: AudioCodec = AudioCodec.AAC,
     val bitrate: Int = 128_000,
     val sampleRate: Int = 44_100,
     val channels: AudioChannels = AudioChannels.STEREO,
