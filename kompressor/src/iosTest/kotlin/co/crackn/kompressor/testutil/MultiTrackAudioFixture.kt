@@ -80,81 +80,20 @@ object MultiTrackAudioFixture {
 
     /**
      * Write [path] as a PCM RIFF/WAV with [channels] channels carrying a sine wave at [freq] Hz
-     * for [durationSec] seconds. Each channel carries the SAME tone (not [WavGenerator]'s
-     * per-channel multiplier) so that a downstream mono downmix still dominates at [freq].
+     * for [durationSec] seconds. Every channel carries the SAME tone (via
+     * [WavGenerator.generateWavBytes]'s constant per-channel multiplier override) so that a
+     * downstream mono downmix still dominates at [freq] — the default
+     * `freq * (channelIndex + 1)` multiplier would introduce a second tone on channel 1+.
      */
     private fun writeSineWav(path: String, freq: Double, durationSec: Int, channels: Int) {
-        val bytes = if (channels == 1) {
-            WavGenerator.generateWavBytes(
-                durationSeconds = durationSec,
-                sampleRate = SAMPLE_RATE,
-                channels = 1,
-                toneFrequency = freq,
-            )
-        } else {
-            buildConstantToneStereoWav(freq, durationSec, SAMPLE_RATE)
-        }
+        val bytes = WavGenerator.generateWavBytes(
+            durationSeconds = durationSec,
+            sampleRate = SAMPLE_RATE,
+            channels = channels,
+            toneFrequency = freq,
+            perChannelFrequencyMultiplier = { 1.0 },
+        )
         writeBytes(path, bytes)
-    }
-
-    /**
-     * Build a 16-bit stereo PCM RIFF/WAV where both channels carry the same sine wave at [freq]
-     * Hz. [WavGenerator] applies `freq * (ch + 1)` per channel, which is wrong for tests that
-     * rely on a single dominant frequency after mono downmix.
-     */
-    @Suppress("MagicNumber")
-    private fun buildConstantToneStereoWav(freq: Double, durationSec: Int, sampleRate: Int): ByteArray {
-        val channels = 2
-        val bitsPerSample = 16
-        val bytesPerSample = bitsPerSample / 8
-        val totalFrames = sampleRate * durationSec
-        val dataSize = totalFrames * channels * bytesPerSample
-        val headerSize = 44
-        val bytes = ByteArray(headerSize + dataSize)
-        // RIFF header
-        "RIFF".encodeInto(bytes, 0)
-        writeIntLE(bytes, 4, headerSize - 8 + dataSize)
-        "WAVE".encodeInto(bytes, 8)
-        "fmt ".encodeInto(bytes, 12)
-        writeIntLE(bytes, 16, 16) // PCM fmt chunk size
-        writeShortLE(bytes, 20, 1) // PCM format
-        writeShortLE(bytes, 22, channels)
-        writeIntLE(bytes, 24, sampleRate)
-        writeIntLE(bytes, 28, sampleRate * channels * bytesPerSample)
-        writeShortLE(bytes, 32, channels * bytesPerSample)
-        writeShortLE(bytes, 34, bitsPerSample)
-        "data".encodeInto(bytes, 36)
-        writeIntLE(bytes, 40, dataSize)
-        var offset = headerSize
-        for (i in 0 until totalFrames) {
-            val unit = kotlin.math.sin(2.0 * kotlin.math.PI * freq * i / sampleRate)
-            val v = (unit * Short.MAX_VALUE).toInt()
-            val lo = (v and 0xFF).toByte()
-            val hi = ((v shr 8) and 0xFF).toByte()
-            // Left + right = same sample
-            bytes[offset] = lo; bytes[offset + 1] = hi
-            bytes[offset + 2] = lo; bytes[offset + 3] = hi
-            offset += 4
-        }
-        return bytes
-    }
-
-    private fun String.encodeInto(bytes: ByteArray, offset: Int) {
-        for (i in indices) bytes[offset + i] = this[i].code.toByte()
-    }
-
-    @Suppress("MagicNumber")
-    private fun writeIntLE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
-        bytes[offset + 2] = ((value shr 16) and 0xFF).toByte()
-        bytes[offset + 3] = ((value shr 24) and 0xFF).toByte()
-    }
-
-    @Suppress("MagicNumber")
-    private fun writeShortLE(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
     }
 
     private fun composeMultiTrackMp4(outputPath: String, sourcePaths: List<String>) {

@@ -165,7 +165,7 @@ class IosExportSessionFastPathTest {
     }
 
     @Test
-    fun audioFastPath_customBitrate_falsBackToTranscode() {
+    fun audioFastPath_customBitrate_fallsBackToTranscode() {
         // Any other field outside the default forces the custom pipeline because
         // AVAssetExportPresetAppleM4A ignores caller-supplied bitrate/sampleRate/channels.
         assertTrue(!canUseAudioExportSession(AudioCompressionConfig(bitrate = 64_000)))
@@ -240,20 +240,26 @@ class IosExportSessionFastPathTest {
     @Test
     fun audioFastPath_singleTrackSource_stillSucceeds() = runTest {
         // The `audioTracks.size > 1` guard must not break single-track inputs. A one-track
-        // source should pass through the preset without an audioMix — i.e. the same behaviour
-        // this pipeline always had. The fixture builds a MONO WAV inside the MP4 container,
-        // so we have to pass `channels = MONO` to avoid tripping the 1→2 upmix pre-flight.
+        // source should pass through the preset without an audioMix — same behaviour this
+        // pipeline always had. The fixture builds the WAV as stereo so the default STEREO
+        // config clears the 1→2 upmix pre-flight; fast-path eligibility stays ON.
         val input = MultiTrackAudioFixture.createMultiTrackAudioMp4(
             outputPath = testDir + "one-track.mp4",
             durationSec = DURATION_SEC,
             trackFrequencies = listOf(TONE_A),
+            channelsPerTrack = 2,
         )
         val output = testDir + "out_single.m4a"
+        val config = AudioCompressionConfig()
+        assertTrue(
+            canUseAudioExportSession(config),
+            "single-track default config must stay fast-path eligible",
+        )
 
         val result = audioCompressor.compress(
             inputPath = input,
             outputPath = output,
-            config = AudioCompressionConfig(channels = AudioChannels.MONO),
+            config = config,
         )
         assertNotNull(result.getOrNull(), "single-track fast-path failed: ${result.exceptionOrNull()}")
     }

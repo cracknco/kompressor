@@ -262,9 +262,18 @@ internal class IosAudioCompressor : AudioCompressor {
  * single audible track into AAC-LC M4A with Apple's internal defaults (the same reason the
  * rest of the config must stay at defaults: the preset ignores user-supplied bitrate /
  * sampleRate / channel settings).
+ *
+ * The predicate checks each non-`audioTrackIndex` field explicitly against its default. Adding
+ * a new field to [AudioCompressionConfig] without a matching clause here falls through as "not
+ * fast-path eligible" — the safer default than a structural `==` against a defaulted copy.
  */
-internal fun canUseAudioExportSession(config: AudioCompressionConfig): Boolean =
-    config == AudioCompressionConfig(audioTrackIndex = config.audioTrackIndex)
+internal fun canUseAudioExportSession(config: AudioCompressionConfig): Boolean {
+    val defaults = AudioCompressionConfig()
+    return config.bitrate == defaults.bitrate &&
+        config.sampleRate == defaults.sampleRate &&
+        config.channels == defaults.channels
+    // audioTrackIndex intentionally unchecked — the fast path honours any value via AVMutableAudioMix.
+}
 
 /**
  * Conservative per-channel linear pre-check for the bitrate / sample-rate / channel
@@ -533,7 +542,6 @@ private class IosExportSessionPipeline(
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
 
-    @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
         val asset = AVURLAsset(uRL = inputUrl, options = null)
         val session = AVAssetExportSession.exportSessionWithAsset(
@@ -568,17 +576,21 @@ private class IosExportSessionPipeline(
      * contract — an absent [AVMutableAudioMixInputParameters] entry means "full volume" — is
      * replaced by an explicit, regression-proof parameter set.
      *
-     * `audioTracks` is an `NSArray<AVAssetTrack>` bridged to `List<Any?>` — we cast each element
-     * as the underlying value is always `AVAssetTrack` when obtained from
-     * `tracksWithMediaType(AVMediaTypeAudio)`.
+     * `audioTracks` is an `NSArray<AVAssetTrack>` bridged to `List<Any?>`. Every element obtained
+     * via `tracksWithMediaType(AVMediaTypeAudio)` is documented to be an [AVAssetTrack]; a null
+     * cast here represents either a corrupt asset or a K/N bridge regression. Failing loudly
+     * protects the caller from a silent mix where unparametered tracks default to full volume
+     * and the selected track's dominance is silently weakened.
      */
-    @Suppress("UNCHECKED_CAST")
     private fun buildTrackSelectionAudioMix(
         audioTracks: List<*>,
         selectedIndex: Int,
     ): AVMutableAudioMix {
-        val params = audioTracks.mapIndexedNotNull { index, track ->
-            val assetTrack = track as? AVAssetTrack ?: return@mapIndexedNotNull null
+        val params = audioTracks.mapIndexed { index, track ->
+            val assetTrack = checkNotNull(track as? AVAssetTrack) {
+                "AVMediaTypeAudio track at index $index was not AVAssetTrack: " +
+                    (track?.let { it::class.simpleName } ?: "null")
+            }
             AVMutableAudioMixInputParameters.audioMixInputParametersWithTrack(assetTrack).apply {
                 setVolume(
                     if (index == selectedIndex) 1.0f else 0.0f,
