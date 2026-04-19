@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **video (Android):** harden the HDR10 / HEVC Main10 active probe against empty-drain false-negatives (`Hdr10HevcProbe`, CRA-88 follow-up to CRA-20). Replaces the original single-frame-with-EOS protocol — which queued `BUFFER_FLAG_END_OF_STREAM` on the very first (and only) input buffer, triggering an empty output drain on several OMX/Codec2 encoders that need at least one non-EOS frame to bootstrap their lookahead buffer — with a two-frame protocol: queue one priming (non-EOS) P010 frame, drain, and only feed a second EOS-flagged frame when the encoder signals `INFO_TRY_AGAIN_LATER`. Also bumps the probe input dimensions from 1×1 to 16×16 to clear a separate compat class of OEM encoders that reject sub-16px inputs outright. Observable API unchanged — this is a reliability fix hiding behind `probeHdr10HevcSupport()`; devices that were caching a false-negative will re-probe automatically on their next firmware bump via the existing `Build.VERSION.INCREMENTAL` cache key. Docs updated in `docs/guides/probe-and-compatibility.mdx` [CRA-88]
 * **ci:** add `CUSTOMER_ARTIFACT` type to Device Farm artifact download in `ios-audio-characterization.yml` and unzip before scanning — XCTAttachments are packaged inside CUSTOMER_ARTIFACT zips, not as FILE type [CRA-82]
 
 ### Added

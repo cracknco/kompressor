@@ -29,9 +29,11 @@ import co.crackn.kompressor.KompressorContext
  *
  * ## Cost + caching
  *
- * An active probe allocates a MediaCodec instance, calls `configure` + `start`, feeds one P010
- * frame, drains one output buffer, and tears down — ~100–300 ms on real devices. Not free.
- * Results are invariant for the life of a firmware so we cache them in [SHARED_PREFS_NAME]
+ * An active probe allocates a MediaCodec instance, calls `configure` + `start`, runs the
+ * two-frame protocol (prime with a non-EOS P010 frame, then close with an EOS frame if the
+ * encoder signals `INFO_TRY_AGAIN_LATER` — see [drainTwoFrameProtocol] for the full reasoning
+ * behind CRA-88), drains one output buffer, and tears down — ~100–300 ms on real devices. Not
+ * free. Results are invariant for the life of a firmware so we cache them in [SHARED_PREFS_NAME]
  * keyed by `Build.MODEL + codecName`. A firmware update changes at least one of those (the
  * encoder's soname bumps on major AOSP rebases), which naturally invalidates the cache.
  *
@@ -176,8 +178,13 @@ internal object Hdr10HevcProbe {
 
     /**
      * Allocate the specific [codecName], configure it for HEVC Main10 at [PROBE_DIM]×[PROBE_DIM]
-     * with P010 colour format and BT.2020 + ST 2084 (PQ) colour metadata, queue one blank P010
-     * frame, and drain until we see either the output format change or the first encoded frame.
+     * with P010 colour format and BT.2020 + ST 2084 (PQ) colour metadata, and probe via the
+     * **two-frame protocol**: queue one non-EOS P010 frame, drain, and only feed a second
+     * EOS-flagged frame when the encoder signals `INFO_TRY_AGAIN_LATER`. See
+     * [drainTwoFrameProtocol] for the detailed rationale — in short, queuing EOS on the very
+     * first input buffer (CRA-20's original single-frame protocol) triggered empty-drain
+     * false-negatives on several OMX/Codec2 encoders that need at least one non-EOS frame to
+     * bootstrap their lookahead buffer (CRA-88).
      *
      * Any thrown exception below this function is the signal we're after — it means the
      * advertised capability is a lie and HDR10 export would crash mid-pipeline. `finally` is
@@ -190,7 +197,7 @@ internal object Hdr10HevcProbe {
             codec = MediaCodec.createByCodecName(codecName)
             codec.configure(buildProbeFormat(), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             codec.start()
-            executeProbeFrame(codec, codecName)
+            executeProbe(codec, codecName)
         } catch (ce: MediaCodec.CodecException) {
             Outcome(false, codecName, "MediaCodec.CodecException: ${ce.message ?: ce::class.simpleName}")
         } catch (iae: IllegalArgumentException) {
@@ -209,11 +216,11 @@ internal object Hdr10HevcProbe {
         }
     }
 
-    private fun executeProbeFrame(codec: MediaCodec, codecName: String): Outcome {
-        if (!feedOneProbeFrame(codec)) {
-            return Outcome(false, codecName, "MediaCodec.dequeueInputBuffer timed out for HDR10 probe frame")
+    private fun executeProbe(codec: MediaCodec, codecName: String): Outcome {
+        if (!feedProbeFrame(codec, endOfStream = false)) {
+            return Outcome(false, codecName, "MediaCodec.dequeueInputBuffer timed out for first HDR10 probe frame")
         }
-        val failReason = drainOneOutputOrFormat(codec)
+        val failReason = drainTwoFrameProtocol(codec)
         return if (failReason == null) {
             Outcome(true, codecName, PROBE_OK)
         } else {
@@ -234,64 +241,105 @@ internal object Hdr10HevcProbe {
         setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
     }
 
+    /**
+     * Queue one zeroed P010 frame into the encoder's next input buffer. Returns `false` when
+     * the input queue is still full after [PROBE_TIMEOUT_US] — the caller treats that as a
+     * timeout and fails the probe rather than blocking indefinitely. [endOfStream] selects
+     * between the priming frame (no flags, keeps the encoder draining) and the closing frame
+     * (`BUFFER_FLAG_END_OF_STREAM`, forces the encoder to flush any buffered output).
+     *
+     * The two-frame protocol (CRA-88) specifically separates these two calls: some OMX /
+     * Codec2 encoders need at least one non-EOS frame to bootstrap their internal lookahead
+     * buffer before they can emit either `INFO_OUTPUT_FORMAT_CHANGED` or a real output frame.
+     * Queuing EOS on the first (and only) input buffer — CRA-20's original protocol — caused
+     * empty-drain false-negatives on that compat class.
+     */
     @Suppress("ReturnCount") // Two early exits map to distinct MediaCodec "not ready" states.
-    private fun feedOneProbeFrame(codec: MediaCodec): Boolean {
+    private fun feedProbeFrame(codec: MediaCodec, endOfStream: Boolean): Boolean {
         val inputIdx = codec.dequeueInputBuffer(PROBE_TIMEOUT_US)
         if (inputIdx < 0) return false
         val input = codec.getInputBuffer(inputIdx) ?: return false
         // P010 layout: Y plane (2 bytes/pixel) then interleaved UV at half resolution, also
-        // 2 bytes/pixel → total bytes = width * height * 3. A 1×1 frame needs 3 bytes; we
+        // 2 bytes/pixel → total bytes = width * height * 3. A 16×16 frame needs 768 bytes; we
         // zero them so the encoder sees black-at-PQ-reference. Many OEM encoders round the
         // working buffer up to a tile size so we also write up to `input.capacity()` if it's
-        // larger than our 3-byte payload.
+        // larger than our payload.
         val payload = PROBE_DIM * PROBE_DIM * P010_BYTES_PER_PIXEL
         input.clear()
         val bytesToWrite = minOf(payload, input.capacity())
         repeat(bytesToWrite) { input.put(0) }
-        codec.queueInputBuffer(inputIdx, 0, bytesToWrite, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+        val flags = if (endOfStream) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
+        // Stage the second frame 1/[PROBE_FRAMERATE]s after the first so encoders that gate
+        // output on a non-zero PTS delta still produce output on the two-frame protocol.
+        val ptsUs = if (endOfStream) SECOND_FRAME_PTS_US else 0L
+        codec.queueInputBuffer(inputIdx, 0, bytesToWrite, ptsUs, flags)
         return true
     }
 
     /**
-     * Drain the encoder until we see either the first output buffer (success — encoder
-     * honoured the HDR10 format) or the output format changes with a Main10 profile (also
-     * success — the encoder committed to Main10 parameters). Returns `null` on success, or a
-     * failure-reason string on timeout or on a silent downgrade to an 8-bit profile.
+     * Drain the encoder under the **two-frame protocol** (CRA-88).
      *
-     * The `INFO_OUTPUT_FORMAT_CHANGED` + profile-inspection path catches the narrow but real
-     * class of OEM encoders that accept a Main10 `configure()`, don't throw, but silently
-     * republish a Main (8-bit) profile at output time — without the profile check, those
-     * devices would cache `supported = true` and then produce 8-bit output at real export
-     * time (losing HDR10 without telling the caller).
+     * The caller has already queued the first (non-EOS) P010 frame. We then loop on
+     * `dequeueOutputBuffer`:
+     *  * `outputIdx >= 0` → first encoded frame emitted. Success — the encoder honoured the
+     *    HDR10 format end-to-end.
+     *  * `INFO_OUTPUT_FORMAT_CHANGED` → the encoder has committed to a profile. Inspect it:
+     *    success if it's in [main10Profiles], failure-with-reason if the encoder silently
+     *    downgraded to 8-bit. Catches the narrow compat class of encoders that accept a
+     *    Main10 `configure()` without throwing but republish a Main (8-bit) profile at
+     *    output time — without this check those devices would cache `supported = true` and
+     *    then lose HDR10 at real export time.
+     *  * `INFO_TRY_AGAIN_LATER` → the encoder hasn't produced output yet. If we haven't
+     *    queued the EOS frame, do so now. This is the core of the CRA-88 fix: several
+     *    OMX/Codec2 encoders need two inputs (one priming, one closing) before they emit
+     *    anything; queuing EOS on the first buffer produced an empty drain under
+     *    [DRAIN_OVERALL_TIMEOUT_NANOS] and cached a false-negative.
+     *
+     * Returns `null` on success or a failure-reason string on timeout / profile downgrade.
      */
     // Suppresses DEPRECATION for INFO_OUTPUT_BUFFERS_CHANGED — deprecated but still
-    // surfaces on some pre-API-34 devices, so we handle it explicitly.
-    @Suppress("DEPRECATION")
-    private fun drainOneOutputOrFormat(codec: MediaCodec): String? {
+    // surfaces on some pre-API-34 devices, so we handle it explicitly (by ignoring it).
+    @Suppress("DEPRECATION", "ReturnCount")
+    private fun drainTwoFrameProtocol(codec: MediaCodec): String? {
         val deadline = System.nanoTime() + DRAIN_OVERALL_TIMEOUT_NANOS
         val info = MediaCodec.BufferInfo()
-        var done = false
-        var failReason: String? = null
-        while (!done && System.nanoTime() < deadline) {
+        var eosFed = false
+        while (System.nanoTime() < deadline) {
             val outputIdx = codec.dequeueOutputBuffer(info, PROBE_TIMEOUT_US)
             when {
                 outputIdx >= 0 -> {
                     codec.releaseOutputBuffer(outputIdx, false)
-                    done = true
+                    return null
                 }
-                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    val negotiated = codec.outputFormat.getInteger(MediaFormat.KEY_PROFILE, -1)
-                    done = true
-                    if (negotiated !in main10Profiles) {
-                        failReason = "encoder downgraded output to non-Main10 profile $negotiated"
+                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> return inspectFormatChange(codec)
+                outputIdx == MediaCodec.INFO_TRY_AGAIN_LATER && !eosFed -> {
+                    // Second-frame trigger: first frame didn't produce output on its own, so
+                    // close the stream with an EOS-flagged frame so the encoder flushes.
+                    if (!feedProbeFrame(codec, endOfStream = true)) {
+                        return "MediaCodec.dequeueInputBuffer timed out for HDR10 EOS probe frame"
                     }
+                    eosFed = true
                 }
-                // INFO_TRY_AGAIN_LATER, INFO_OUTPUT_BUFFERS_CHANGED, any other transient signal → keep draining.
+                // INFO_OUTPUT_BUFFERS_CHANGED (deprecated, legacy pre-API-34) and further
+                // INFO_TRY_AGAIN_LATER while draining for the EOS frame → keep looping.
             }
         }
-        return when {
-            !done -> "encoder consumed P010 input but produced no output within ${PROBE_TIMEOUT_US}us"
-            else -> failReason
+        return "encoder consumed P010 input but produced no output within " +
+            "${DRAIN_OVERALL_TIMEOUT_NANOS / NANOS_PER_MILLI}ms"
+    }
+
+    /**
+     * Inspect the negotiated output format on `INFO_OUTPUT_FORMAT_CHANGED`. A Main10-family
+     * profile means the encoder committed to HDR10 parameters — success, even before the
+     * first output buffer lands. Any other profile is a silent 8-bit downgrade and we fail
+     * the probe with a specific reason so the cached negative is actionable in bug reports.
+     */
+    private fun inspectFormatChange(codec: MediaCodec): String? {
+        val negotiated = codec.outputFormat.getInteger(MediaFormat.KEY_PROFILE, -1)
+        return if (negotiated in main10Profiles) {
+            null
+        } else {
+            "encoder downgraded output to non-Main10 profile $negotiated"
         }
     }
 
@@ -320,10 +368,12 @@ internal object Hdr10HevcProbe {
         "cached-unsupported (reason unknown — pre-upgrade cache entry; previous probe rejected encoder)"
     private const val PROBE_OK = "active probe succeeded"
 
-    // 1×1 matches the ticket DoD; a few OEM encoders reject sub-16px inputs so if a future
-    // compat report shows noise here, bump to PROBE_DIM = 16 (still orders of magnitude
-    // smaller than any real HDR10 frame and invariant to the capability we're testing).
-    private const val PROBE_DIM = 1
+    // 16×16 — CRA-88 bumped up from the original 1×1 because a few OEM encoders reject
+    // sub-16px inputs outright (one of two distinct compat classes flagged in peer review of
+    // PR #120). 16 is the smallest dimension that satisfies every encoder we've seen in
+    // Firebase Test Lab matrix runs, and is still orders of magnitude smaller than any real
+    // HDR10 frame — invariant to the capability we're testing.
+    private const val PROBE_DIM = 16
     private const val PROBE_BITRATE = 64_000
     private const val PROBE_FRAMERATE = 30
 
@@ -333,6 +383,12 @@ internal object Hdr10HevcProbe {
     private const val P010_BYTES_PER_PIXEL = 3
     private const val PROBE_TIMEOUT_US = 50_000L
     private const val DRAIN_OVERALL_TIMEOUT_NANOS = 2_000_000_000L // 2s hard ceiling
+    private const val NANOS_PER_MILLI = 1_000_000L
+
+    // Second-frame PTS = 1/PROBE_FRAMERATE seconds, rounded down. Matches the configured
+    // framerate so encoders that validate monotonic PTS deltas see a sensible gap between
+    // priming and EOS frames. 33_333 µs = 1_000_000L / 30 fps.
+    private const val SECOND_FRAME_PTS_US = 33_333L
 }
 
 /**
