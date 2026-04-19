@@ -101,7 +101,7 @@ internal class AndroidVideoCompressor(
         // Pre-flight HDR10: if the device cannot encode HEVC Main10 HDR10, fail fast with a
         // typed error rather than crashing deep in the Media3 encoder selection.
         if (config.dynamicRange == DynamicRange.HDR10) {
-            withContext(Dispatchers.IO) { requireHdr10Hevc(config.codec) }
+            withContext(Dispatchers.IO) { requireHdr10Hevc() }
         }
         // Single probe pass — opening two separate MediaExtractor / MediaMetadataRetriever
         // sessions on the same source was doing the same native setDataSource work twice.
@@ -213,11 +213,15 @@ internal class AndroidVideoCompressor(
      * Both failure modes raise the typed [VideoCompressionError.Hdr10NotSupported] so callers
      * see a consistent subtype they can `when`-branch on to offer an SDR fallback.
      */
-    private fun requireHdr10Hevc(codec: VideoCodec) {
+    private fun requireHdr10Hevc() {
         if (!deviceSupportsHdr10Hevc()) {
             throw VideoCompressionError.Hdr10NotSupported(
                 device = android.os.Build.MODEL,
-                codec = codec.name,
+                // No concrete MediaCodec component was retained by the capability gate, so
+                // surface the shared marker (rather than the `VideoCodec` enum value, which
+                // would drift from the canonical MediaCodec names the active-probe branch
+                // reports — see CodeRabbit review on PR #120).
+                codec = Hdr10HevcProbe.NO_MAIN10_CODEC,
                 reason = "MediaCodecList reports no HEVC encoder with Main10 + FEATURE_HdrEditing " +
                     "on API ${android.os.Build.VERSION.SDK_INT}",
             )

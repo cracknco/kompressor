@@ -42,9 +42,10 @@ import co.crackn.kompressor.KompressorContext
 internal object Hdr10HevcProbe {
 
     /**
-     * Active-probe outcome. [supported] is the only value stored in SharedPreferences;
-     * [codecName] and [reason] are captured at probe time for the typed-error message and
-     * regenerated with a generic reason on cache hits (see [probe]).
+     * Active-probe outcome. [supported] and [reason] are persisted in SharedPreferences so that
+     * cached-negative verdicts retain the specific failure reason (e.g. "configure() threw
+     * IllegalArgumentException: …") rather than regressing to a generic "cached-unsupported"
+     * string. [codecName] is re-derived from the capability matrix on cache hits.
      */
     internal data class Outcome(
         val supported: Boolean,
@@ -61,9 +62,26 @@ internal object Hdr10HevcProbe {
      * on devices whose `MediaCodecList` does not advertise HEVC Main10 + `FEATURE_HdrEditing`
      * at all, so we never pay the 100–300 ms encoder-alloc cost on devices we already know
      * can't do HDR10.
+     *
+     * The body is wrapped in a catch-all so that an unexpected throw from
+     * [MediaCodecList] construction — rare but observed on some OEM `mediaserver` variants
+     * immediately post-boot — never escapes as an untyped `RuntimeException`, honouring the
+     * `AndroidVideoCompressor.requireHdr10Hevc` contract that HDR10 failures always surface
+     * as a typed [VideoCompressionError.Hdr10NotSupported].
      */
+    @Suppress("TooGenericExceptionCaught")
+    fun probe(context: Context = KompressorContext.appContext): Outcome = try {
+        probeInternal(context)
+    } catch (t: Throwable) {
+        Outcome(
+            supported = false,
+            codecName = NO_MAIN10_CODEC,
+            reason = "probe threw ${t::class.simpleName}: ${t.message ?: "no message"}",
+        )
+    }
+
     @Suppress("ReturnCount") // Each early return encodes a distinct no-support reason for the typed error.
-    fun probe(context: Context = KompressorContext.appContext): Outcome {
+    private fun probeInternal(context: Context): Outcome {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return Outcome(
                 supported = false,
@@ -78,17 +96,18 @@ internal object Hdr10HevcProbe {
                 reason = "no HEVC encoder on this device advertises Main10 + FEATURE_HdrEditing",
             )
         val cacheKey = cacheKey(candidate)
-        val cached = readCache(context, cacheKey)
-        if (cached != null) {
-            return Outcome(
-                supported = cached,
-                codecName = candidate,
-                reason = if (cached) CACHE_HIT_OK else CACHE_HIT_FAILED,
-            )
+        readCache(context, cacheKey, candidate)?.let { return it }
+        // Serialize the first-run miss per-process so two concurrent HDR10 `compress()` calls
+        // don't both pay the 100–300 ms encoder-alloc cost, and — more importantly — don't
+        // race on OEM encoders that refuse a second concurrent Main10 instance (a race here
+        // can cache a false-negative forever).
+        return synchronized(probeLock) {
+            readCache(context, cacheKey, candidate) ?: run {
+                val outcome = runActiveProbe(candidate)
+                writeCache(context, cacheKey, outcome)
+                outcome
+            }
         }
-        val outcome = runActiveProbe(candidate)
-        writeCache(context, cacheKey, outcome.supported)
-        return outcome
     }
 
     /**
@@ -109,17 +128,27 @@ internal object Hdr10HevcProbe {
             .apply()
     }
 
-    private fun cacheKey(codecName: String): String = "${Build.MODEL}|$codecName"
+    // Cache key includes `Build.VERSION.INCREMENTAL` so OEM OTAs that patch an encoder in place
+    // (e.g. Samsung monthly security patches that update `c2.qcom.video.encoder.hevc` without
+    // bumping MODEL) invalidate the cache and re-probe once, rather than permanently locking
+    // the device to a stale-negative verdict from pre-fix firmware.
+    private fun cacheKey(codecName: String): String =
+        "${Build.MODEL}|${Build.VERSION.INCREMENTAL}|$codecName"
 
-    private fun readCache(context: Context, key: String): Boolean? {
+    private fun readCache(context: Context, key: String, codecName: String): Outcome? {
         val prefs = context.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)
-        return if (prefs.contains(key)) prefs.getBoolean(key, false) else null
+        if (!prefs.contains(key)) return null
+        val supported = prefs.getBoolean(key, false)
+        val reason = prefs.getString(key + REASON_KEY_SUFFIX, null)
+            ?: if (supported) CACHE_HIT_OK else CACHE_HIT_FAILED
+        return Outcome(supported, codecName, reason)
     }
 
-    private fun writeCache(context: Context, key: String, supported: Boolean) {
+    private fun writeCache(context: Context, key: String, outcome: Outcome) {
         context.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putBoolean(key, supported)
+            .putBoolean(key, outcome.supported)
+            .putString(key + REASON_KEY_SUFFIX, outcome.reason)
             .apply()
     }
 
@@ -131,13 +160,8 @@ internal object Hdr10HevcProbe {
      * the specific component rather than relying on `createEncoderByType`'s vendor-preferred
      * ordering (which can silently pick a different codec than the one we advertised).
      */
-    private fun pickHevcMain10Encoder(): String? {
-        val main10Profiles = setOf(
-            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
-            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
-            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
-        )
-        return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.asSequence()
+    private fun pickHevcMain10Encoder(): String? =
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.asSequence()
             .filter { it.isEncoder }
             .mapNotNull { info ->
                 val caps = runCatching { info.getCapabilitiesForType(MIME_HEVC) }.getOrNull()
@@ -149,7 +173,6 @@ internal object Hdr10HevcProbe {
                 if (hasMain10 && hasHdrEditing) info.name else null
             }
             .firstOrNull()
-    }
 
     /**
      * Allocate the specific [codecName], configure it for HEVC Main10 at [PROBE_DIM]×[PROBE_DIM]
@@ -190,14 +213,11 @@ internal object Hdr10HevcProbe {
         if (!feedOneProbeFrame(codec)) {
             return Outcome(false, codecName, "MediaCodec.dequeueInputBuffer timed out for HDR10 probe frame")
         }
-        return if (drainOneOutputOrFormat(codec)) {
+        val failReason = drainOneOutputOrFormat(codec)
+        return if (failReason == null) {
             Outcome(true, codecName, PROBE_OK)
         } else {
-            Outcome(
-                supported = false,
-                codecName = codecName,
-                reason = "encoder consumed P010 input but produced no output within ${PROBE_TIMEOUT_US}us",
-            )
+            Outcome(supported = false, codecName = codecName, reason = failReason)
         }
     }
 
@@ -234,37 +254,70 @@ internal object Hdr10HevcProbe {
 
     /**
      * Drain the encoder until we see either the first output buffer (success — encoder
-     * honoured the HDR10 format) or the output format changes (also success — the encoder
-     * decided on an output format that includes Main10 parameters). TRY_AGAIN_LATER or
-     * INFO_OUTPUT_BUFFERS_CHANGED loops continue until we see one of those terminal signals
-     * or hit the overall deadline.
+     * honoured the HDR10 format) or the output format changes with a Main10 profile (also
+     * success — the encoder committed to Main10 parameters). Returns `null` on success, or a
+     * failure-reason string on timeout or on a silent downgrade to an 8-bit profile.
+     *
+     * The `INFO_OUTPUT_FORMAT_CHANGED` + profile-inspection path catches the narrow but real
+     * class of OEM encoders that accept a Main10 `configure()`, don't throw, but silently
+     * republish a Main (8-bit) profile at output time — without the profile check, those
+     * devices would cache `supported = true` and then produce 8-bit output at real export
+     * time (losing HDR10 without telling the caller).
      */
     // Suppresses DEPRECATION for INFO_OUTPUT_BUFFERS_CHANGED — deprecated but still
     // surfaces on some pre-API-34 devices, so we handle it explicitly.
     @Suppress("DEPRECATION")
-    private fun drainOneOutputOrFormat(codec: MediaCodec): Boolean {
+    private fun drainOneOutputOrFormat(codec: MediaCodec): String? {
         val deadline = System.nanoTime() + DRAIN_OVERALL_TIMEOUT_NANOS
         val info = MediaCodec.BufferInfo()
-        var seenTerminal = false
-        while (!seenTerminal && System.nanoTime() < deadline) {
+        var done = false
+        var failReason: String? = null
+        while (!done && System.nanoTime() < deadline) {
             val outputIdx = codec.dequeueOutputBuffer(info, PROBE_TIMEOUT_US)
-            seenTerminal = when {
+            when {
                 outputIdx >= 0 -> {
                     codec.releaseOutputBuffer(outputIdx, false)
-                    true
+                    done = true
                 }
-                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> true
-                else -> false // INFO_TRY_AGAIN_LATER, INFO_OUTPUT_BUFFERS_CHANGED, and any other transient signal.
+                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    val negotiated = codec.outputFormat.getInteger(MediaFormat.KEY_PROFILE, -1)
+                    done = true
+                    if (negotiated !in main10Profiles) {
+                        failReason = "encoder downgraded output to non-Main10 profile $negotiated"
+                    }
+                }
+                // INFO_TRY_AGAIN_LATER, INFO_OUTPUT_BUFFERS_CHANGED, any other transient signal → keep draining.
             }
         }
-        return seenTerminal
+        return when {
+            !done -> "encoder consumed P010 input but produced no output within ${PROBE_TIMEOUT_US}us"
+            else -> failReason
+        }
     }
 
+    private val probeLock = Any()
+
+    private val main10Profiles = setOf(
+        MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
+        MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
+        MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+    )
+
     private const val SHARED_PREFS_NAME = "co.crackn.kompressor.hdr10"
+    private const val REASON_KEY_SUFFIX = "|reason"
     private const val MIME_HEVC = "video/hevc"
-    private const val NO_MAIN10_CODEC = "<none>"
-    private const val CACHE_HIT_OK = "cached-supported"
-    private const val CACHE_HIT_FAILED = "cached-unsupported"
+
+    /**
+     * Marker used for [Outcome.codecName] / [VideoCompressionError.Hdr10NotSupported.codec]
+     * when the device never even advertised a Main10 HEVC encoder, so there is no concrete
+     * codec name to report. Consumed by [AndroidVideoCompressor.requireHdr10Hevc] — keeping
+     * the field format consistent across the capability-gate and active-probe error paths.
+     */
+    internal const val NO_MAIN10_CODEC = "<no-main10-encoder>"
+
+    private const val CACHE_HIT_OK = "cached-supported (reason unknown — pre-upgrade cache entry)"
+    private const val CACHE_HIT_FAILED =
+        "cached-unsupported (reason unknown — pre-upgrade cache entry; previous probe rejected encoder)"
     private const val PROBE_OK = "active probe succeeded"
 
     // 1×1 matches the ticket DoD; a few OEM encoders reject sub-16px inputs so if a future
