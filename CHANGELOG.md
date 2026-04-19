@@ -5,72 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0](https://github.com/cracknco/kompressor/compare/v1.0.0...v1.1.0) (2026-04-19)
-
-### Added
-
-* **api:** gate pre-1.0 incubating surface with @ExperimentalKompressorApi [CRA-16] ([8cdfb22](https://github.com/cracknco/kompressor/commit/8cdfb22e2143a3f5fa2f62e4344d28af59b63c70))
-* **audio/ios:** encode empirical mono-at-44.1k AAC-LC cap from Device Farm [CRA-78] ([c362ac0](https://github.com/cracknco/kompressor/commit/c362ac0c53325aa654c911e91ca39dceeced6c81)), closes [#93](https://github.com/cracknco/kompressor/issues/93) [#93](https://github.com/cracknco/kompressor/issues/93) [#97](https://github.com/cracknco/kompressor/issues/97) [#99](https://github.com/cracknco/kompressor/issues/99)
-* **ci:** add iOS device smoke tests via Firebase Test Lab [CRA-7] ([7e593ed](https://github.com/cracknco/kompressor/commit/7e593eda845c952da75fb7f94813e8501f01b60d))
-* **ci:** publish CycloneDX 1.5 SBOM as release asset [CRA-27] ([#101](https://github.com/cracknco/kompressor/issues/101)) ([37ca59d](https://github.com/cracknco/kompressor/commit/37ca59dd5471b9c1fe2ef86f7bba3ca85470bd07))
-* **image:** modern-input format expansion phase 1 — HEIC/HEIF, AVIF, DNG [CRA-72] ([24acfd1](https://github.com/cracknco/kompressor/commit/24acfd1d2e34db72c0674dc3165f409a3d2fd372))
-* **kompressor:** add device-only HDR10 + surround audio round-trip tests [CRA-7] ([cdc8901](https://github.com/cracknco/kompressor/commit/cdc8901bc07886c0a37a9fb9aa2e990612454f98))
-* **license:** add license audit with dependency-license-report and SPDX [CRA-26] ([c69eb65](https://github.com/cracknco/kompressor/commit/c69eb6574b261c224f5c0e24e96368d7b6fea4ce))
-
-### Fixed
-
-* **audio:** reject surround AAC on iOS + fix Device Farm artifact extraction [CRA-82] ([4f291a1](https://github.com/cracknco/kompressor/commit/4f291a176ac0b7e711c48e38df8e601925f27a45))
-* **ci:** add -ObjC linker flag for KMP static framework in FTL host app [CRA-7] ([db2a437](https://github.com/cracknco/kompressor/commit/db2a4372af3ec82413047eccec63c4641387076c))
-* **ci:** add embed: false on SmokeTests framework dep — static framework stub crashes FTL [CRA-7] ([0cbbc20](https://github.com/cracknco/kompressor/commit/0cbbc206e20f68cfd1f55a579bbeb5bdb67c40ea))
-* **ci:** add sanity test + keep debug.dylib in FTL zip [CRA-7] ([faea5bc](https://github.com/cracknco/kompressor/commit/faea5bce388867eb85a2b361c2a27fc14ac431ea))
-* **ci:** add UILaunchStoryboardName + orientations to host app for FTL [CRA-7] ([7e35391](https://github.com/cracknco/kompressor/commit/7e35391ad4f99302784d04184582f4834b016447))
-* **ci:** align Xcode bundle IDs with existing provisioning profile [CRA-7] ([9fa9724](https://github.com/cracknco/kompressor/commit/9fa9724c0253351562e787677594f41d2da58928))
-* **ci:** auto-detect FTL iOS version instead of hardcoding [CRA-7] ([bd05d10](https://github.com/cracknco/kompressor/commit/bd05d104c199c150231ec9a7e4aa5a15a9e33b40))
-* **ci:** download all FTL artifacts + dump syslog for crash diagnosis [CRA-7] ([016df15](https://github.com/cracknco/kompressor/commit/016df15bd4e7fe1789f62342f870b09cfe1e10d6))
-* **ci:** dynamic FTL device discovery + explicit xctest type [CRA-7] ([4da6baa](https://github.com/cracknco/kompressor/commit/4da6baab18723544fd2cd5290dc0fd67be3e5719))
-* **ci:** extract provisioning profile UUID and pin it on xcodebuild [CRA-7] ([1da6050](https://github.com/cracknco/kompressor/commit/1da6050373a7e71f6d0aa069c2ab8f9e02bd8d43))
-* **ci:** improve XcodeGen project config and Info.plist structure [CRA-7] ([fec9ded](https://github.com/cracknco/kompressor/commit/fec9dedc0cc54e4dc6e8fad16a81d8a10a0d82a5))
-* **ci:** make MOBILE_CI_BUDGET_MONTH configurable via repo variable [CRA-7] ([9a7de0c](https://github.com/cracknco/kompressor/commit/9a7de0cabda11eed431b63c475b051748e1cd647))
-* **ci:** remove CODE_SIGNING_ALLOWED=NO to enable ad-hoc signing for FTL [CRA-7] ([7d5736c](https://github.com/cracknco/kompressor/commit/7d5736cb638f195b9f6d3773fd2b7395d1f06349))
-* **ci:** remove duplicate static framework link from test target [CRA-7] ([fcfdb02](https://github.com/cracknco/kompressor/commit/fcfdb0264d2d5a4058cd631d1a2a74b078f50a18))
-* **ci:** remove force-unwrap in Mp4Fixture pixel buffer pool [CRA-7] ([d44ff3b](https://github.com/cracknco/kompressor/commit/d44ff3b317949bfac2c3a659a34c3e1794d31279))
-* **ci:** revert to FTL iphone14pro@16.6 — catalog confirms it's the only version [CRA-7] ([c82cc13](https://github.com/cracknco/kompressor/commit/c82cc131d418811964fffd1005edd56f53b83bda))
-* **ci:** strip unsigned dylibs from FTL zip — fixes Infrastructure failure [CRA-7] ([9f6a575](https://github.com/cracknco/kompressor/commit/9f6a575469baf613f8903e132a348de992c7cde7))
-* **ci:** surface Device Farm upload errors instead of swallowing them [CRA-7] ([4c67c68](https://github.com/cracknco/kompressor/commit/4c67c6840b5265baa325a523edce0bd51c31efcf))
-* **ci:** switch FTL device from iOS 16.6 to 17.5 — 16.6 removed from device pool [CRA-7] ([f036217](https://github.com/cracknco/kompressor/commit/f036217c6646da8109118741fceb557dcf993969))
-* **ci:** switch FTL device from iOS 16.6 to 17.5 — 16.6 removed from pool [CRA-7] ([dda1c7e](https://github.com/cracknco/kompressor/commit/dda1c7eacf168d613ece1120d2d9ea35e4a51db2))
-* **ci:** switch FTL device from iOS 17.5 to 17.4 — 17.5 not in FTL catalog [CRA-7] ([920739b](https://github.com/cracknco/kompressor/commit/920739b18af2d9b67d2f1c688573f3e2fcdc39e4))
-* **ci:** switch FTL to iPhone 16 Pro iOS 18.3 — iphone14pro has persistent failures [CRA-7] ([6ef4b30](https://github.com/cracknco/kompressor/commit/6ef4b305bd5be236ad155160daeea72a17c741a8))
-* **ci:** try iPhone 15 Pro first — 16 Pro has persistent FTL issues [CRA-7] ([dfab11e](https://github.com/cracknco/kompressor/commit/dfab11e234e3096493e2576bb885345c84de4679))
-* **ci:** update job name to match device model (iPhone 14 Pro) [CRA-7] ([664df04](https://github.com/cracknco/kompressor/commit/664df04f94124d5f576fcdf306f702bcea9817a4))
-* **ci:** update workflow comments to match iphone14pro device + remove stale gitignore [CRA-7] ([b379b70](https://github.com/cracknco/kompressor/commit/b379b708fb8009819941cec1ebda7921583852f0))
-* **ci:** use CODE_SIGNING_ALLOWED=NO — Xcode 16.4 blocks ad-hoc signing [CRA-7] ([697acfa](https://github.com/cracknco/kompressor/commit/697acfadbd96f0cbceccdcdbb7ab5eb72647cd70))
-* **ci:** use correct Swift-bridged names in XCTest wrappers, gitignore xcodeproj [CRA-7] ([397d791](https://github.com/cracknco/kompressor/commit/397d7910fa395356143b86906ce7bc489c5a6fc8))
-* **ci:** use Debug build products path in FTL zip packaging [CRA-7] ([d126079](https://github.com/cracknco/kompressor/commit/d1260793ce7370a72879ec03df41cf6f854be335))
-* **ci:** use embed: false for static KMP framework in XcodeGen spec [CRA-7] ([8443eb3](https://github.com/cracknco/kompressor/commit/8443eb3ab88207fc59191bf21910f23997a02c28))
-* **ci:** use iPhone SE 3 as primary FTL device — 16 Pro pool unreliable [CRA-7] ([365537b](https://github.com/cracknco/kompressor/commit/365537b957e78247f6c818ffb41d896d82db83dd))
-* **ci:** use iphone14pro in FTL — iphone13pro was deprecated [CRA-7] ([ddf8d1f](https://github.com/cracknco/kompressor/commit/ddf8d1fcb71994292c3da647bdf46a433a808ae6))
-* **ci:** zip .xctest bundle at archive root for Device Farm [CRA-7] ([3a85056](https://github.com/cracknco/kompressor/commit/3a85056c5a700def33445a2eb6b5c1d0d017098b))
-* **detekt:** drop TooGenericExceptionThrown violation in compressWorker [CRA-80] ([fcac40e](https://github.com/cracknco/kompressor/commit/fcac40e2eb5664bed1d8bbcb6cdba4100d0eb988))
-* **image:** address peer-review feedback on format matrix [CRA-72] ([e96aa87](https://github.com/cracknco/kompressor/commit/e96aa875afa2d926eea570aa237370819fee07bf))
-* **kompressor:** HDR10 + multichannel AAC encoding on real iOS devices [CRA-7] ([a251e0c](https://github.com/cracknco/kompressor/commit/a251e0cb2aae407b359bb0b87d2ba79a67a6ec07))
-* **kompressor:** increase HDR10 probe dimension to 64x64 + add diagnostics [CRA-7] ([38bac85](https://github.com/cracknco/kompressor/commit/38bac8549c39427ebf2e65fce510e64b7118c5a0))
-* **kompressor:** prevent NSException crash + proper HDR10 round-trip on real iOS devices [CRA-7] ([e4f6af3](https://github.com/cracknco/kompressor/commit/e4f6af39626b0d5395b13dda62092416e208868c))
-* **license:** address peer-review on PR [#79](https://github.com/cracknco/kompressor/issues/79) [CRA-26] ([7527796](https://github.com/cracknco/kompressor/commit/7527796fbf40a1a25a520cf1e3080880ac83f960))
-* resolve CHANGELOG.md merge conflict with main [CRA-7] ([77e31a7](https://github.com/cracknco/kompressor/commit/77e31a7793e6977d85da8fd2db547ad40fb31934))
-* **test:** address peer-review — surround round-trip tests + nits [CRA-82] ([e073b8e](https://github.com/cracknco/kompressor/commit/e073b8ec76af46710dc5008efd2a2d361c72f849))
-* **tests:** cast ObjC bridged Error to NSError for userInfo access [CRA-7] ([82b0b5f](https://github.com/cracknco/kompressor/commit/82b0b5f7a39b824cc32cd78862c4f1322aa25712))
-* **tests:** catch NSException via ObjC @try/[@catch](https://github.com/catch) for HDR10 fixture [CRA-7] ([1b208eb](https://github.com/cracknco/kompressor/commit/1b208eb947f628ec740406679d1cc23ae95abefc))
-* **tests:** fix ObjC bridging — NSError** becomes throws in Swift [CRA-7] ([7d1cca7](https://github.com/cracknco/kompressor/commit/7d1cca7bd04a6e95caf9706ac43e200e44cf3187))
-* **tests:** prevent NSException crash in HDR10 fixture on unsupported devices [CRA-7] ([9968dc5](https://github.com/cracknco/kompressor/commit/9968dc542aa58b7d533467d356a001acc3294e96))
-* **tests:** use SDR fixture for HDR10 test to avoid NSException crash [CRA-7] ([6b1d95a](https://github.com/cracknco/kompressor/commit/6b1d95a27620d407502caea76fca414efc7244bc))
-* **video:** catch ObjC NSException from AVAssetWriterInput via cinterop [CRA-7] ([fb2a1bf](https://github.com/cracknco/kompressor/commit/fb2a1bf8341f318e300c74c950942b07c194a36a))
-
-### Changed
-
-* **api:** retire single-value AudioCodec enum ([bee23b6](https://github.com/cracknco/kompressor/commit/bee23b61d21787c290d86a3fc6f5833d6166b275))
-* **api:** split CodecSupport into sealed Video + Audio variants ([473eb3e](https://github.com/cracknco/kompressor/commit/473eb3e9a49b4afc7c5d352911db2c1b701c9cae))
-* **ios:** extract shared NSError classification from error mappers ([80fd976](https://github.com/cracknco/kompressor/commit/80fd9761a1a62e86923926be0408ff041e6a1f45))
+> **Version drift reset (2026-04-19)** — the `v1.0.0` (2026-04-15) and `v1.1.0`
+> (2026-04-19) tags that semantic-release auto-created during pre-publication
+> development were deleted. No artefact corresponding to those tags ever
+> reached Maven Central. The next published release will be **`0.1.0`**,
+> tagged from the baseline `v0.0.0` (the repo's initial commit).
 
 ## [Unreleased]
 
