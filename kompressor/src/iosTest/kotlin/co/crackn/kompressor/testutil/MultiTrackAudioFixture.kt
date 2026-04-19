@@ -41,16 +41,25 @@ object MultiTrackAudioFixture {
     private const val SAMPLE_RATE = 44_100
 
     /**
-     * Create [outputPath] with one mono PCM audio track per entry in [trackFrequencies], each
-     * carrying the listed sine tone (Hz) for [durationSec] seconds.
+     * Create [outputPath] with one audio track per entry in [trackFrequencies], each carrying
+     * the listed sine tone (Hz) for [durationSec] seconds.
+     *
+     * [channelsPerTrack] controls per-track channel count. Defaults to 1 (mono) for backwards
+     * compatibility. When set to 2 (stereo), each track duplicates the same sine tone on both
+     * channels so mono downmix at read time still yields a clean single-frequency peak —
+     * required for Goertzel-based verification in the fast-path AVAudioMix tests where the
+     * caller's config is default STEREO and the upmix pre-flight would otherwise reject a
+     * mono source.
      */
     fun createMultiTrackAudioMp4(
         outputPath: String,
         durationSec: Int,
         trackFrequencies: List<Int>,
+        channelsPerTrack: Int = 1,
     ): String {
         require(durationSec > 0) { "durationSec must be > 0" }
         require(trackFrequencies.isNotEmpty()) { "at least one track required" }
+        require(channelsPerTrack in 1..2) { "channelsPerTrack must be 1 or 2, was $channelsPerTrack" }
 
         val tempDir = NSTemporaryDirectory() + "kompressor-multitrack-${NSUUID().UUIDString}/"
         NSFileManager.defaultManager.createDirectoryAtPath(
@@ -59,7 +68,7 @@ object MultiTrackAudioFixture {
         try {
             val singleTrackPaths = trackFrequencies.mapIndexed { idx, freq ->
                 val path = "$tempDir/track_$idx.wav"
-                writeSineMonoWav(path, freq.toDouble(), durationSec)
+                writeSineWav(path, freq.toDouble(), durationSec, channelsPerTrack)
                 path
             }
             composeMultiTrackMp4(outputPath, singleTrackPaths)
@@ -70,18 +79,82 @@ object MultiTrackAudioFixture {
     }
 
     /**
-     * Write [path] as a mono PCM RIFF/WAV carrying a sine wave at [freq] Hz for [durationSec]
-     * seconds. AVFoundation can open WAV files directly, and [WavGenerator] produces compliant
-     * headers, so this is the lowest-friction way to build a single-track audio asset.
+     * Write [path] as a PCM RIFF/WAV with [channels] channels carrying a sine wave at [freq] Hz
+     * for [durationSec] seconds. Each channel carries the SAME tone (not [WavGenerator]'s
+     * per-channel multiplier) so that a downstream mono downmix still dominates at [freq].
      */
-    private fun writeSineMonoWav(path: String, freq: Double, durationSec: Int) {
-        val bytes = WavGenerator.generateWavBytes(
-            durationSeconds = durationSec,
-            sampleRate = SAMPLE_RATE,
-            channels = 1,
-            toneFrequency = freq,
-        )
+    private fun writeSineWav(path: String, freq: Double, durationSec: Int, channels: Int) {
+        val bytes = if (channels == 1) {
+            WavGenerator.generateWavBytes(
+                durationSeconds = durationSec,
+                sampleRate = SAMPLE_RATE,
+                channels = 1,
+                toneFrequency = freq,
+            )
+        } else {
+            buildConstantToneStereoWav(freq, durationSec, SAMPLE_RATE)
+        }
         writeBytes(path, bytes)
+    }
+
+    /**
+     * Build a 16-bit stereo PCM RIFF/WAV where both channels carry the same sine wave at [freq]
+     * Hz. [WavGenerator] applies `freq * (ch + 1)` per channel, which is wrong for tests that
+     * rely on a single dominant frequency after mono downmix.
+     */
+    @Suppress("MagicNumber")
+    private fun buildConstantToneStereoWav(freq: Double, durationSec: Int, sampleRate: Int): ByteArray {
+        val channels = 2
+        val bitsPerSample = 16
+        val bytesPerSample = bitsPerSample / 8
+        val totalFrames = sampleRate * durationSec
+        val dataSize = totalFrames * channels * bytesPerSample
+        val headerSize = 44
+        val bytes = ByteArray(headerSize + dataSize)
+        // RIFF header
+        "RIFF".encodeInto(bytes, 0)
+        writeIntLE(bytes, 4, headerSize - 8 + dataSize)
+        "WAVE".encodeInto(bytes, 8)
+        "fmt ".encodeInto(bytes, 12)
+        writeIntLE(bytes, 16, 16) // PCM fmt chunk size
+        writeShortLE(bytes, 20, 1) // PCM format
+        writeShortLE(bytes, 22, channels)
+        writeIntLE(bytes, 24, sampleRate)
+        writeIntLE(bytes, 28, sampleRate * channels * bytesPerSample)
+        writeShortLE(bytes, 32, channels * bytesPerSample)
+        writeShortLE(bytes, 34, bitsPerSample)
+        "data".encodeInto(bytes, 36)
+        writeIntLE(bytes, 40, dataSize)
+        var offset = headerSize
+        for (i in 0 until totalFrames) {
+            val unit = kotlin.math.sin(2.0 * kotlin.math.PI * freq * i / sampleRate)
+            val v = (unit * Short.MAX_VALUE).toInt()
+            val lo = (v and 0xFF).toByte()
+            val hi = ((v shr 8) and 0xFF).toByte()
+            // Left + right = same sample
+            bytes[offset] = lo; bytes[offset + 1] = hi
+            bytes[offset + 2] = lo; bytes[offset + 3] = hi
+            offset += 4
+        }
+        return bytes
+    }
+
+    private fun String.encodeInto(bytes: ByteArray, offset: Int) {
+        for (i in indices) bytes[offset + i] = this[i].code.toByte()
+    }
+
+    @Suppress("MagicNumber")
+    private fun writeIntLE(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value and 0xFF).toByte()
+        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
+        bytes[offset + 2] = ((value shr 16) and 0xFF).toByte()
+        bytes[offset + 3] = ((value shr 24) and 0xFF).toByte()
+    }
+
+    @Suppress("MagicNumber")
+    private fun writeShortLE(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value and 0xFF).toByte()
+        bytes[offset + 1] = ((value shr 8) and 0xFF).toByte()
     }
 
     private fun composeMultiTrackMp4(outputPath: String, sourcePaths: List<String>) {

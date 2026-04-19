@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import platform.AVFoundation.AVAssetExportPresetAppleM4A
 import platform.AVFoundation.AVAssetExportSession
 import platform.AVFoundation.AVAssetReader
+import platform.AVFoundation.AVMutableAudioMix
+import platform.AVFoundation.AVMutableAudioMixInputParameters
+import platform.AVFoundation.setAudioMix
 import platform.AVFoundation.AVAssetReaderStatusFailed
 import platform.AVFoundation.AVAssetReaderTrackOutput
 import platform.AVFoundation.AVAssetTrack
@@ -93,7 +96,11 @@ internal class IosAudioCompressor : AudioCompressor {
         requireAacEncodingCapability(config)
         runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
-                IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
+                IosExportSessionPipeline(
+                    inputPath = inputPath,
+                    outputPath = outputPath,
+                    audioTrackIndex = config.audioTrackIndex,
+                ).execute(onProgress)
             } else {
                 IosPipeline(inputPath, outputPath, config).execute(onProgress)
             }
@@ -240,12 +247,24 @@ internal class IosAudioCompressor : AudioCompressor {
     }
 
     private fun canUseExportSession(config: AudioCompressionConfig): Boolean =
-        config == AudioCompressionConfig()
+        canUseAudioExportSession(config)
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
     }
 }
+
+/**
+ * The audio export session fast path runs whenever every `AudioCompressionConfig` field other
+ * than [AudioCompressionConfig.audioTrackIndex] matches the defaults. `audioTrackIndex > 0`
+ * inputs are handled in [IosExportSessionPipeline] by attaching an [AVMutableAudioMix] that
+ * mutes every track except the selected one — `AVAssetExportPresetAppleM4A` then processes the
+ * single audible track into AAC-LC M4A with Apple's internal defaults (the same reason the
+ * rest of the config must stay at defaults: the preset ignores user-supplied bitrate /
+ * sampleRate / channel settings).
+ */
+internal fun canUseAudioExportSession(config: AudioCompressionConfig): Boolean =
+    config == AudioCompressionConfig(audioTrackIndex = config.audioTrackIndex)
 
 /**
  * Conservative per-channel linear pre-check for the bitrate / sample-rate / channel
@@ -509,10 +528,12 @@ private class IosPipeline(
 private class IosExportSessionPipeline(
     inputPath: String,
     private val outputPath: String,
+    private val audioTrackIndex: Int,
 ) {
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
 
+    @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {
         val asset = AVURLAsset(uRL = inputUrl, options = null)
         val session = AVAssetExportSession.exportSessionWithAsset(
@@ -521,6 +542,15 @@ private class IosExportSessionPipeline(
         ) ?: error("AVAssetExportSession not available for input")
         session.outputURL = outputUrl
         session.outputFileType = AVFileTypeAppleM4A
+        // AVAssetExportPresetAppleM4A by default mixes every audio track in the source into the
+        // output. When the caller asked for a non-default track, attach an AVMutableAudioMix that
+        // silences the unwanted tracks so only the selected one contributes to the encoded AAC
+        // — this matches the custom pipeline's "pick track N" semantics without paying its
+        // decode/re-encode cost.
+        val audioTracks = asset.tracksWithMediaType(AVMediaTypeAudio)
+        if (audioTracks.size > 1) {
+            session.setAudioMix(buildTrackSelectionAudioMix(audioTracks, audioTrackIndex))
+        }
 
         coroutineScope {
             val progressJob = launchProgressPoller(session, onProgress)
@@ -529,6 +559,35 @@ private class IosExportSessionPipeline(
             } finally {
                 progressJob.cancel()
             }
+        }
+    }
+
+    /**
+     * Build an [AVMutableAudioMix] that silences every audio track except the one at
+     * [selectedIndex]. The selected track gets explicit full volume so the default-behaviour
+     * contract — an absent [AVMutableAudioMixInputParameters] entry means "full volume" — is
+     * replaced by an explicit, regression-proof parameter set.
+     *
+     * `audioTracks` is an `NSArray<AVAssetTrack>` bridged to `List<Any?>` — we cast each element
+     * as the underlying value is always `AVAssetTrack` when obtained from
+     * `tracksWithMediaType(AVMediaTypeAudio)`.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun buildTrackSelectionAudioMix(
+        audioTracks: List<*>,
+        selectedIndex: Int,
+    ): AVMutableAudioMix {
+        val params = audioTracks.mapIndexedNotNull { index, track ->
+            val assetTrack = track as? AVAssetTrack ?: return@mapIndexedNotNull null
+            AVMutableAudioMixInputParameters.audioMixInputParametersWithTrack(assetTrack).apply {
+                setVolume(
+                    if (index == selectedIndex) 1.0f else 0.0f,
+                    atTime = CMTimeMake(value = 0, timescale = 1),
+                )
+            }
+        }
+        return AVMutableAudioMix.audioMix().apply {
+            setInputParameters(params)
         }
     }
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import platform.AVFoundation.AVAssetExportPresetHEVCHighestQuality
 import platform.AVFoundation.AVAssetExportPresetMediumQuality
 import platform.AVFoundation.AVAssetExportSession
 import platform.AVFoundation.AVAssetReader
@@ -103,8 +104,9 @@ internal class IosVideoCompressor : VideoCompressor {
             requireHdr10HevcCapability(config.codec)
         }
         runPipelineWithTypedErrors(outputPath) {
-            if (canUseExportSession(config)) {
-                IosVideoExportPipeline(inputPath, outputPath).execute(onProgress)
+            val preset = exportSessionPresetOrNull(config)
+            if (preset != null) {
+                IosVideoExportPipeline(inputPath, outputPath, preset).execute(onProgress)
             } else {
                 IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
             }
@@ -144,8 +146,6 @@ internal class IosVideoCompressor : VideoCompressor {
         }
     }
 
-    private fun canUseExportSession(config: VideoCompressionConfig): Boolean =
-        config == VideoCompressionConfig()
 
     /**
      * Reject audio-only inputs upfront with a typed [VideoCompressionError.UnsupportedSourceFormat].
@@ -217,6 +217,44 @@ internal class IosVideoCompressor : VideoCompressor {
             ),
         )
     }
+}
+
+// ── Fast-path eligibility ────────────────────────────────────────────
+
+/**
+ * The single HDR10 fast-path config we accept. Any deviation (custom bitrate, resolution,
+ * framerate, keyframe interval) forces the custom transcode pipeline because
+ * `AVAssetExportSession` presets do not expose those knobs.
+ */
+internal val HDR10_FAST_PATH_CONFIG: VideoCompressionConfig = VideoCompressionConfig(
+    codec = VideoCodec.HEVC,
+    dynamicRange = DynamicRange.HDR10,
+)
+
+/**
+ * Pick an [AVAssetExportSession] preset that matches [config], or return `null` when the
+ * config is too specific to honour via Apple's fixed presets.
+ *
+ * The fast path covers two cases:
+ * 1. **SDR default** — `VideoCompressionConfig()` maps to [AVAssetExportPresetMediumQuality].
+ *    This has been the historical baseline.
+ * 2. **HDR10 HEVC at otherwise-default settings** — [HDR10_FAST_PATH_CONFIG] maps to
+ *    [AVAssetExportPresetHEVCHighestQuality], which preserves HDR10 color metadata (BT.2020
+ *    primaries + PQ transfer + BT.2020 matrix) when the source is HDR10. We gate HDR10 fast-
+ *    path eligibility on the platform capability probe (`requireHdr10HevcCapability`) which
+ *    has already run upstream — if the device lacks a Main10 encoder `compress()` throws
+ *    [VideoCompressionError.UnsupportedSourceFormat] before this function is reached, so
+ *    selecting the HEVC preset here is safe.
+ *
+ * Any other tuning (custom bitrate, framerate cap, resolution cap, keyframe interval, H.264
+ * with non-default trim) falls back to the custom transcode pipeline because
+ * `AVAssetExportSession` can't honour arbitrary settings — presets are opaque quality levels,
+ * not numeric knobs.
+ */
+internal fun exportSessionPresetOrNull(config: VideoCompressionConfig): String? = when (config) {
+    VideoCompressionConfig() -> AVAssetExportPresetMediumQuality
+    HDR10_FAST_PATH_CONFIG -> AVAssetExportPresetHEVCHighestQuality
+    else -> null
 }
 
 // ── Custom pipeline: exact bitrate/resolution/framerate control ─────
@@ -523,6 +561,7 @@ private class IosVideoTranscodePipeline(
 private class IosVideoExportPipeline(
     inputPath: String,
     private val outputPath: String,
+    private val presetName: String,
 ) {
     private val inputUrl = NSURL.fileURLWithPath(inputPath)
     private val outputUrl = NSURL.fileURLWithPath(outputPath)
@@ -531,8 +570,8 @@ private class IosVideoExportPipeline(
         val asset = AVURLAsset(uRL = inputUrl, options = null)
         val session = AVAssetExportSession.exportSessionWithAsset(
             asset = asset,
-            presetName = AVAssetExportPresetMediumQuality,
-        ) ?: error("AVAssetExportSession not available for input")
+            presetName = presetName,
+        ) ?: error("AVAssetExportSession not available for input (preset=$presetName)")
         session.outputURL = outputUrl
         session.outputFileType = AVFileTypeMPEG4
 
