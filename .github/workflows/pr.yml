@@ -3,16 +3,14 @@ name: PR checks
 on:
   pull_request:
     branches: [ main ]
-    # Skip heavy CI for doc-only changes. GitHub treats path-skipped workflows
-    # as "skipped" — which counts as success for branch-protection required
-    # checks — so this is safe even with required-check rules configured.
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
+    # NOTE: no `paths-ignore` at the workflow level. The previous comment here
+    # claimed GitHub treats workflow-level path-skipped runs as "skipped success"
+    # for branch protection — that's only true for *job-level* skips. When a
+    # workflow's `on:` filter decides not to trigger, no status is reported at
+    # all and any required-check whose name matches one of this workflow's jobs
+    # stays "Expected — Waiting for status" forever, blocking every doc-only PR
+    # and every empty `feat(release):` trigger commit. Letting the 5 required
+    # jobs run on every PR costs ~5 min of CI on doc PRs but removes the wedge.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
