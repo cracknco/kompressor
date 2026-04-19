@@ -86,7 +86,9 @@ The fast path is skipped if:
 
 ## Multichannel inputs
 
-5.1 and 7.1 sources are supported on Android — the `ChannelMixingAudioProcessor` registers downmix matrices for input channel counts 1 through 8. On iOS, multichannel upmix / downmix depends on what `AVAssetExportSession` / `AVAssetWriter` can do; sources that exceed those capabilities surface as `AudioCompressionError.UnsupportedConfiguration` **before** the encoder is opened.
+Multichannel *input* (5.1, 7.1) is supported on Android: `AudioProcessorPlan` assembles a `ChannelMixingAudioProcessor` with either hand-rolled BS.775 downmix matrices (for 7.1 sources) or Media3's `ChannelMixingMatrix.createForConstantPower` (for 5.1 and below), covering input channel counts 1 through 8 into mono or stereo output. On iOS, multichannel upmix / downmix depends on what `AVAssetExportSession` / `AVAssetWriter` can do; sources that exceed those capabilities surface as `AudioCompressionError.UnsupportedConfiguration` **before** the encoder is opened.
+
+Multichannel *output* (`AudioChannels.FIVE_POINT_ONE`, `AudioChannels.SEVEN_POINT_ONE`) is gated by `@ExperimentalKompressorApi` — per-device encoder coverage is still being validated pre-1.0 and platform rejections surface as `AudioCompressionError` at compress time. Only mono and stereo output are stable.
 
 ## Progress and cancellation
 

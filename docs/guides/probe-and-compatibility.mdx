@@ -53,7 +53,7 @@ public data class SourceMediaInfo(
 ```
 
 <Note>
-  `isPlayable` is populated on **iOS** only (from `AVAssetTrack.isPlayable`). On Android it's always `null` — the device capability matrix is the authoritative source there.
+  `isPlayable` currently defaults to `null` on both platforms — neither the Android nor the iOS probe populates it today. The device capability matrix is the authoritative gate; this field is reserved for a future probe enhancement that would consult `AVAssetTrack.isPlayable` on iOS.
 </Note>
 
 ## `Supportability`
@@ -78,7 +78,6 @@ public sealed class Supportability {
     - Source exceeds the decoder's max resolution or frame rate.
     - 10-bit source on an 8-bit-only decoder.
     - HDR content on a non-HDR-capable decoder.
-    - Platform reports the file isn't playable (iOS `isPlayable == false`).
 
     `reasons` contains human-readable developer-log strings; don't display them verbatim to users — localise as needed.
   </Tab>
