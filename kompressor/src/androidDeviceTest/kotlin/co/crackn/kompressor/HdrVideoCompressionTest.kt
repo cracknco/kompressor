@@ -29,9 +29,11 @@ import kotlin.test.assertTrue
  * contract that gates real-device behaviour:
  *
  * 1. HEVC SDR compression works end-to-end (regression guard for the codec dispatch).
- * 2. HDR10 + HEVC config either succeeds (device exposes a Main10 encoder; FTL Pixel 6
- *    Tensor G1 does) or surfaces the typed `VideoCompressionError.UnsupportedSourceFormat`
- *    we promise on devices without Main10 — never silently downgrades to 8-bit.
+ * 2. HDR10 + HEVC config either succeeds (device exposes a Main10 encoder *and* the active
+ *    runtime probe confirms it works; FTL Pixel 6 Tensor G1 does) or surfaces the typed
+ *    `VideoCompressionError.Hdr10NotSupported` we promise on devices where either the
+ *    capability matrix doesn't advertise Main10 or the runtime probe rejects it — never
+ *    silently downgrades to 8-bit.
  *
  * The cross-field validation (HDR10 + H264 rejected at construct) is covered by the host-side
  * `VideoCompressionConfigHdrTest` so this device file doesn't duplicate it.
@@ -83,20 +85,31 @@ class HdrVideoCompressionTest {
         )
 
         if (supported) {
-            // Pixel 6 (FTL) has hardware HEVC Main10 — even an SDR source must produce a
-            // valid HEVC output when HDR10 settings are applied (color-space transcode is
-            // accepted by Media3, which tone-maps SDR up to BT.2020 colour primaries).
-            assertTrue(
-                result.isSuccess,
-                "HDR10 compression must succeed when device exposes HEVC Main10: " +
-                    "${result.exceptionOrNull()}",
-            )
-            assertOutputMime(output.absolutePath, expected = "video/hevc")
+            // Capability-matrix says Main10+FEATURE_HdrEditing is advertised. That's now a
+            // pre-condition, not a guarantee — the active probe (Hdr10HevcProbe.probe) is the
+            // final word. On an FTL Pixel 6 both agree and we get a valid HEVC output; on an
+            // OEM that advertises but fails the probe, the compressor surfaces the typed
+            // Hdr10NotSupported error below instead of success. Accept either outcome here as
+            // long as the contract is consistent (no silent SDR downgrade, no partial bytes).
+            if (result.isSuccess) {
+                assertOutputMime(output.absolutePath, expected = "video/hevc")
+            } else {
+                val err = result.exceptionOrNull()
+                assertTrue(
+                    err is VideoCompressionError.Hdr10NotSupported,
+                    "Advertised Main10 device where active probe fails must surface " +
+                        "Hdr10NotSupported, got $err",
+                )
+                assertTrue(
+                    !output.exists(),
+                    "Failed HDR10 compression must leave no partial output",
+                )
+            }
         } else {
             val err = result.exceptionOrNull()
             assertTrue(
-                err is VideoCompressionError.UnsupportedSourceFormat,
-                "HDR10 on a device without HEVC Main10 must surface UnsupportedSourceFormat, got $err",
+                err is VideoCompressionError.Hdr10NotSupported,
+                "HDR10 on a device without HEVC Main10 must surface Hdr10NotSupported, got $err",
             )
             assertTrue(
                 !output.exists(),

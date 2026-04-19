@@ -90,6 +90,17 @@ public sealed class Supportability {
 
 A `Supported` verdict is **advisory**. It reflects the platform's reported capabilities but cannot guarantee the runtime will succeed — OEM codec drivers can still fail mid-stream, files can be corrupt, and disk I/O can fail. Always handle [typed errors](/concepts/errors) at the `compress(...)` call site too.
 
+## HDR10 compatibility (Android)
+
+HDR10 (`DynamicRange.HDR10`) is the one case where `canCompress` can't give a reliable verdict from the capability matrix alone. A non-trivial number of Android firmwares (older MediaTek, some Qualcomm) *advertise* HEVC Main10 + `FEATURE_HdrEditing` via `MediaCodecList` but crash `MediaCodec.configure()` at export time. Kompressor therefore runs a **two-stage gate** on Android when the caller opts into HDR10:
+
+1. **Capability matrix check** — reads `MediaCodecList(REGULAR_CODECS)` and requires at least one HEVC encoder that advertises `HEVCProfileMain10` (or the `HDR10` / `HDR10Plus` variants) **and** `FEATURE_HdrEditing`. Runs in ~1 ms on API 33+; short-circuits `false` on older Android.
+2. **Active runtime probe** — allocates the specific encoder via `MediaCodec.createByCodecName(...)`, configures it with a 1×1 P010 surface and BT.2020 + ST 2084 (PQ) colour metadata, queues one probe frame, and drains until the first output buffer appears. Result is cached in `SharedPreferences("co.crackn.kompressor.hdr10")` keyed by `"${Build.MODEL}|${codecName}"`, so only the first HDR10 call per install pays the ~100–300 ms cost.
+
+When either stage says "no", the compressor fails with the typed [`VideoCompressionError.Hdr10NotSupported`](/concepts/errors) carrying `device`, `codec`, and `reason` fields you can log / surface. Kompressor never silently downgrades HDR10 → SDR — that would lose colour data without telling the caller.
+
+The observed compatibility matrix from Firebase Test Lab runs is tracked in the release notes per-version; treat the active probe as the authoritative runtime answer rather than pinning code to specific device models.
+
 ## Probing on the critical path
 
 `probe` runs off the main thread and completes quickly — a `MediaExtractor` track walk or an `AVURLAsset` metadata read. It's safe to block a share / upload flow on it.

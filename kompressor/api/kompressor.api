@@ -492,6 +492,14 @@ public final class co/crackn/kompressor/video/VideoCompressionError$EncodingFail
 	public final fun getDetails ()Ljava/lang/String;
 }
 
+public final class co/crackn/kompressor/video/VideoCompressionError$Hdr10NotSupported : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCodec ()Ljava/lang/String;
+	public final fun getDevice ()Ljava/lang/String;
+	public final fun getReason ()Ljava/lang/String;
+}
+
 public final class co/crackn/kompressor/video/VideoCompressionError$IoFailed : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
