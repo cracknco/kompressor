@@ -137,6 +137,34 @@ kotlin {
 // Kover host-only gate at 85 %. Device tests are not wired into CI; if someone runs
 // `connectedAndroidDeviceTest` locally, coverage is emitted but not merged into this gate.
 //
+// CRA-43: `FormatSupportDocUpToDateTest` (in `androidHostTest`) compares the auto-generated
+// section of `docs/format-support.md` against `renderFormatSupportMatrixTables()`. The test
+// needs to know where `docs/` lives regardless of where Gradle is invoked from, so we inject
+// the absolute path via a JVM system property rather than have the test walk up from the CWD.
+// `-PregenerateFormatSupportDoc=true` flips the test from verify-mode into rewrite-mode —
+// driven by `scripts/regenerate-format-support-doc.sh`.
+val docsDir = rootProject.file("docs").absolutePath
+val regenerateFormatSupportDoc =
+    providers.gradleProperty("regenerateFormatSupportDoc").orNull == "true"
+// CRA-43 (follow-up to peer review): expose the authoritative build-time platform floors to
+// host tests so `FormatSupportMatrixBuildVersionPinTest` can assert the hand-mirrored
+// `FormatSupportMatrix.ANDROID_MIN_SDK` / `IOS_MIN_VERSION` constants haven't drifted. Any
+// future change to these versions (typically in `libs.versions.toml`) will fail CI until the
+// matrix is regenerated, matching the existing HEIC / AVIF gate pinning.
+val matrixBuildAndroidMinSdk = libs.versions.android.minSdk.get()
+val matrixBuildIosDeploymentTarget = libs.versions.ios.deploymentTarget.get()
+tasks.withType<Test>().configureEach {
+    systemProperty("kompressor.docsDir", docsDir)
+    systemProperty("kompressor.buildAndroidMinSdk", matrixBuildAndroidMinSdk)
+    systemProperty("kompressor.buildIosDeploymentTarget", matrixBuildIosDeploymentTarget)
+    if (regenerateFormatSupportDoc) {
+        systemProperty("kompressor.regenerateFormatSupportDoc", "true")
+        // Test outputs are cacheable by default; a cached "verify passed" run skips the
+        // file write in regenerate mode. Force re-execution whenever we're rewriting.
+        outputs.upToDateWhen { false }
+    }
+}
+
 // Single source of truth for the Kover exclusion set lives in the root `build.gradle.kts`,
 // which populates `rootProject.extra["baseKoverExcludes"]` before this script evaluates.
 @Suppress("UNCHECKED_CAST")

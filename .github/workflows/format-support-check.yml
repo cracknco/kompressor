@@ -1,0 +1,92 @@
+name: Format-support doc up-to-date
+
+# Dedicated workflow for `FormatSupportDocUpToDateTest` (CRA-43). Exists as its
+# own file — instead of folding into `pr.yml`'s `test` job — because `pr.yml`
+# applies a `paths-ignore: [docs/**, **/*.md]` filter so doc-only changes don't
+# burn a full CI run. That filter also means a PR that edits
+# `docs/format-support.md` (but nothing under `kompressor/src/**`) would skip
+# the up-to-date check entirely, and GitHub counts skipped required checks as
+# success. A stale matrix could then merge unnoticed.
+#
+# This workflow runs without the `docs/**` filter and is cheap (< 2 min) so we
+# gate every PR with it. The DoD clause:
+#
+#   > Auto-generation : CI regenerates the table from tests on every push to
+#   > main — no code/doc divergence possible.
+#
+# ...is enforced by running the regeneration-test in verify mode on both
+# `pull_request` and `push: main`. On push to main the same job acts as a
+# backstop in case a concurrent merge created a commit state the PR check
+# didn't see.
+#
+# Security: this workflow never interpolates `github.event.*` fields into
+# `run:` commands. All `run:` steps use static shell content plus
+# `secrets.GITHUB_TOKEN` only where GitHub Actions itself injects it.
+
+on:
+  pull_request:
+    branches: [main]
+    # Only paths that plausibly affect the rendered matrix or its enforcement.
+    # Keeps this job off the critical path for unrelated PRs while still
+    # catching every drift vector: matrix data, renderer, test, doc,
+    # gate constants referenced by the matrix, and this workflow itself.
+    paths:
+      - 'kompressor/src/commonMain/kotlin/co/crackn/kompressor/matrix/**'
+      - 'kompressor/src/commonMain/kotlin/co/crackn/kompressor/image/ImageFormatGates.kt'
+      - 'kompressor/src/commonTest/kotlin/co/crackn/kompressor/matrix/**'
+      - 'kompressor/src/androidHostTest/kotlin/co/crackn/kompressor/matrix/**'
+      - 'kompressor/build.gradle.kts'
+      # `gradle/libs.versions.toml` feeds `FormatSupportMatrixBuildVersionPinTest`
+      # (android-minSdk / ios-deploymentTarget). A bump here without matrix
+      # regeneration is exactly the kind of drift this workflow exists to catch.
+      - 'gradle/libs.versions.toml'
+      - 'docs/format-support.md'
+      - 'scripts/regenerate-format-support-doc.sh'
+      - '.github/workflows/format-support-check.yml'
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-support-doc-up-to-date:
+    name: Docs / format-support matrix in sync with code
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+
+      # Runs the single JVM host test that diffs the committed matrix against
+      # `renderFormatSupportMatrixTables()`. The test's failure message tells
+      # the contributor to run `./scripts/regenerate-format-support-doc.sh` and
+      # commit the result — the GitHub annotation below surfaces that hint in
+      # the Files-Changed view without requiring the reviewer to expand logs.
+      # Static message — no `github.event.*` interpolation — so no injection
+      # surface.
+      - name: Assert docs/format-support.md matches the renderer
+        run: |
+          set -e
+          # Runs two tests in one invocation: the doc byte-identical check AND the
+          # build-version pin that asserts FormatSupportMatrix.ANDROID_MIN_SDK /
+          # IOS_MIN_VERSION track gradle/libs.versions.toml. Both are drift surfaces
+          # for the matrix and share the same workflow.
+          if ! ./gradlew :kompressor:testAndroidHostTest \
+              --tests 'co.crackn.kompressor.matrix.FormatSupportDocUpToDateTest' \
+              --tests 'co.crackn.kompressor.matrix.FormatSupportMatrixBuildVersionPinTest'; then
+            echo "::error title=format-support.md drift::docs/format-support.md is out of date with FormatSupportMatrix or its build-version pin failed. Run \`./scripts/regenerate-format-support-doc.sh\` and commit the result; if the pin test failed, update FormatSupportMatrix.ANDROID_MIN_SDK / IOS_MIN_VERSION to match gradle/libs.versions.toml."
+            exit 1
+          fi
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: format-support-doc-test-report
+          path: kompressor/build/reports/tests/testAndroidHostTest/

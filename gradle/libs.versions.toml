@@ -4,6 +4,11 @@ kotlin = "2.3.20"
 coroutines = "1.10.2"
 android-minSdk = "24"
 android-compileSdk = "36"
+# iOS deployment floor for the Kompressor KMP library. Consumed by the
+# `FormatSupportMatrixBuildVersionPinTest` host test (CRA-43) as the authoritative
+# source behind `FormatSupportMatrix.IOS_MIN_VERSION`. Bump together with the matrix
+# constant and iOS-side KDoc ("iOS 15+" mentions).
+ios-deploymentTarget = "15"
 vanniktechMavenPublish = "0.36.0"
 detekt = "1.23.8"
 ktlint = "14.2.0"
