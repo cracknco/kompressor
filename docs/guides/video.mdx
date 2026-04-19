@@ -1,0 +1,131 @@
+---
+title: Video
+description: "H.264 transcoding with bitrate, frame-rate, resolution, and key-frame control."
+---
+
+`VideoCompressor` transcodes video files through each platform's hardware media stack.
+
+- **Android:** Media3 `Transformer` 1.10 — hardware encoder first, software fallback.
+- **iOS:** `AVAssetExportSession` / `AVAssetWriter`.
+
+Output is always **H.264 video + AAC audio in an MP4 container**.
+
+## Basic usage
+
+```kotlin
+val result = kompressor.video.compress(
+    inputPath  = "/path/to/video.mp4",
+    outputPath = "/path/to/video_compressed.mp4",
+    onProgress = { fraction -> updateProgressBar(fraction) },
+)
+```
+
+## Configuration
+
+```kotlin
+public data class VideoCompressionConfig(
+    val codec: VideoCodec = VideoCodec.H264,
+    val maxResolution: MaxResolution = MaxResolution.HD_720,
+    val videoBitrate: Int = 1_200_000,
+    val audioBitrate: Int = 128_000,
+    val maxFrameRate: Int = 30,
+    val keyFrameInterval: Int = 2,
+)
+```
+
+<ParamField path="codec" type="VideoCodec" default="H264">
+  Output video codec. Only `H264` ships today.
+</ParamField>
+
+<ParamField path="maxResolution" type="MaxResolution" default="HD_720">
+  Cap for the output's shortest edge. See [Resolution](#resolution) below.
+</ParamField>
+
+<ParamField path="videoBitrate" type="Int" default="1_200_000">
+  Target video bitrate in bits per second. Must be `> 0`.
+</ParamField>
+
+<ParamField path="audioBitrate" type="Int" default="128_000">
+  Target audio bitrate in bits per second. Must be `> 0`. Output is always AAC-LC.
+</ParamField>
+
+<ParamField path="maxFrameRate" type="Int" default="30">
+  Cap for the output frame rate. Higher source frame rates are dropped down. Must be `> 0`.
+</ParamField>
+
+<ParamField path="keyFrameInterval" type="Int" default="2">
+  Seconds between key frames (I-frames). Lower values make the stream more seekable / scrubbable; higher values compress better. Must be `> 0`.
+</ParamField>
+
+## Resolution
+
+```kotlin
+public sealed class MaxResolution {
+    public data class Custom(val maxShortEdge: Int) : MaxResolution()
+    public data object Original                     : MaxResolution()
+
+    public companion object {
+        public val SD_480  = Custom(480)
+        public val HD_720  = Custom(720)
+        public val HD_1080 = Custom(1080)
+    }
+}
+```
+
+`Custom(n)` caps the **shortest edge** of the output at `n` pixels and scales the longest edge to preserve aspect ratio — so a 1920×1080 source compressed with `HD_720` becomes 1280×720. `MaxResolution.Original` leaves the source resolution untouched.
+
+<Note>
+  Never upscales. If the source is already below the cap, the original dimensions are used.
+</Note>
+
+## Presets
+
+| Preset        | Resolution | Video       | Audio         | Frame rate | Key-frame interval | Use case |
+| ------------- | ---------- | ----------- | ------------- | ---------- | ------------------ | -------- |
+| `MESSAGING`   | 720p       | 1.2 Mbps    | 128 kbps AAC  | 30         | 2 s                | Chat / attachments |
+| `SOCIAL_MEDIA`| 720p       | 2.0 Mbps    | 128 kbps AAC  | 30         | 1 s                | Clean scrubbing / seeking |
+| `HIGH_QUALITY`| 1080p      | 3.5 Mbps    | 192 kbps AAC  | 30         | 2 s                | Archival / upload |
+| `LOW_BANDWIDTH`| 480p      | 600 kbps    | 96 kbps AAC   | 24         | 3 s                | Mobile networks / low storage |
+
+```kotlin
+kompressor.video.compress(input, output, VideoPresets.MESSAGING)
+```
+
+## Progress and cancellation
+
+```kotlin
+val job = scope.launch {
+    kompressor.video.compress(
+        inputPath, outputPath,
+        onProgress = { fraction ->
+            withContext(Dispatchers.Main) { progressBar.value = fraction }
+        },
+    )
+}
+
+// User tapped "cancel"
+job.cancel()
+```
+
+The progress callback is throttled — it fires when the reported progress advances by at least 1 %. Cancellation triggers platform-native abort (`Transformer.cancel()` on Android, `AVAssetExportSession.cancelExport()` on iOS) and deletes the partial output file.
+
+## Known limitations
+
+<Warning>
+  **Rotation metadata isn't preserved in v1.** The current implementation does not read or write the source's rotation tag (`preferredTransform` on iOS, `KEY_ROTATION` on Android). Portrait-recorded videos may appear rotated in the output. This is planned for a follow-up release.
+</Warning>
+
+## Error handling
+
+Failures come back as `Result.failure(VideoCompressionError.*)`. See [Error handling](/concepts/errors) for the full subtype table.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Probe & compatibility" icon="magnifying-glass" href="/guides/probe-and-compatibility">
+    Check whether the device can decode HDR / 10-bit sources before you start.
+  </Card>
+  <Card title="VideoCompressor API reference" icon="square-terminal" href="/reference/video-api">
+    Every symbol, default, and validation rule.
+  </Card>
+</CardGroup>

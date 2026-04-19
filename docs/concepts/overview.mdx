@@ -1,0 +1,110 @@
+---
+title: Overview
+description: "The `Kompressor` interface, the three compressors, and the shape of every result."
+---
+
+Kompressor's API surface is deliberately small: one factory, one interface, three compressors, and one result type. Every method is a `suspend` function that returns `Result<CompressionResult>`.
+
+## The factory
+
+```kotlin
+// commonMain
+public expect fun createKompressor(): Kompressor
+```
+
+`createKompressor()` is a zero-argument `expect` function. The `actual` on Android wires in the application `Context` internally via AndroidX App Startup, and the iOS `actual` uses the running process — so the same call works on both platforms.
+
+<Tabs>
+  <Tab title="Android">
+    ```kotlin
+    // androidMain
+    public actual fun createKompressor(): Kompressor = AndroidKompressor()
+    ```
+
+    The `Context` is captured at app-startup time by an `androidx.startup.Initializer`.
+  </Tab>
+  <Tab title="iOS">
+    ```kotlin
+    // iosMain
+    public actual fun createKompressor(): Kompressor = IosKompressor()
+    ```
+  </Tab>
+</Tabs>
+
+## The `Kompressor` interface
+
+```kotlin
+public interface Kompressor {
+    public val image: ImageCompressor
+    public val video: VideoCompressor
+    public val audio: AudioCompressor
+
+    /** Read the source's track metadata. */
+    public suspend fun probe(inputPath: String): Result<SourceMediaInfo>
+
+    /** Advisory verdict: can this device compress a source matching [info]? */
+    public fun canCompress(info: SourceMediaInfo): Supportability
+}
+```
+
+The three compressors are **lazy** — each is created only when first accessed. Holding a `Kompressor` instance that you never call `.video` on costs nothing.
+
+## The three compressors
+
+<CardGroup cols={3}>
+  <Card title="ImageCompressor" icon="image" href="/guides/image">
+    JPEG compression with quality control, max-dimension resize, and EXIF-aware rotation.
+  </Card>
+  <Card title="VideoCompressor" icon="video" href="/guides/video">
+    H.264 transcode with bitrate, frame-rate, resolution, and key-frame interval control.
+  </Card>
+  <Card title="AudioCompressor" icon="waveform" href="/guides/audio">
+    AAC transcode with bitrate, sample-rate, and channel-layout control; passthrough fast path for already-AAC inputs.
+  </Card>
+</CardGroup>
+
+## Uniform return type
+
+Every `compress(...)` call returns `Result<CompressionResult>`:
+
+```kotlin
+public data class CompressionResult(
+    public val inputSize: Long,   // bytes
+    public val outputSize: Long,  // bytes
+    public val durationMs: Long,  // wall-clock duration
+) {
+    public val compressionRatio: Float        // outputSize / inputSize
+    public val isSmallerThanOriginal: Boolean // outputSize < inputSize
+}
+```
+
+`compressionRatio < 1.0` means the output is smaller; `> 1.0` means compression **grew** the file, which happens when the source is already smaller than the requested quality can produce. See [Error handling](/concepts/errors) for the failure side, and [Cancellation](/concepts/cancellation) for abort semantics.
+
+## Progress callbacks
+
+Video and audio compression accept a `suspend (Float) -> Unit` that's called as progress advances (values between `0.0` and `1.0`):
+
+```kotlin
+kompressor.video.compress(
+    inputPath,
+    outputPath,
+    onProgress = { fraction ->
+        withContext(Dispatchers.Main) { progressBar.value = fraction }
+    },
+)
+```
+
+<Note>
+  Image compression has no `onProgress` parameter — `Bitmap.compress` on Android and `UIImageJPEGRepresentation` on iOS are synchronous single-step operations with no intermediate progress to report.
+</Note>
+
+## `MIME` type sets
+
+`VideoCompressor` and `AudioCompressor` expose two read-only `Set<String>` properties:
+
+```kotlin
+public val supportedInputFormats: Set<String>
+public val supportedOutputFormats: Set<String>
+```
+
+These are sampled from the platform's codec capability matrix at first access (Android `MediaCodecList.REGULAR_CODECS`, intersected with what the implementation actually emits). `supportedOutputFormats` is authoritative — it only lists MIMEs this compressor really produces (so today, `video/avc` for video and `audio/mp4a-latm` for audio). `supportedInputFormats` is advisory; a missing entry doesn't guarantee the decoder can't be loaded at runtime.

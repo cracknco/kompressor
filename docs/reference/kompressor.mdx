@@ -1,0 +1,79 @@
+---
+title: Kompressor
+description: "Factory and top-level interface."
+---
+
+Package: `co.crackn.kompressor`
+
+## `createKompressor`
+
+```kotlin
+public expect fun createKompressor(): Kompressor
+```
+
+Creates a platform-specific `Kompressor`. Zero arguments on both targets — the Android `actual` reads the application `Context` captured by `KompressorInitializer` (an `androidx.startup.Initializer`) at app launch.
+
+## `Kompressor`
+
+```kotlin
+public interface Kompressor {
+    public val image: ImageCompressor
+    public val video: VideoCompressor
+    public val audio: AudioCompressor
+
+    public suspend fun probe(inputPath: String): Result<SourceMediaInfo>
+    public fun canCompress(info: SourceMediaInfo): Supportability
+}
+```
+
+<ResponseField name="image" type="ImageCompressor">
+  Lazily-created image compressor. See the [Image API](/reference/image-api).
+</ResponseField>
+
+<ResponseField name="video" type="VideoCompressor">
+  Lazily-created video compressor. See the [Video API](/reference/video-api).
+</ResponseField>
+
+<ResponseField name="audio" type="AudioCompressor">
+  Lazily-created audio compressor. See the [Audio API](/reference/audio-api).
+</ResponseField>
+
+### `probe`
+
+```kotlin
+public suspend fun probe(inputPath: String): Result<SourceMediaInfo>
+```
+
+Inspects the file at `inputPath` and returns metadata describing its tracks. Does not transcode. Runs off the main thread.
+
+<ParamField path="inputPath" type="String" required>
+  Absolute filesystem path to the source file.
+</ParamField>
+
+Returns `Result.success(SourceMediaInfo)` on success, or `Result.failure(...)` on read errors. `CancellationException` is re-thrown, not wrapped.
+
+### `canCompress`
+
+```kotlin
+public fun canCompress(info: SourceMediaInfo): Supportability
+```
+
+Returns an advisory verdict: can this device decode the source and encode the output format (H.264 for video, AAC for audio)?
+
+<ParamField path="info" type="SourceMediaInfo" required>
+  The result of a prior call to `probe(...)`.
+</ParamField>
+
+See [`Supportability`](/reference/types#supportability) for the return values.
+
+## Android-only helpers
+
+Android exposes one additional top-level function useful for diagnostics:
+
+```kotlin
+public fun queryDeviceCapabilities(): DeviceCapabilities
+```
+
+Returns a snapshot of every decoder / encoder the platform reports via `MediaCodecList`. Used internally by `canCompress` but exposed for apps that want to report device capabilities to crash analytics or debug overlays.
+
+See [`DeviceCapabilities`](/reference/types#devicecapabilities) in the types reference.

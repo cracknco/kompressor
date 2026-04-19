@@ -1,0 +1,104 @@
+---
+title: Image
+description: "JPEG compression with quality control, max-dimension resize, and EXIF-aware rotation."
+---
+
+`ImageCompressor` handles still images through each platform's native bitmap pipeline.
+
+- **Android:** `BitmapFactory` for decoding, `Bitmap.compress` for encoding, `androidx.exifinterface` for EXIF rotation.
+- **iOS:** `UIImage` / Core Graphics.
+
+## Basic usage
+
+```kotlin
+val result = kompressor.image.compress(
+    inputPath  = "/absolute/path/to/photo.jpg",
+    outputPath = "/absolute/path/to/photo_compressed.jpg",
+)
+```
+
+All paths are **absolute filesystem paths**. No `content://` URIs on Android; stage the file to your app's cache directory first if you receive a SAF URI.
+
+## Configuration
+
+```kotlin
+public data class ImageCompressionConfig(
+    val format: ImageFormat = ImageFormat.JPEG,
+    val quality: Int = 80,
+    val maxWidth: Int? = null,
+    val maxHeight: Int? = null,
+    val keepAspectRatio: Boolean = true,
+)
+```
+
+<ParamField path="format" type="ImageFormat" default="JPEG">
+  Output format. Only `JPEG` is shipped today; PNG and WebP are planned.
+</ParamField>
+
+<ParamField path="quality" type="Int" default="80">
+  JPEG quality from `0` (smallest, lowest quality) to `100` (largest, highest quality). Throws `IllegalArgumentException` if out of range.
+</ParamField>
+
+<ParamField path="maxWidth" type="Int?" default="null">
+  Maximum output width in pixels. `null` means no cap. Must be `> 0` if supplied.
+</ParamField>
+
+<ParamField path="maxHeight" type="Int?" default="null">
+  Maximum output height in pixels. `null` means no cap. Must be `> 0` if supplied.
+</ParamField>
+
+<ParamField path="keepAspectRatio" type="Boolean" default="true">
+  When `true`, the image is fit inside the `maxWidth × maxHeight` box preserving aspect ratio. When `false`, it's stretched.
+</ParamField>
+
+<Note>
+  **No upscaling.** If the source is already within `maxWidth` / `maxHeight`, the original dimensions are kept — Kompressor never grows an image.
+</Note>
+
+## Presets
+
+```kotlin
+// Small avatar
+kompressor.image.compress(input, output, ImagePresets.THUMBNAIL)
+
+// Web-optimised upload
+kompressor.image.compress(input, output, ImagePresets.WEB)
+
+// Archival
+kompressor.image.compress(input, output, ImagePresets.HIGH_QUALITY)
+```
+
+| Preset          | Quality | Max width × height      |
+| --------------- | ------- | ----------------------- |
+| `THUMBNAIL`     | 60      | 320 × 320               |
+| `WEB`           | 80      | 1920 × 1920             |
+| `HIGH_QUALITY`  | 95      | Original (no cap)       |
+
+## EXIF rotation (Android)
+
+Phones store portrait photos as landscape JPEGs plus an EXIF `Orientation` tag. The Android implementation reads the tag and applies the rotation / flip **before** encoding, so the output is correctly oriented even when apps that ignore EXIF would display it sideways.
+
+All eight EXIF orientations are honoured (rotate 90 / 180 / 270, horizontal / vertical flip, transpose / transverse).
+
+## Sizes can grow
+
+JPEG is lossy and already-heavily-compressed photos can re-encode **larger** than the source, especially when the requested quality is higher than the original's. Always check `isSmallerThanOriginal`:
+
+```kotlin
+val result = kompressor.image.compress(input, output, config).getOrThrow()
+if (!result.isSmallerThanOriginal) {
+    // Keep the original instead; compressing would waste bytes.
+    File(output).delete()
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="ImageCompressor API reference" icon="square-terminal" href="/reference/image-api">
+    Every public symbol, with defaults and validation rules.
+  </Card>
+  <Card title="Cancellation" icon="xmark" href="/concepts/cancellation">
+    Image compression respects coroutine cancellation between its decode and encode steps.
+  </Card>
+</CardGroup>

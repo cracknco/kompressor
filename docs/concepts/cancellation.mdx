@@ -1,0 +1,67 @@
+---
+title: Cancellation
+description: "Cancel the coroutine scope to abort an in-flight compression."
+---
+
+Compression uses Kotlin's structured concurrency: the `compress(...)` call is a `suspend` function, and the coroutine running it owns the transcode's lifetime. Cancel the coroutine (or its scope), and the transcode stops.
+
+## Cancel a running job
+
+```kotlin
+val job = scope.launch {
+    kompressor.video.compress(inputPath, outputPath)
+}
+
+// Later (user tapped "Cancel", scope is tearing down, etc.)
+job.cancel()
+```
+
+## What happens on cancel
+
+<Steps>
+  <Step title="The suspend call throws `CancellationException`">
+    Kompressor's platform implementations cooperate with cancellation — Media3's `Transformer.cancel()` is called on Android, and `AVAssetExportSession.cancelExport()` / `AVAssetWriter.cancelWriting()` on iOS.
+  </Step>
+  <Step title="Partial output is deleted">
+    The output file the transcoder was writing to is deleted before the exception propagates, so callers never observe a corrupt half-compressed file.
+
+    <Note>
+      Cleanup is best-effort. If the `delete()` itself fails (e.g. filesystem error), the partial file may remain on disk. Apps that need a strict invariant should verify via `File(outputPath).exists()`.
+    </Note>
+  </Step>
+  <Step title="The `Result` is never produced">
+    Because `CancellationException` is a special exception used by coroutines for control flow, Kompressor **rethrows it** rather than wrapping it in `Result.failure` — which is what you want: cancellation shouldn't look like a runtime error.
+  </Step>
+</Steps>
+
+## Why this matters
+
+Some libraries catch every `Throwable` and return it as an error. Kompressor uses a `suspendRunCatching` helper internally that re-throws `CancellationException` so parent scope cancellation continues to work correctly. In practice this means:
+
+```kotlin
+val job = scope.launch {
+    val result = kompressor.audio.compress(...)   // suspend
+    // This line is not reached on cancellation.
+}
+
+// `result` is a genuine Result<CompressionResult> — never a "cancelled" value.
+```
+
+## Cancellation vs failure
+
+| Situation                            | How it surfaces                                      |
+| ------------------------------------ | ---------------------------------------------------- |
+| Scope/job cancelled                  | `CancellationException` propagates; no `Result`      |
+| Decoder/encoder/IO failure           | `Result.failure(AudioCompressionError.*)` / `VideoCompressionError.*` |
+| Invalid config (bitrate ≤ 0, etc.)   | Throws `IllegalArgumentException` at construction    |
+
+## Cancellable image compression
+
+Image compression is fast, but still a `suspend` function — it checks `currentCoroutineContext().ensureActive()` between the decode and encode steps, so cancellation still takes effect at suspension points:
+
+```kotlin
+val job = scope.launch {
+    kompressor.image.compress(inputPath, outputPath, ImagePresets.WEB)
+}
+job.cancel()   // aborts if it hasn't already finished
+```

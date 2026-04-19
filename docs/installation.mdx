@@ -1,0 +1,96 @@
+---
+title: Installation
+description: "Add Kompressor to your Kotlin Multiplatform project via Maven Central."
+---
+
+Kompressor is published on Maven Central under the coordinate `co.crackn.kompressor:kompressor`.
+
+<Steps>
+  <Step title="Add Maven Central to your repositories">
+    In your `settings.gradle.kts`:
+
+    ```kotlin settings.gradle.kts
+    dependencyResolutionManagement {
+        repositories {
+            google()
+            mavenCentral()
+        }
+    }
+    ```
+
+    <Note>
+      Maven Central is the default in most KMP templates. Skip this step if it's already there.
+    </Note>
+  </Step>
+
+  <Step title="Declare the dependency">
+    <CodeGroup>
+
+    ```kotlin Shared module (commonMain)
+    kotlin {
+        sourceSets {
+            commonMain.dependencies {
+                implementation("co.crackn.kompressor:kompressor:0.1.0")
+            }
+        }
+    }
+    ```
+
+    ```kotlin Android-only module
+    dependencies {
+        implementation("co.crackn.kompressor:kompressor:0.1.0")
+    }
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Set the minimum platform versions">
+    Kompressor requires **Android API 24** (7.0 Nougat) and **iOS 15**.
+
+    ```kotlin build.gradle.kts
+    android {
+        defaultConfig {
+            minSdk = 24
+        }
+    }
+
+    kotlin {
+        iosX64()
+        iosArm64()
+        iosSimulatorArm64()
+        // ...
+    }
+    ```
+  </Step>
+</Steps>
+
+## Android notes
+
+<Accordion title="No Context wiring required" icon="android">
+  Kompressor ships with an `androidx.startup.Initializer` that captures the application `Context` automatically. `createKompressor()` takes no parameters on either platform.
+</Accordion>
+
+<Accordion title="ProGuard / R8" icon="shield">
+  No consumer ProGuard rules are required. The library's public surface is stable and marked accordingly.
+</Accordion>
+
+## Snapshots
+
+Pre-release snapshots are published to Sonatype's snapshots repository:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        maven("https://s01.oss.sonatype.org/content/repositories/snapshots/") {
+            content { includeGroup("co.crackn.kompressor") }
+        }
+    }
+}
+```
+
+## Next
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Compress your first image, video, and audio file.
+</Card>
