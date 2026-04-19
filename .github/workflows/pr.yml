@@ -98,6 +98,13 @@ jobs:
         run: ./scripts/fetch-fixtures.sh
       - name: Run tests (Android host)
         run: ./gradlew testAndroidHostTest
+      # The `test` job compiles `:kompressor` transitively but does NOT exercise `:sample`.
+      # A library API change that silently breaks the sample's compile (e.g. a rename reaches
+      # the sample consumer without a corresponding doc/viewmodel update) used to pass CI
+      # unnoticed until the next person ran `./gradlew build` locally. This step closes that
+      # gap for the Android flavour of the sample on the runner that already has the toolchain.
+      - name: Sample Android compile gate
+        run: ./gradlew :sample:compileDebugKotlinAndroid
       # BCV's `apiCheck` already exits non-zero on ABI drift. The wrapper below turns that
       # into a GitHub-annotated error so the PR's Files-Changed view shows one actionable line
       # ("Run `./gradlew apiDump` and commit …") right next to the red check, instead of the
@@ -159,6 +166,11 @@ jobs:
             konan-${{ runner.os }}-
       - name: Run iOS simulator tests
         run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
+      # Same rationale as the Android sample compile gate in the `test` job: a library change
+      # that breaks `:sample`'s iOS target must fail CI, not the next local build. Piggybacks
+      # on the macos-latest runner that already has the Kotlin/Native + Xcode toolchain.
+      - name: Sample iOS simulator compile gate
+        run: ./gradlew :sample:compileKotlinIosSimulatorArm64
       - name: Upload iOS test report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
