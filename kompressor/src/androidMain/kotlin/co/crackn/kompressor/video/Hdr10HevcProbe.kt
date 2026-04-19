@@ -32,10 +32,13 @@ import co.crackn.kompressor.KompressorContext
  * An active probe allocates a MediaCodec instance, calls `configure` + `start`, runs the
  * two-frame protocol (prime with a non-EOS P010 frame, then close with an EOS frame if the
  * encoder signals `INFO_TRY_AGAIN_LATER` — see [drainTwoFrameProtocol] for the full reasoning
- * behind CRA-88), drains one output buffer, and tears down — ~100–300 ms on real devices. Not
- * free. Results are invariant for the life of a firmware so we cache them in [SHARED_PREFS_NAME]
- * keyed by `Build.MODEL + codecName`. A firmware update changes at least one of those (the
- * encoder's soname bumps on major AOSP rebases), which naturally invalidates the cache.
+ * behind CRA-88), drains until the first encoded output buffer **or a Main10
+ * `INFO_OUTPUT_FORMAT_CHANGED`**, and tears down — ~100–300 ms on real devices. Not free.
+ * Results are invariant for the life of a firmware so we cache them in [SHARED_PREFS_NAME]
+ * keyed by `Build.MODEL + Build.VERSION.INCREMENTAL + codecName`. A firmware update bumps
+ * `Build.VERSION.INCREMENTAL` (and typically the encoder's soname on major AOSP rebases),
+ * which naturally invalidates the cache — including any stale false-negative cached under the
+ * pre-CRA-88 single-frame protocol.
  *
  * Never call from the main thread — MediaCodec configuration does binder IPC to the
  * `mediaserver` process and can block. Always dispatch via `Dispatchers.IO`.
@@ -311,7 +314,12 @@ internal object Hdr10HevcProbe {
                     codec.releaseOutputBuffer(outputIdx, false)
                     return null
                 }
-                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> return inspectFormatChange(codec)
+                outputIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                    when (val verdict = inspectFormatChange(codec)) {
+                        FormatVerdict.Main10Committed -> return null
+                        is FormatVerdict.Downgrade -> return verdict.reason
+                        FormatVerdict.Indeterminate -> Unit // keep draining for an output buffer
+                    }
                 outputIdx == MediaCodec.INFO_TRY_AGAIN_LATER && !eosFed -> {
                     // Second-frame trigger: first frame didn't produce output on its own, so
                     // close the stream with an EOS-flagged frame so the encoder flushes.
@@ -329,17 +337,48 @@ internal object Hdr10HevcProbe {
     }
 
     /**
-     * Inspect the negotiated output format on `INFO_OUTPUT_FORMAT_CHANGED`. A Main10-family
-     * profile means the encoder committed to HDR10 parameters — success, even before the
-     * first output buffer lands. Any other profile is a silent 8-bit downgrade and we fail
-     * the probe with a specific reason so the cached negative is actionable in bug reports.
+     * Verdict returned by [inspectFormatChange] on `INFO_OUTPUT_FORMAT_CHANGED`.
+     *
+     *  * [Main10Committed] — the encoder published a Main10-family profile (or a ST 2084
+     *    colour transfer echoed back from our configure()). Safe to short-circuit with
+     *    success.
+     *  * [Downgrade] — the encoder published a known, non-Main10 profile. Silent 8-bit
+     *    downgrade; fail the probe with a specific reason.
+     *  * [Indeterminate] — no profile reported AND no ST 2084 transfer to confirm HDR10. This
+     *    is common on OEM encoders (MTK / older Qualcomm / some Samsung) that only set
+     *    `KEY_COLOR_FORMAT` on the output, not `KEY_PROFILE`. Declaring a downgrade here
+     *    would reintroduce the CRA-88 false-negative class, so we keep draining and wait for
+     *    the first output buffer as the definitive signal (or time out at the 2 s deadline).
      */
-    private fun inspectFormatChange(codec: MediaCodec): String? {
-        val negotiated = codec.outputFormat.getInteger(MediaFormat.KEY_PROFILE, -1)
-        return if (negotiated in main10Profiles) {
-            null
-        } else {
-            "encoder downgraded output to non-Main10 profile $negotiated"
+    private sealed class FormatVerdict {
+        object Main10Committed : FormatVerdict()
+        object Indeterminate : FormatVerdict()
+        data class Downgrade(val reason: String) : FormatVerdict()
+    }
+
+    /**
+     * Inspect the negotiated output format on `INFO_OUTPUT_FORMAT_CHANGED`. Returns one of
+     * the three [FormatVerdict] branches; see its KDoc for the per-branch rationale. We
+     * specifically **do not** treat `KEY_PROFILE == -1` as a downgrade — a missing profile
+     * key is an OEM reporting gap, not an 8-bit fallback (CRA-88 / CodeRabbit review finding
+     * on PR #121).
+     */
+    private fun inspectFormatChange(codec: MediaCodec): FormatVerdict {
+        val format = codec.outputFormat
+        val negotiated = format.getInteger(MediaFormat.KEY_PROFILE, -1)
+        // Profile absent → fall back to KEY_COLOR_TRANSFER. The encoder echoing back ST 2084
+        // (PQ) from our configure() is a strong HDR10 signal in the absence of an explicit
+        // profile. Anything else (or missing) → indeterminate; keep draining. Declaring a
+        // downgrade on missing profile would reintroduce the CRA-88 false-negative class on
+        // OEM encoders that never populate KEY_PROFILE on output.
+        return when {
+            negotiated in main10Profiles -> FormatVerdict.Main10Committed
+            negotiated != -1 -> FormatVerdict.Downgrade(
+                "encoder downgraded output to non-Main10 profile $negotiated",
+            )
+            format.getInteger(MediaFormat.KEY_COLOR_TRANSFER, -1) ==
+                MediaFormat.COLOR_TRANSFER_ST2084 -> FormatVerdict.Main10Committed
+            else -> FormatVerdict.Indeterminate
         }
     }
 
@@ -387,8 +426,8 @@ internal object Hdr10HevcProbe {
 
     // Second-frame PTS = 1/PROBE_FRAMERATE seconds, rounded down. Matches the configured
     // framerate so encoders that validate monotonic PTS deltas see a sensible gap between
-    // priming and EOS frames. 33_333 µs = 1_000_000L / 30 fps.
-    private const val SECOND_FRAME_PTS_US = 33_333L
+    // priming and EOS frames. Computed so a future PROBE_FRAMERATE tweak stays consistent.
+    private const val SECOND_FRAME_PTS_US = 1_000_000L / PROBE_FRAMERATE
 }
 
 /**
