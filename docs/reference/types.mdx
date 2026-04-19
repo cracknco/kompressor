@@ -1,0 +1,149 @@
+---
+title: Types
+description: "`CompressionResult`, `SourceMediaInfo`, `Supportability`, and `DeviceCapabilities`."
+---
+
+Package: `co.crackn.kompressor`
+
+## `CompressionResult`
+
+```kotlin
+public data class CompressionResult(
+    val inputSize: Long,
+    val outputSize: Long,
+    val durationMs: Long,
+) {
+    val compressionRatio: Float        // outputSize / inputSize
+    val isSmallerThanOriginal: Boolean // outputSize < inputSize
+}
+```
+
+<ResponseField name="inputSize" type="Long">
+  Input file size in bytes. Always `> 0` (validated at construction).
+</ResponseField>
+<ResponseField name="outputSize" type="Long">
+  Compressed output size in bytes. Always `≥ 0`.
+</ResponseField>
+<ResponseField name="durationMs" type="Long">
+  Wall-clock duration of the compress call in milliseconds. Always `≥ 0`.
+</ResponseField>
+<ResponseField name="compressionRatio" type="Float">
+  Derived: `outputSize / inputSize`. `< 1.0` = output smaller, `> 1.0` = output larger.
+</ResponseField>
+<ResponseField name="isSmallerThanOriginal" type="Boolean">
+  Derived: `outputSize < inputSize`. Check this before committing to the compressed file.
+</ResponseField>
+
+<Warning>
+  Re-encoding an already-compressed source (typically JPEG at higher quality than the original, or AAC at higher bitrate than the original) can produce a **larger** output. Always gate on `isSmallerThanOriginal`.
+</Warning>
+
+## `SourceMediaInfo`
+
+```kotlin
+public data class SourceMediaInfo(
+    val containerMimeType: String? = null,
+    val videoCodec: String?        = null,
+    val videoProfile: String?      = null,
+    val videoLevel: String?        = null,
+    val width: Int?                = null,
+    val height: Int?               = null,
+    val bitDepth: Int?             = null,
+    val rotationDegrees: Int?      = null,
+    val frameRate: Float?          = null,
+    val bitrate: Int?              = null,
+    val durationMs: Long?          = null,
+    val isHdr: Boolean             = false,
+    val audioCodec: String?        = null,
+    val audioSampleRate: Int?      = null,
+    val audioChannels: Int?        = null,
+    val isPlayable: Boolean?       = null,
+)
+```
+
+Most metadata fields are nullable because not every container reports every field. The non-nullable `isHdr` defaults to `false` when indeterminate.
+
+| Field                | Type        | Notes |
+| -------------------- | ----------- | ----- |
+| `containerMimeType`  | `String?`   | e.g. `video/mp4`, `audio/mp4`, `audio/mpeg` |
+| `videoCodec`         | `String?`   | Track MIME, e.g. `video/hevc`, `video/avc` |
+| `videoProfile`       | `String?`   | Human-readable, e.g. `"Main 10"`, `"High"` |
+| `videoLevel`         | `String?`   | Human-readable, e.g. `"5.0"`, `"4.1"` |
+| `width` / `height`   | `Int?`      | **Pre-rotation** pixel dimensions |
+| `bitDepth`           | `Int?`      | 8 / 10 / 12 (relevant for HDR / 10-bit HEVC) |
+| `rotationDegrees`    | `Int?`      | 0 / 90 / 180 / 270 from container metadata |
+| `frameRate`          | `Float?`    | fps |
+| `bitrate`            | `Int?`      | Container total bitrate, bps |
+| `durationMs`         | `Long?`     | Total duration, ms |
+| `isHdr`              | `Boolean`   | True when an HDR transfer function (HDR10 / HLG / Dolby Vision) is present |
+| `audioCodec`         | `String?`   | Track MIME, e.g. `audio/mp4a-latm` |
+| `audioSampleRate`    | `Int?`      | Hz |
+| `audioChannels`      | `Int?`      | 1 = mono, 2 = stereo, more = multichannel |
+| `isPlayable`         | `Boolean?`  | iOS only (`AVAssetTrack.isPlayable`); `null` on Android |
+
+## `Supportability`
+
+```kotlin
+public sealed class Supportability {
+    public object Supported : Supportability()
+
+    public data class Unsupported(
+        public val reasons: List<String>,
+    ) : Supportability()
+
+    public data class Unknown(
+        public val reasons: List<String>,
+    ) : Supportability()
+}
+```
+
+Returned by [`Kompressor.canCompress`](/reference/kompressor). See the [Probe & compatibility guide](/guides/probe-and-compatibility) for the three-way semantic.
+
+## `DeviceCapabilities`
+
+Available on both platforms via `queryDeviceCapabilities()` (expect/actual). Describes every encoder and decoder the platform reports.
+
+```kotlin
+public data class DeviceCapabilities(
+    val video: List<CodecSupport.Video>,
+    val audio: List<CodecSupport.Audio>,
+    val deviceSummary: String,
+)
+
+public sealed interface CodecSupport {
+    val mimeType: String
+    val role: Role
+    val codecName: String?
+    val hardwareAccelerated: Boolean
+    val profiles: List<String>
+    val maxBitrate: Long?
+
+    enum class Role { Decoder, Encoder }
+
+    data class Video(
+        override val mimeType: String,
+        override val role: Role,
+        override val codecName: String? = null,
+        override val hardwareAccelerated: Boolean = false,
+        override val profiles: List<String> = emptyList(),
+        override val maxBitrate: Long? = null,
+        val maxResolution: Pair<Int, Int>? = null,
+        val maxFrameRate: Int? = null,
+        val supports10Bit: Boolean = false,
+        val supportsHdr: Boolean = false,
+    ) : CodecSupport
+
+    data class Audio(
+        override val mimeType: String,
+        override val role: Role,
+        override val codecName: String? = null,
+        override val hardwareAccelerated: Boolean = false,
+        override val profiles: List<String> = emptyList(),
+        override val maxBitrate: Long? = null,
+        val sampleRates: List<Int> = emptyList(),
+        val maxChannels: Int? = null,
+    ) : CodecSupport
+}
+```
+
+Mostly useful for crash analytics and debug overlays. End-user flows should prefer `Kompressor.canCompress(...)`.

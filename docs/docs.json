@@ -1,0 +1,74 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Kompressor",
+  "description": "Compress images, videos, and audio on Android and iOS — one Kotlin Multiplatform API, native hardware, zero binaries.",
+  "colors": {
+    "primary": "#1E40AF",
+    "light": "#3B82F6",
+    "dark": "#1E3A8A"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/cancellation",
+              "concepts/errors"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/image",
+              "guides/video",
+              "guides/audio",
+              "guides/probe-and-compatibility"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/kompressor",
+              "reference/image-api",
+              "reference/video-api",
+              "reference/audio-api",
+              "reference/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/cracknco/kompressor"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Maven Central",
+      "href": "https://central.sonatype.com/artifact/co.crackn.kompressor/kompressor"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cracknco/kompressor"
+    }
+  }
+}

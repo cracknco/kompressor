@@ -1,0 +1,92 @@
+---
+title: Quickstart
+description: "Compress an image, a video, and an audio file in five minutes."
+---
+
+This page assumes you've already [installed the dependency](/installation). Every compressor lives on a single `Kompressor` instance.
+
+## Create a Kompressor
+
+```kotlin
+import co.crackn.kompressor.createKompressor
+
+val kompressor = createKompressor()
+```
+
+<Note>
+  Each compressor (`image`, `video`, `audio`) is initialised lazily — only the ones you access are created. Safe to keep a single `Kompressor` around for the lifetime of the app.
+</Note>
+
+## Compress an image
+
+```kotlin
+val result = kompressor.image.compress(
+    inputPath  = "/path/to/photo.jpg",
+    outputPath = "/path/to/photo_compressed.jpg",
+)
+
+result.onSuccess { r ->
+    println("Compressed: ${r.outputSize / 1024} KB in ${r.durationMs}ms")
+}.onFailure { error ->
+    println("Error: ${error.message}")
+}
+```
+
+## Compress a video
+
+```kotlin
+val result = kompressor.video.compress(
+    inputPath  = "/path/to/video.mp4",
+    outputPath = "/path/to/video_compressed.mp4",
+    onProgress = { fraction -> updateProgressBar(fraction) },
+)
+```
+
+The `onProgress` callback is a regular `suspend (Float) -> Unit` — values flow from `0.0` to `1.0`.
+
+## Compress audio
+
+```kotlin
+val result = kompressor.audio.compress(
+    inputPath  = "/path/to/recording.wav",
+    outputPath = "/path/to/recording.m4a",
+)
+```
+
+Audio output is always **AAC in an `.m4a` container**. Inputs can be WAV, MP3, M4A / AAC, FLAC, OGG / Opus, AMR, or the audio track of an MP4 — anything the platform's default extractors can open.
+
+## Check the result
+
+Every `compress(...)` call returns `Result<CompressionResult>`:
+
+```kotlin
+data class CompressionResult(
+    val inputSize: Long,        // bytes
+    val outputSize: Long,       // bytes
+    val durationMs: Long,       // milliseconds
+) {
+    val compressionRatio: Float        // outputSize / inputSize
+    val isSmallerThanOriginal: Boolean // outputSize < inputSize
+}
+```
+
+<Warning>
+  Re-encoding an already-compressed file can produce a **larger** output — especially JPEG at a higher quality than the source, or AAC at a higher bitrate than the source. Check `isSmallerThanOriginal` and discard the output when compression would hurt instead of help.
+</Warning>
+
+## Where next
+
+<CardGroup cols={2}>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/errors">
+    `when`-branch on typed error subclasses instead of parsing messages.
+  </Card>
+  <Card title="Probe before you compress" icon="magnifying-glass" href="/guides/probe-and-compatibility">
+    Skip unsupported files upfront instead of failing the transcode.
+  </Card>
+  <Card title="Cancellation" icon="xmark" href="/concepts/cancellation">
+    Cancel the coroutine scope to abort an in-flight compression.
+  </Card>
+  <Card title="Presets" icon="sliders" href="/reference/video-api">
+    Ready-made configs for messaging, social, and high quality.
+  </Card>
+</CardGroup>

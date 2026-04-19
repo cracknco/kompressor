@@ -1,0 +1,119 @@
+---
+title: Audio
+description: "AAC transcoding for any audio format the platform can open, with a passthrough fast path."
+---
+
+`AudioCompressor` transcodes audio files into **AAC inside an `.m4a` container**.
+
+- **Android:** Media3 `Transformer` 1.10 — `SonicAudioProcessor` for resampling and `ChannelMixingAudioProcessor` for mono / stereo / multichannel downmixing. Output is AAC-LC.
+- **iOS:** `AVAssetExportSession` with the `AppleM4A` preset; falls back to an `AVAssetReader` → `AVAssetWriter` pipeline when the preset can't handle the requested channel / sample-rate conversion.
+
+## Supported inputs
+
+Any container the platform's default extractors can open:
+
+<CardGroup cols={3}>
+  <Card title="Raw / uncompressed">
+    WAV
+  </Card>
+  <Card title="Compressed">
+    MP3, M4A / AAC, FLAC, OGG / Opus, AMR
+  </Card>
+  <Card title="Mixed media">
+    MP4 (video track is stripped, audio kept)
+  </Card>
+</CardGroup>
+
+## Basic usage
+
+```kotlin
+val result = kompressor.audio.compress(
+    inputPath  = "/path/to/recording.wav",
+    outputPath = "/path/to/recording.m4a",
+    onProgress = { fraction -> println("${(fraction * 100).toInt()}%") },
+)
+```
+
+## Configuration
+
+```kotlin
+public data class AudioCompressionConfig(
+    val bitrate: Int = 128_000,
+    val sampleRate: Int = 44_100,
+    val channels: AudioChannels = AudioChannels.STEREO,
+)
+```
+
+Output is always AAC-LC in an M4A container on both platforms.
+
+<ParamField path="bitrate" type="Int" default="128_000">
+  Target bitrate in bits per second. Must be `> 0`.
+</ParamField>
+
+<ParamField path="sampleRate" type="Int" default="44_100">
+  Output sample rate in Hz. Sonic (Android) or the AVFoundation pipeline (iOS) resamples as needed. Must be `> 0`.
+</ParamField>
+
+<ParamField path="channels" type="AudioChannels" default="STEREO">
+  `AudioChannels.MONO` (1 channel) or `AudioChannels.STEREO` (2 channels).
+</ParamField>
+
+## Presets
+
+| Preset           | Bitrate    | Sample rate | Channels | Use case                          |
+| ---------------- | ---------- | ----------- | -------- | --------------------------------- |
+| `VOICE_MESSAGE`  | 32 kbps    | 22 050 Hz   | Mono     | Speech, voice notes               |
+| `PODCAST`        | 96 kbps    | 44 100 Hz   | Stereo   | Balanced quality / size           |
+| `HIGH_QUALITY`   | 192 kbps   | 44 100 Hz   | Stereo   | Near-transparent for music        |
+
+```kotlin
+kompressor.audio.compress(input, output, AudioPresets.VOICE_MESSAGE)
+```
+
+## Passthrough fast path
+
+<Tip>
+  When the input is already **AAC** and its **bitrate, sample rate, and channel count** match the requested config within a small tolerance (±20 % on bitrate), Kompressor activates a **bitstream-copy passthrough** — no decode, no re-encode. The output is the original AAC payload remuxed into a fresh M4A container, and the call finishes in **milliseconds** instead of seconds.
+</Tip>
+
+This is worth knowing because validation / upload pipelines often re-run the compressor against already-compressed files. With the fast path, that's nearly free.
+
+The fast path is skipped if:
+
+- The source bitrate isn't reported by the extractor (treated as unknown, re-encode to be safe).
+- Sample rate or channel count differs from the target.
+- The source isn't AAC to begin with.
+
+## Multichannel inputs
+
+Multichannel *input* (5.1, 7.1) is supported on Android: `AudioProcessorPlan` assembles a `ChannelMixingAudioProcessor` with either hand-rolled BS.775 downmix matrices (for 7.1 sources) or Media3's `ChannelMixingMatrix.createForConstantPower` (for 5.1 and below), covering input channel counts 1 through 8 into mono or stereo output. On iOS, multichannel upmix / downmix depends on what `AVAssetExportSession` / `AVAssetWriter` can do; sources that exceed those capabilities surface as `AudioCompressionError.UnsupportedConfiguration` **before** the encoder is opened.
+
+Multichannel *output* (`AudioChannels.FIVE_POINT_ONE`, `AudioChannels.SEVEN_POINT_ONE`) is gated by `@ExperimentalKompressorApi` — per-device encoder coverage is still being validated pre-1.0 and platform rejections surface as `AudioCompressionError` at compress time. Only mono and stereo output are stable.
+
+## Progress and cancellation
+
+See [Cancellation](/concepts/cancellation). Cancelling the coroutine scope aborts the export and deletes the partial M4A.
+
+## Error handling
+
+Failures are `Result.failure(AudioCompressionError.*)` — see [Error handling](/concepts/errors) for the full subtype table. A particularly useful one for audio is `UnsupportedConfiguration`, which fires **before** opening the encoder when the requested config is incompatible with the source (e.g. iOS asked to upmix mono to stereo, or input has more channels than the downmixer handles). Catch it to fall back to a narrower config:
+
+```kotlin
+kompressor.audio.compress(input, output, config).onFailure { err ->
+    if (err is AudioCompressionError.UnsupportedConfiguration) {
+        // Retry with a simpler channel layout
+        kompressor.audio.compress(input, output, config.copy(channels = AudioChannels.MONO))
+    }
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="AudioCompressor API reference" icon="square-terminal" href="/reference/audio-api">
+    Every symbol, default, and validation rule.
+  </Card>
+  <Card title="Probe & compatibility" icon="magnifying-glass" href="/guides/probe-and-compatibility">
+    Inspect an audio file's tracks before you try to compress.
+  </Card>
+</CardGroup>

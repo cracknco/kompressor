@@ -1,0 +1,130 @@
+---
+title: Video API
+description: "`VideoCompressor`, `VideoCompressionConfig`, `VideoCodec`, `MaxResolution`, and `VideoPresets`."
+---
+
+Package: `co.crackn.kompressor.video`
+
+## `VideoCompressor`
+
+```kotlin
+public interface VideoCompressor {
+    public val supportedInputFormats: Set<String>
+    public val supportedOutputFormats: Set<String>
+
+    public suspend fun compress(
+        inputPath: String,
+        outputPath: String,
+        config: VideoCompressionConfig = VideoCompressionConfig(),
+        onProgress: suspend (Float) -> Unit = {},
+    ): Result<CompressionResult>
+}
+```
+
+<ParamField path="inputPath" type="String" required>
+  Absolute filesystem path to the source video.
+</ParamField>
+<ParamField path="outputPath" type="String" required>
+  Absolute filesystem path for the compressed output. Overwritten if it exists.
+</ParamField>
+<ParamField path="config" type="VideoCompressionConfig" default="VideoCompressionConfig()">
+  Resolution / bitrate / codec parameters.
+</ParamField>
+<ParamField path="onProgress" type="suspend (Float) -> Unit" default="{}">
+  Called with a fraction `0.0..1.0` as progress advances. Throttled to a 1 % minimum delta.
+</ParamField>
+
+<ResponseField name="supportedInputFormats" type="Set<String>">
+  Video decoder MIMEs the platform reports (advisory).
+</ResponseField>
+<ResponseField name="supportedOutputFormats" type="Set<String>">
+  Video encoder MIMEs this compressor actually produces — today `{"video/avc"}`.
+</ResponseField>
+
+<Warning>
+  **Rotation metadata isn't preserved in v1.** Portrait-recorded videos may appear rotated. See the [video guide](/guides/video#known-limitations).
+</Warning>
+
+## `VideoCompressionConfig`
+
+```kotlin
+public data class VideoCompressionConfig(
+    val codec: VideoCodec = VideoCodec.H264,
+    val maxResolution: MaxResolution = MaxResolution.HD_720,
+    val videoBitrate: Int = 1_200_000,
+    val audioBitrate: Int = 128_000,
+    val maxFrameRate: Int = 30,
+    val keyFrameInterval: Int = 2,
+)
+```
+
+### Validation
+
+All `Int` fields must be `> 0`. Throws `IllegalArgumentException` at construction otherwise.
+
+## `VideoCodec`
+
+```kotlin
+public enum class VideoCodec {
+    H264
+}
+```
+
+Only `H264` is shipped today.
+
+## `MaxResolution`
+
+```kotlin
+public sealed class MaxResolution {
+    public data class Custom(val maxShortEdge: Int) : MaxResolution()
+    public data object Original                     : MaxResolution()
+
+    public companion object {
+        public val SD_480: Custom  = Custom(480)
+        public val HD_720: Custom  = Custom(720)
+        public val HD_1080: Custom = Custom(1080)
+    }
+}
+```
+
+`Custom(n)` caps the shortest edge at `n` pixels; the longest edge scales to preserve aspect ratio. `Original` keeps source dimensions. Never upscales.
+
+`Custom` throws `IllegalArgumentException` if `maxShortEdge ≤ 0`.
+
+## `VideoPresets`
+
+```kotlin
+public object VideoPresets {
+    public val MESSAGING: VideoCompressionConfig      // 720p,  1.2 Mbps, 128 kbps, 30 fps, 2s GOP
+    public val HIGH_QUALITY: VideoCompressionConfig   // 1080p, 3.5 Mbps, 192 kbps, 30 fps, 2s GOP
+    public val LOW_BANDWIDTH: VideoCompressionConfig  // 480p,  600 kbps, 96 kbps,  24 fps, 3s GOP
+    public val SOCIAL_MEDIA: VideoCompressionConfig   // 720p,  2.0 Mbps, 128 kbps, 30 fps, 1s GOP
+}
+```
+
+## `VideoCompressionError`
+
+```kotlin
+public sealed class VideoCompressionError(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+
+    public class UnsupportedSourceFormat(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Unsupported source format: $details", cause)
+
+    public class DecodingFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Decoding failed: $details", cause)
+
+    public class EncodingFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Encoding failed: $details", cause)
+
+    public class IoFailed(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("IO failed: $details", cause)
+
+    public class Unknown(val details: String, cause: Throwable? = null) :
+        VideoCompressionError("Compression failed: $details", cause)
+}
+```
+
+See [Error handling](/concepts/errors) for when each fires.
