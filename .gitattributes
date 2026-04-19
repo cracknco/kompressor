@@ -1,0 +1,47 @@
+# Git LFS tracking for test fixtures <= 2 MB.
+# Larger fixtures are stored in R2 and fetched by scripts/fetch-fixtures.sh.
+# See docs/adr/001-fixture-storage.md for the storage strategy.
+
+# Audio fixtures (small samples)
+fixtures/**/*.aac filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.flac filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.opus filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.wav filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.m4a filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.aiff filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.amr filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.3gp filter=lfs diff=lfs merge=lfs -text
+
+# Image fixtures
+fixtures/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.png filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.webp filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.heic filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.heif filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.avif filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.tiff filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.bmp filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.gif filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.dng filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.cr2 filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.nef filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.exr filter=lfs diff=lfs merge=lfs -text
+
+# Video fixtures
+fixtures/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.mov filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.webm filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.mkv filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.m4v filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.avi filter=lfs diff=lfs merge=lfs -text
+fixtures/**/*.ts filter=lfs diff=lfs merge=lfs -text
+
+# Existing test resources (androidDeviceTest — grandfathered, small files)
+kompressor/src/androidDeviceTest/resources/**/*.flac filter=lfs diff=lfs merge=lfs -text
+kompressor/src/androidDeviceTest/resources/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+kompressor/src/androidDeviceTest/resources/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+kompressor/src/androidDeviceTest/resources/**/*.aac filter=lfs diff=lfs merge=lfs -text
+kompressor/src/androidDeviceTest/resources/**/*.jpg filter=lfs diff=lfs merge=lfs -text

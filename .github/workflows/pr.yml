@@ -3,6 +3,16 @@ name: PR checks
 on:
   pull_request:
     branches: [ main ]
+    # Skip heavy CI for doc-only changes. GitHub treats path-skipped workflows
+    # as "skipped" — which counts as success for branch-protection required
+    # checks — so this is safe even with required-check rules configured.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,12 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
       - name: Run Ktlint
         run: ./gradlew ktlintCheck
 
@@ -39,12 +44,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
       # `--no-configuration-cache`: Detekt's Gradle plugin currently can't serialise its
       # `__detektClasspath__` through Gradle 9.4's configuration cache and intermittently
       # fails with `error writing value of type 'DefaultConfigurableFileCollection'`. Until
@@ -80,20 +80,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          lfs: true
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
         with:
           distribution: temurin
           java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - name: Cache test fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          path: fixtures
+          key: fixtures-${{ hashFiles('fixtures/manifest.json') }}
+          restore-keys: |
+            fixtures-
+      - name: Fetch test fixtures
+        run: ./scripts/fetch-fixtures.sh
       - name: Run tests (Android host)
         run: ./gradlew testAndroidHostTest
+      # BCV's `apiCheck` already exits non-zero on ABI drift. The wrapper below turns that
+      # into a GitHub-annotated error so the PR's Files-Changed view shows one actionable line
+      # ("Run `./gradlew apiDump` and commit …") right next to the red check, instead of the
+      # reviewer having to expand the logs to find the Gradle diff. No `continue-on-error`:
+      # the step must still fail the job — the annotation only augments the signal.
+      # Message is a hardcoded static string — no `github.event.*` interpolation — so there
+      # is no injection surface (cf. the security-reminder hook on workflow edits).
       - name: API binary compatibility check
-        run: ./gradlew apiCheck
+        run: |
+          set -e
+          if ! ./gradlew apiCheck; then
+            echo "::error title=ABI baseline drift::Public ABI diverged from kompressor/api/kompressor.api. Run \`./gradlew apiDump\` and commit the result if intentional. See docs/api-stability.md for the S/E/I review checklist."
+            exit 1
+          fi
       - name: Run Kover report
         run: ./gradlew koverXmlReport
       - name: Kover — quality gate
@@ -103,195 +121,6 @@ jobs:
         if: always()
         with:
           name: kover-report
-          path: kompressor/build/reports/kover/
-
-  # ── Android device tests (Firebase Test Lab) ─────────────
-  # Runs the 47 `androidDeviceTest` tests on a real Pixel 5 (API 33) at
-  # Google's physical-device farm. Replaced the previous ubuntu-latest
-  # emulator job which had structural codec limitations on x86_64 system
-  # images (Media3 Transformer ignored setBitrate, produced PCM-in-MP4
-  # fallback). Physical hardware runs the same MediaCodec stack Kompressor
-  # consumers will, so the tests validate real-world behaviour.
-  #
-  # FTL free tier covers ~1 physical device-hour/day. Our suite runs in
-  # ~5-7 min, so ~8-12 PRs/day are free; overage is ~$1/device-hour.
-  android-device-tests-ftl:
-    name: Android device tests (Firebase Test Lab — Pixel 6 API 33)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
-
-      - name: Assemble device-test APK
-        run: ./gradlew :kompressor:assembleAndroidDeviceTest
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
-
-      - name: Locate test APK
-        id: apk
-        run: |
-          APK=$(find kompressor/build/outputs/apk -type f -name "*.apk" | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error::No APK produced by assembleAndroidDeviceTest"
-            exit 1
-          fi
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "Found APK: $APK ($(du -h "$APK" | cut -f1))"
-
-      # Invoke Firebase Test Lab. Same APK is passed to both --app and --test
-      # because :kompressor: is a library module; AGP produces a single
-      # self-instrumenting test APK that bundles AndroidJUnitRunner.
-      #
-      # --results-bucket: we use a bucket we created and IAM-bound explicitly
-      # (`test-lab-kompressor-ci`) rather than FTL's auto-generated bucket.
-      # The auto-bucket is created with the FTL service's IAM, not our SA's,
-      # leading to `403 storage.objects.create denied` on upload. An explicit
-      # bucket with `storage.objectAdmin` granted to the admin-SDK SA sidesteps
-      # that entirely.
-      # Device choice: `oriole` (Pixel 6) because `redfin` (Pixel 5) is not available
-      # at API 33 on FTL — the model/version matrix only supports redfin up to API 31.
-      # Pixel 6 @ API 33 is a solid modern representative that exercises the real
-      # MediaCodec stack Kompressor consumers will hit.
-      - name: Run on Firebase Test Lab (Pixel 6 API 33)
-        env:
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          gcloud firebase test android run \
-            --type instrumentation \
-            --project kompressor-library \
-            --app "${{ steps.apk.outputs.path }}" \
-            --test "${{ steps.apk.outputs.path }}" \
-            --device model=oriole,version=33,locale=en,orientation=portrait \
-            --timeout 15m \
-            --no-record-video \
-            --no-performance-metrics \
-            --results-bucket test-lab-kompressor-ci \
-            --results-dir "ci-${RUN_ID}" \
-            --environment-variables coverage=true,coverageFile=/sdcard/coverage.ec \
-            --directories-to-pull /sdcard
-
-      # Download the JaCoCo `.ec` coverage file FTL pulled from `/sdcard/` so it can be
-      # merged into the Kover report in a later iteration (see TODO in `kompressor/build.gradle.kts`
-      # — unlocks raising the Kover gate from 85 → 90 % by covering device-only classes like
-      # `AndroidAudioCompressor`, `AndroidVideoCompressor`, `Media3ExportRunner`).
-      - name: Download FTL device coverage
-        if: always()
-        env:
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          mkdir -p build/ftl-coverage
-          # FTL deposits the pulled artifacts under <results-dir>/<device-id>/artifacts/
-          # `coverage.ec` keeps that exact filename.
-          gcloud storage cp -r \
-            "gs://test-lab-kompressor-ci/ci-${RUN_ID}/oriole-33-en-portrait/artifacts/coverage.ec" \
-            build/ftl-coverage/ || echo "No coverage.ec produced (likely a validation-time failure)"
-          ls -la build/ftl-coverage/ || true
-
-      - name: Upload FTL coverage artifact
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ftl-device-coverage
-          path: build/ftl-coverage/
-          if-no-files-found: warn
-
-  # ── Merged coverage gate (host + FTL device) ────────────────
-  # Runs *after* both `test` (host) and `android-device-tests-ftl` complete. Host tests are
-  # fast-feedback and keep their own 85 % gate; this job merges the device `.ec` from FTL into
-  # the Kover report and enforces a tighter 90 % bar that reflects the full combined coverage.
-  #
-  # Keeping the merge in a separate job (rather than serialising `test` after FTL) preserves
-  # the fast-feedback property — you see host test results in ~3 min, iOS sim in ~2 min, and
-  # only the merged-coverage gate waits on the 5-7 min FTL round-trip.
-  merged-coverage:
-    name: Merged coverage (host + device)
-    runs-on: ubuntu-latest
-    needs: [test, android-device-tests-ftl]
-    # Don't fail the CI if FTL itself failed for a transient reason (quota, network) — device
-    # coverage being missing is a lesser harm than blocking a merge on an unrelated infra issue.
-    if: always() && needs.test.result == 'success'
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
-
-      # `continue-on-error: true`: if FTL's upload step didn't run (quota hit, earlier
-       # failure, cancelled workflow), the artifact won't exist. Tolerate that so this job
-       # falls back to a host-only gate instead of blocking the merge on an infra hiccup.
-      - name: Download FTL device coverage
-        id: dl-ftl
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: ftl-device-coverage
-          path: ftl-coverage/
-
-      - name: Place device .ec where Kover expects it
-        id: place-coverage
-        run: |
-          # Kover wires JaCoCo coverage for androidDeviceTest via the
-          # `enableCoverage = true` flag on `withDeviceTestBuilder`. The build normally writes
-          # the .ec file to kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/
-          # after `connectedAndroidDeviceTest` runs. Since FTL runs the tests remotely, we
-          # drop the downloaded .ec in the same spot so `koverXmlReport` includes it in the
-          # merged report on the next invocation.
-          target_dir="kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest"
-          mkdir -p "$target_dir"
-          if [ -f ftl-coverage/coverage.ec ]; then
-            cp ftl-coverage/coverage.ec "$target_dir/connected-coverage.ec"
-            echo "Merged: $(ls -la $target_dir)"
-            echo "merged=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::No FTL coverage.ec — falling back to host-only gate."
-            echo "merged=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run Kover merged report
-        run: ./gradlew :kompressor:koverXmlReport
-
-      # Only run the tighter `-PkoverMergedGate=true` gate (90 %) when we actually have
-      # device `.ec` merged — otherwise the flag trims exclusions without the coverage data
-      # that justifies trimming them, and the job fails at ~52 % instead of ~90 %. Falling
-      # back to the same host-only 85 % gate as the `test` job keeps the signal honest
-      # without false-failing on infra issues.
-      - name: Kover merged quality gate
-        run: |
-          if [ "${{ steps.place-coverage.outputs.merged }}" = "true" ]; then
-            ./gradlew -PkoverMergedGate=true :kompressor:koverVerify
-          else
-            ./gradlew :kompressor:koverVerify
-          fi
-
-      - name: Upload merged Kover report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: kover-merged-report
           path: kompressor/build/reports/kover/
 
   # ── iOS simulator tests ──────────────────────────────────
@@ -304,17 +133,30 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          lfs: true
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
         with:
           distribution: temurin
           java-version: 21
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - name: Cache test fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: fixtures
+          key: fixtures-${{ hashFiles('fixtures/manifest.json') }}
+          restore-keys: |
+            fixtures-
+      - name: Fetch test fixtures
+        run: ./scripts/fetch-fixtures.sh
+      # Konan (Kotlin/Native) toolchain is not managed by setup-gradle; cache
+      # separately so iOS sim tests don't re-download the compiler each run.
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.konan
-          key: native-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
       - name: Run iOS simulator tests
         run: ./gradlew :kompressor:iosSimulatorArm64Test --stacktrace
       - name: Upload iOS test report

@@ -195,11 +195,25 @@ val result = kompressor.image.compress(inputPath, outputPath, config)
 
 ### Formats
 
+Input containers (auto-detected from magic bytes, with an extension fallback for DNG):
+
+| Input | Android | iOS | Notes |
+|-------|---------|-----|-------|
+| JPEG / PNG / WebP / GIF / BMP | ✅ API 24+ | ✅ iOS 15+ | Universal. |
+| HEIC / HEIF | ✅ API **30+** | ✅ iOS 15+ | Below API 30, Kompressor fails with `UnsupportedInputFormat(minApi = 30)` rather than gamble on OEM decoder coverage. |
+| AVIF | ✅ API **31+** | ✅ iOS **16+** | Typed `UnsupportedInputFormat` on older platforms. |
+| DNG (raw) | ✅ API 24+ | ✅ iOS 15+ | Extension-based detection; quality depends on the device's RAW pipeline. |
+
+Output formats:
+
 | `ImageFormat` | Android | iOS | Notes |
 |--------------|---------|-----|-------|
-| `JPEG` | ✅ | ✅ | Lossy. Best for photos. |
+| `JPEG` | ✅ API 24+ | ✅ iOS 15+ | Lossy. Best for photos. |
+| `WEBP` | ✅ API 24+ | ❌ | Lossy WebP (deprecated `WEBP` constant below API 30, `WEBP_LOSSY` above). iOS surfaces `UnsupportedOutputFormat`. |
+| `HEIC` (`@ExperimentalKompressorApi`) | ❌ | ✅ iOS 15+ | Android has no stable `Bitmap.CompressFormat.HEIC` in this release. |
+| `AVIF` (`@ExperimentalKompressorApi`) | ✅ API **34+** | ✅ iOS **16+** | Best ratio. Typed `UnsupportedOutputFormat` on older platforms. |
 
-> PNG and WebP support is planned for a future release.
+Full matrix, decision rationale, and sentinel `minApi` values: see [`docs/format-support.md`](docs/format-support.md).
 
 ### Presets
 
@@ -259,7 +273,6 @@ val config = VideoCompressionConfig(
     maxResolution    = MaxResolution.HD_720,
     videoBitrate     = 1_200_000,
     audioBitrate     = 128_000,
-    audioCodec       = AudioCodec.AAC,
     maxFrameRate     = 30,
     keyFrameInterval = 2,
 )
@@ -267,13 +280,14 @@ val config = VideoCompressionConfig(
 val result = kompressor.video.compress(inputPath, outputPath, config)
 ```
 
+The output audio track is always AAC-LC (muxed into the MP4 container alongside the re-encoded video).
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `codec` | `VideoCodec` | `H264` | Video codec |
 | `maxResolution` | `MaxResolution` | `HD_720` | Maximum output resolution |
 | `videoBitrate` | `Int` | `1_200_000` | Video bitrate in bps |
 | `audioBitrate` | `Int` | `128_000` | Audio bitrate in bps |
-| `audioCodec` | `AudioCodec` | `AAC` | Audio codec |
 | `maxFrameRate` | `Int` | `30` | Max frame rate |
 | `keyFrameInterval` | `Int` | `2` | Key frame interval in seconds |
 
@@ -308,7 +322,6 @@ Output is **AAC in an `.m4a` (MP4) container**. Input can be anything the platfo
 
 ```kotlin
 val config = AudioCompressionConfig(
-    codec      = AudioCodec.AAC,
     bitrate    = 128_000,
     sampleRate = 44100,
     channels   = AudioChannels.STEREO,
@@ -317,18 +330,13 @@ val config = AudioCompressionConfig(
 val result = kompressor.audio.compress(inputPath, outputPath, config)
 ```
 
+Output is always AAC-LC in an M4A container on both Android and iOS.
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `codec` | `AudioCodec` | `AAC` | Output codec |
 | `bitrate` | `Int` | `128_000` | Bitrate in bps |
 | `sampleRate` | `Int` | `44100` | Sample rate in Hz |
 | `channels` | `AudioChannels` | `STEREO` | Mono or Stereo |
-
-### Codecs
-
-| `AudioCodec` | Android | iOS | Notes |
-|-------------|---------|-----|-------|
-| `AAC` | ✅ | ✅ | Best choice for speech and music. |
 
 ### Presets
 
@@ -482,6 +490,33 @@ sealed class AudioCompressionError(
 | 5 MB DSLR photo | ~800 KB |
 | 3 MB iPhone photo | ~500 KB |
 | 1 MB screenshot | ~200 KB |
+
+---
+
+## Versioning & Stability
+
+Kompressor follows [Semantic Versioning 2.0.0](https://semver.org) **strictly** from version **1.0.0** onward:
+
+- **MAJOR** — breaking changes to the public API.
+- **MINOR** — additive, backward-compatible features.
+- **PATCH** — backward-compatible bug fixes.
+
+APIs annotated with `@ExperimentalKompressorApi` or declared `internal` are **not** covered by the semver contract and may change in any release.
+
+Binary compatibility is maintained across MINOR and PATCH releases for all artifact types (AAR, klib, Kotlin/Native framework).
+
+> Full policy, binary compatibility details, and exemptions: **[docs/api-stability.md](docs/api-stability.md)**
+
+---
+
+## Contributing
+
+We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup
+instructions, commit conventions, and the PR process.
+
+Please note that this project is released with a
+**[Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md)**. By participating
+in this project you agree to abide by its terms.
 
 ---
 

@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,7 +26,7 @@ import kotlin.test.assertTrue
  * Edge-case inputs for the video compressor: audio-only MP4s (must be rejected upfront with
  * `VideoCompressionError.UnsupportedSourceFormat`) and video-only MP4s (must compress
  * successfully, producing a video-only output). The library pre-flight that rejects audio-only
- * inputs lives in `AndroidVideoCompressor.probeVideoTracks`.
+ * inputs lives in `AndroidVideoCompressor.probeVideo`.
  */
 class VideoEdgeCasesTest {
 

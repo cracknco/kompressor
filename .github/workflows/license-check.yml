@@ -1,0 +1,39 @@
+name: License audit
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── License header check ───────────────────────────────
+  license-headers:
+    name: License headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Check SPDX headers in .kt files
+        run: |
+          missing=0
+          while IFS= read -r file; do
+            if ! head -4 "$file" | grep -q 'SPDX-License-Identifier: Apache-2.0'; then
+              echo "MISSING  $file"
+              missing=$((missing + 1))
+            fi
+          done < <(find kompressor/src sample/src -name '*.kt' -type f)
+
+          echo ""
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::$missing file(s) missing the Apache-2.0 SPDX license header."
+            exit 1
+          fi
+          echo "All .kt files have SPDX license headers."

@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor
 
 import platform.UIKit.UIDevice
@@ -7,12 +12,15 @@ import platform.UIKit.UIDevice
  * and HEVC Main for both decode and encode.
  *
  * HEVC Main 10 decode requires A9 (iPhone 6s) — guaranteed on every iOS 15 device.
- * HEVC Main 10 **encode** requires A10 Fusion (iPhone 7, 2016). The iPhone 6s /
- * 6s Plus (A9) run iOS 15 but cannot encode 10-bit HEVC, so we conservatively
- * advertise the HEVC encoder as 8-bit only. A per-chip detection via
- * `VTCopyVideoEncoderList` would lift the restriction on newer SoCs — left as a
- * follow-up because the observable false-negative on A10+ is "we ask Media3 to
- * transcode Main 10 HEVC down to 8-bit" which is correct behaviour anyway.
+ * HEVC Main 10 **encode** requires A10 Fusion (iPhone 7, 2016); an iOS 15 device on
+ * A9 silicon will accept the settings dictionary but fail during the writer's session.
+ * We advertise the HEVC encoder as `supports10Bit = true, supportsHdr = true` here
+ * because the compressor gates the actual compress call on a runtime probe
+ * (`IosVideoCompressor.requireHdr10HevcCapability` uses `AVAssetWriter.
+ * canApplyOutputSettings` with BT.2020+PQ) and turns any unsupported device into a
+ * typed [co.crackn.kompressor.video.VideoCompressionError.UnsupportedSourceFormat]
+ * *before* the writer opens, so the aspirational capability flag never leaks into a
+ * silent downgrade or a post-start crash.
  *
  * H.264 has no 10-bit profile on iOS hardware, so every AVC entry is
  * `supports10Bit = false`.
@@ -27,10 +35,15 @@ public actual fun queryDeviceCapabilities(): DeviceCapabilities {
     )
 }
 
-private fun iosVideoCodecs(): List<CodecSupport> {
+private fun iosVideoCodecs(): List<CodecSupport.Video> {
     val hevcDecoderProfiles = listOf("Main", "Main 10")
     val hevcEncoderProfiles = listOf("Main")
     val h264Profiles = listOf("Baseline", "Main", "High")
+    // A10 Fusion (2016) is the first iOS SoC with hardware HEVC Main10 encode; the runtime
+    // pre-flight (`IosVideoCompressor.requireHdr10HevcCapability`) surfaces a typed error on
+    // A9/iOS 15 devices that can't actually honour the advertised profile, so this entry is
+    // allowed to read aspirationally.
+    val hevcEncoderSupports10Bit = true
     return listOf(
         videoCodec("video/avc", CodecSupport.Role.Decoder, h264Profiles, supports10Bit = false),
         videoCodec(
@@ -45,13 +58,13 @@ private fun iosVideoCodecs(): List<CodecSupport> {
             "video/hevc",
             CodecSupport.Role.Encoder,
             hevcEncoderProfiles,
-            supports10Bit = false,
-            supportsHdr = false,
+            supports10Bit = hevcEncoderSupports10Bit,
+            supportsHdr = hevcEncoderSupports10Bit,
         ),
     )
 }
 
-private fun iosAudioCodecs(): List<CodecSupport> = listOf(
+private fun iosAudioCodecs(): List<CodecSupport.Audio> = listOf(
     audioCodec("audio/mp4a-latm", CodecSupport.Role.Decoder),
     audioCodec("audio/mp4a-latm", CodecSupport.Role.Encoder),
     audioCodec("audio/mpeg", CodecSupport.Role.Decoder),
@@ -64,7 +77,7 @@ private fun videoCodec(
     profiles: List<String>,
     supports10Bit: Boolean = false,
     supportsHdr: Boolean = false,
-): CodecSupport = CodecSupport(
+): CodecSupport.Video = CodecSupport.Video(
     mimeType = mime,
     role = role,
     hardwareAccelerated = true,
@@ -73,5 +86,5 @@ private fun videoCodec(
     supportsHdr = supportsHdr,
 )
 
-private fun audioCodec(mime: String, role: CodecSupport.Role): CodecSupport =
-    CodecSupport(mimeType = mime, role = role, hardwareAccelerated = false)
+private fun audioCodec(mime: String, role: CodecSupport.Role): CodecSupport.Audio =
+    CodecSupport.Audio(mimeType = mime, role = role, hardwareAccelerated = false)

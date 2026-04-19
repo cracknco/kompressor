@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.video
 
 import androidx.media3.transformer.ExportException

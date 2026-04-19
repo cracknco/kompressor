@@ -1,0 +1,28 @@
+name: Changelog check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kompressor/src/**'
+
+jobs:
+  changelog-entry:
+    name: Unreleased entry required
+    runs-on: ubuntu-latest
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for Unreleased changelog entry
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Extracts the `## [Unreleased]` section from the base and head
+        # revisions of CHANGELOG.md directly (not from `git diff` output),
+        # so the check is independent of the unified-diff context window.
+        # See scripts/ci/check-unreleased-entry.sh for details.
+        run: scripts/ci/check-unreleased-entry.sh "$BASE_SHA" "$HEAD_SHA"

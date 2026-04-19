@@ -1,4 +1,11 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.video
+
+import co.crackn.kompressor.ExperimentalKompressorApi
 
 /** Ready-to-use [VideoCompressionConfig] presets for common use cases. */
 object VideoPresets {
@@ -30,5 +37,24 @@ object VideoPresets {
         videoBitrate = 2_000_000,
         audioBitrate = 128_000,
         keyFrameInterval = 1,
+    )
+
+    /**
+     * HDR10 preservation: 1080p HEVC 10-bit BT.2020 + PQ, 10 Mbps video, 192 kbps audio.
+     *
+     * Requires a device whose `MediaCodecList` / AVFoundation exposes an HEVC Main10 HDR10
+     * encoder. Callers can check via [co.crackn.kompressor.queryDeviceCapabilities] — the
+     * compressor surfaces `VideoCompressionError.UnsupportedSourceFormat` if the selected
+     * device cannot encode HDR10.
+     *
+     * Gated by [ExperimentalKompressorApi] transitively through [DynamicRange.HDR10].
+     */
+    @ExperimentalKompressorApi
+    val HDR10_1080P = VideoCompressionConfig(
+        codec = VideoCodec.HEVC,
+        maxResolution = MaxResolution.HD_1080,
+        videoBitrate = 10_000_000,
+        audioBitrate = 192_000,
+        dynamicRange = DynamicRange.HDR10,
     )
 }

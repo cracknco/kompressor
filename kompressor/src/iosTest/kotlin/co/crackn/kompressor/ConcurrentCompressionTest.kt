@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package co.crackn.kompressor
@@ -26,7 +31,8 @@ import kotlin.test.assertTrue
 
 /**
  * iOS mirror of `androidDeviceTest/.../ConcurrentCompressionTest.kt`. Confirms that 4 parallel
- * audio exports and a 2+2 audio/image mix all finish successfully with distinct outputs.
+ * audio exports, a 2+2 audio/image mix, and a 16-coroutine stress grid all finish successfully
+ * with distinct outputs. See `docs/threading-model.md`.
  */
 class ConcurrentCompressionTest {
 
@@ -95,8 +101,31 @@ class ConcurrentCompressionTest {
         }
     }
 
-    private fun writeWav(index: Int): String {
-        val path = tempDir + "audio_in_$index.wav"
+    @Test
+    fun sixteenParallelCoroutines_allSucceed() = runBlocking {
+        val inputs = (0 until STRESS_COUNT).map { i -> writeStressWav(i) }
+        val outputs = (0 until STRESS_COUNT).map { i -> tempDir + "stress_audio_out_$i.m4a" }
+
+        val results = coroutineScope {
+            inputs.zip(outputs).map { (inPath, outPath) ->
+                async(Dispatchers.Default) { audio.compress(inPath, outPath) }
+            }.awaitAll()
+        }
+
+        results.forEachIndexed { i, r ->
+            assertTrue(r.isSuccess, "Stress audio #$i failed: ${r.exceptionOrNull()}")
+        }
+        outputs.forEachIndexed { i, out ->
+            assertTrue(fileSize(out) > 0, "Stress output #$i empty")
+        }
+    }
+
+    private fun writeWav(index: Int): String = writeWavAt("audio_in_$index.wav")
+
+    private fun writeStressWav(index: Int): String = writeWavAt("stress_audio_in_$index.wav")
+
+    private fun writeWavAt(fileName: String): String {
+        val path = tempDir + fileName
         writeBytes(
             path,
             WavGenerator.generateWavBytes(
@@ -112,5 +141,6 @@ class ConcurrentCompressionTest {
         const val PARALLEL_AUDIO_COUNT = 4
         const val MIXED_AUDIO_COUNT = 2
         const val MIXED_IMAGE_COUNT = 2
+        const val STRESS_COUNT = 16
     }
 }

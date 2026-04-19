@@ -60,11 +60,42 @@ kotlin {
             }
         }
     }
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "Kompressor"
+            isStatic = true
+        }
+        val interopDir = project.file("src/nativeInterop/cinterop")
+        val targetLibDir = when (target.name) {
+            "iosArm64" -> "iosArm64"
+            "iosSimulatorArm64" -> "iosSimulatorArm64"
+            "iosX64" -> "iosX64"
+            else -> error("Unexpected iOS target: ${target.name}")
+        }
+        target.compilations.getByName("main") {
+            cinterops {
+                create("ObjCExceptionCatcher") {
+                    defFile(interopDir.resolve("ObjCExceptionCatcher.def"))
+                    includeDirs(interopDir)
+                    extraOpts("-libraryPath", interopDir.resolve("libs/$targetLibDir").absolutePath)
+                }
+            }
+        }
+    }
 
     sourceSets {
+        // Tests freely exercise experimental (`@ExperimentalKompressorApi`) surface — opt in at
+        // the module level so individual `@OptIn` on every test class is unnecessary. The
+        // propagation is scoped to every test source set (common + android host/device +
+        // per-target iosX64/iosArm64/iosSimulatorArm64Test); production
+        // `commonMain`/`androidMain`/`iosMain` must still opt in explicitly so accidental use of
+        // experimental API from stable code is still caught at compile time. See
+        // docs/api-stability.md for the stability contract.
+        val experimentalOptIn = "co.crackn.kompressor.ExperimentalKompressorApi"
+        matching { it.name.endsWith("Test") }.configureEach {
+            languageSettings.optIn(experimentalOptIn)
+        }
+
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
         }
@@ -91,6 +122,10 @@ kotlin {
             implementation(libs.androidx.media3.common)
         }
 
+        getByName("androidHostTest").dependencies {
+            implementation(libs.mockk)
+        }
+
         getByName("androidDeviceTest").dependencies {
             implementation(libs.junit)
             implementation(libs.androidx.test.runner)
@@ -99,55 +134,18 @@ kotlin {
     }
 }
 
-// Kover has two gate modes:
-//   * Default (host-only): excludes every class that can only run on a device or simulator
-//     because `testAndroidHostTest` alone can't exercise them. 85 % is the bar for this mode.
-//   * Merged (host + FTL device `.ec`): triggered by `-PkoverMergedGate=true`, trims the
-//     excludes for device-testable classes (Android*/Ios* compressors, `Media3ExportRunner`,
-//     `AudioProcessorPlan`) and raises the bar to 90 %. The CI `merged-coverage` job drops
-//     the device `coverage.ec` into `kompressor/build/outputs/code_coverage/connectedAndroidDeviceTest/`
-//     before invoking `koverXmlReport`, so those classes show up in the merged report.
-val mergedCoverageGate = providers.gradleProperty("koverMergedGate").orNull == "true"
-
-// Kover 0.9.8 quirk: `reports.filters.excludes` is honoured by `koverXmlReport` but
-// `koverVerify` / `koverCachedVerify` read their filter set from `reports.verify.rule.filters`
-// and do NOT inherit from `reports.filters`. Apply the exclude list in both places so the
-// quality gate evaluates the same coverage as the XML report.
-val koverExcludedClasses = buildList {
-    // Platform glue — device or simulator only, no equivalent pure logic available
-    // host-side. Excluded irrespective of host-only vs merged mode.
-    add("co.crackn.kompressor.AndroidDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.MediaCodecUtilsKt")
-    add("co.crackn.kompressor.IosDeviceCapabilitiesKt")
-    add("co.crackn.kompressor.IosFileUtils*")
-    add("co.crackn.kompressor.IosKompressor")
-    add("co.crackn.kompressor.IosKompressorKt")
-    add("co.crackn.kompressor.AndroidKompressor")
-    add("co.crackn.kompressor.AndroidKompressorKt")
-    if (!mergedCoverageGate) {
-        // Host-only mode: add all classes that require a real codec stack / native
-        // platform APIs. In merged mode, device tests cover these and they're included.
-        add("co.crackn.kompressor.*.Android*")
-        add("co.crackn.kompressor.*.Ios*")
-        add("co.crackn.kompressor.image.ImageSource")
-        add("co.crackn.kompressor.image.ImageSource\$*")
-        add("co.crackn.kompressor.image.FilePathSource")
-        add("co.crackn.kompressor.image.FilePathSource\$*")
-        add("co.crackn.kompressor.image.ContentUriSource")
-        add("co.crackn.kompressor.image.ContentUriSource\$*")
-        add("co.crackn.kompressor.image.AndroidImageCompressorKt")
-        add("co.crackn.kompressor.audio.AndroidAudioCompressorKt")
-        add("co.crackn.kompressor.audio.AudioTrackExtractionKt")
-        add("co.crackn.kompressor.video.AndroidVideoCompressorKt")
-        add("co.crackn.kompressor.Media3ExportRunnerKt")
-        add("co.crackn.kompressor.Media3ExportRunnerKt\$*")
-        add("co.crackn.kompressor.audio.InputAudioFormat")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan")
-        add("co.crackn.kompressor.audio.AudioProcessorPlan\$*")
-    }
-}
+// Kover host-only gate at 85 %. Device tests are not wired into CI; if someone runs
+// `connectedAndroidDeviceTest` locally, coverage is emitted but not merged into this gate.
+//
+// Single source of truth for the Kover exclusion set lives in the root `build.gradle.kts`,
+// which populates `rootProject.extra["baseKoverExcludes"]` before this script evaluates.
+@Suppress("UNCHECKED_CAST")
+val koverExcludedClasses = rootProject.extra["baseKoverExcludes"] as List<String>
 
 kover {
+    // JaCoCo for `.ec` host-side binaries. Matches AGP's `enableCoverage = true` on
+    // `withDeviceTestBuilder` so local device-test runs produce a compatible binary format.
+    useJacoco()
     reports {
         filters {
             excludes { classes(koverExcludedClasses) }
@@ -155,8 +153,7 @@ kover {
         verify {
             rule {
                 bound {
-                    // 85 % host-only, 90 % merged (host + device).
-                    minValue = if (mergedCoverageGate) 90 else 85
+                    minValue = 85
                 }
             }
         }
@@ -196,3 +193,4 @@ mavenPublishing {
         }
     }
 }
+

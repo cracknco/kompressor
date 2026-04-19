@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 @file:OptIn(ExperimentalForeignApi::class)
 
 package co.crackn.kompressor.property
@@ -78,9 +83,9 @@ class AudioCompressionPropertyTest {
             val result = compressor.compress(inputPath, outputPath, config)
 
             // Either the compressor succeeds and produces a valid M4A, or it rejects the
-            // configuration with a typed `UnsupportedConfiguration` — both are well-defined
-            // library outcomes. Any other failure mode (opaque `Exception`, crash, silent
-            // wrong-format output) is a regression worth catching.
+            // configuration with a typed `UnsupportedConfiguration` (e.g. upmix) or
+            // `UnsupportedBitrate` (bitrate out of range) — both are well-defined library
+            // outcomes. Any other failure mode is a regression worth catching.
             val error = result.exceptionOrNull()
             if (result.isSuccess) {
                 val compression = result.getOrThrow()
@@ -92,7 +97,8 @@ class AudioCompressionPropertyTest {
                 )
             } else {
                 assertTrue(
-                    error is AudioCompressionError.UnsupportedConfiguration,
+                    error is AudioCompressionError.UnsupportedConfiguration ||
+                        error is AudioCompressionError.UnsupportedBitrate,
                     "Compression failed for $config with unexpected error: $error",
                 )
             }

@@ -1,6 +1,12 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+@file:OptIn(co.crackn.kompressor.ExperimentalKompressorApi::class)
+
 package co.crackn.kompressor.audio
 
-import co.crackn.kompressor.AudioCodec
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.awaitWriterFinish
@@ -9,7 +15,10 @@ import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -26,6 +35,7 @@ import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVAssetWriter
 import platform.AVFoundation.AVAssetWriterInput
 import platform.AVFAudio.AVAudioFile
+import platform.AVFAudio.AVChannelLayoutKey
 import platform.AVFAudio.AVEncoderBitRateKey
 import platform.AVFAudio.AVFormatIDKey
 import platform.AVFAudio.AVLinearPCMBitDepthKey
@@ -45,7 +55,11 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
+import platform.Foundation.NSData
+import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
+import platform.Foundation.create
 
 /** iOS audio compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
@@ -57,7 +71,6 @@ internal class IosAudioCompressor : AudioCompressor {
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        require(config.codec == AudioCodec.AAC) { "Only AAC codec is currently supported" }
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)
         val inputSize = sizeOrTypedError(inputPath)
@@ -77,6 +90,7 @@ internal class IosAudioCompressor : AudioCompressor {
         validateAudioTrackIndex(inputPath, config.audioTrackIndex)
         validateChannelConfiguration(inputPath, config)
         validateBitrateForSampleRateAndChannels(config)
+        requireAacEncodingCapability(config)
         runPipelineWithTypedErrors(outputPath) {
             if (canUseExportSession(config)) {
                 IosExportSessionPipeline(inputPath, outputPath).execute(onProgress)
@@ -85,7 +99,11 @@ internal class IosAudioCompressor : AudioCompressor {
             }
         }
         onProgress(1f)
-        val outputSize = nsFileSize(outputPath)
+        // Route the output-size read through `sizeOrTypedError` too: a race that loses the
+        // output file between pipeline success and this read would otherwise leak the untyped
+        // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
+        // `Result.failure`, which `suspendRunCatching` passes through unchanged.
+        val outputSize = sizeOrTypedError(outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         CompressionResult(inputSize, outputSize, durationMs)
     }
@@ -167,11 +185,11 @@ internal class IosAudioCompressor : AudioCompressor {
      * rejects bitrates above a per-sample-rate / per-channel ceiling. Crossing the ceiling
      * surfaces as an opaque `AVAssetWriterInput.appendSampleBuffer` failure mid-export. Rather
      * than let callers chase that, we reject the configuration upfront with a typed
-     * [AudioCompressionError.UnsupportedConfiguration].
+     * [AudioCompressionError.UnsupportedBitrate].
      *
-     * The per-channel caps below were determined empirically by binary-searching the property
-     * test (see `AudioCompressionPropertyTest`). The table mirrors Apple's published AAC-LC
-     * ranges in the AudioToolbox documentation:
+     * The per-channel caps below follow a conservative linear model derived from Apple's
+     * published AAC-LC ranges in the AudioToolbox documentation — they are not device-specific
+     * empirical maxima:
      *
      * | sample rate     | max kbps / channel |
      * |-----------------|-------------------:|
@@ -187,6 +205,40 @@ internal class IosAudioCompressor : AudioCompressor {
     // AVAssetExportSession uses Apple's internal preset quality — it does NOT honour
     // the exact bitrate/sampleRate/channels from AudioCompressionConfig. We only use it
     // when the caller passes the default config (no custom expectations to violate).
+    /**
+     * Probe `AVAssetWriter.canApplyOutputSettings` with the AAC encoding dictionary
+     * *before* creating `AVAssetWriterInput`. On real iOS devices the hardware AAC encoder
+     * only supports mono/stereo; requesting ≥3 channels causes `AVAssetWriterInput.init`
+     * to throw an Obj-C `NSException` that K/N cannot catch. This pre-flight turns the
+     * crash into a typed [AudioCompressionError.UnsupportedConfiguration].
+     */
+    private fun requireAacEncodingCapability(config: AudioCompressionConfig) {
+        val channelCount = config.channels.count
+        if (channelCount <= 2) return
+        val tmpUrl = NSURL.fileURLWithPath(
+            NSTemporaryDirectory() + "kompressor-aac-probe-" +
+                NSUUID().UUIDString + ".m4a",
+        )
+        val writer = AVAssetWriter.assetWriterWithURL(
+            tmpUrl, fileType = AVFileTypeAppleM4A, error = null,
+        )
+        val probeSettings: Map<Any?, *> = buildMap {
+            put(AVFormatIDKey, kAudioFormatMPEG4AAC)
+            put(AVEncoderBitRateKey, config.bitrate)
+            put(AVSampleRateKey, config.sampleRate)
+            put(AVNumberOfChannelsKey, channelCount)
+            channelLayoutData(config.channels)?.let { put(AVChannelLayoutKey, it) }
+        }
+        val supported = writer?.canApplyOutputSettings(
+            probeSettings, forMediaType = AVMediaTypeAudio,
+        ) ?: false
+        if (!supported) {
+            throw AudioCompressionError.UnsupportedConfiguration(
+                "AAC encoder does not support $channelCount-channel output on this device",
+            )
+        }
+    }
+
     private fun canUseExportSession(config: AudioCompressionConfig): Boolean =
         config == AudioCompressionConfig()
 
@@ -196,48 +248,61 @@ internal class IosAudioCompressor : AudioCompressor {
 }
 
 /**
- * Pure, iOS-only validation of the bitrate / sample-rate / channel combinations Apple's AAC-LC
- * encoder (reached via `AVAssetWriterInput`) will actually honour end-to-end. Exposed
- * `internal` so the table is covered directly by `IosAudioBitrateValidationTest` instead of
- * relying on the property test bumping into each edge case.
+ * Conservative per-channel linear pre-check for the bitrate / sample-rate / channel
+ * combinations Apple's AAC-LC encoder accepts via `AVAssetWriterInput`. The platform is the
+ * source of truth — this pre-check exists only to surface typed [AudioCompressionError.UnsupportedBitrate]
+ * ahead of the `AVAssetWriterInput failed to append sample buffer` opaque runtime error.
  *
- * Per-channel caps derived from Apple's AudioToolbox AAC-LC documentation and empirically
- * confirmed by property-test shrinks (32 kHz mono @ 131 kbps, 22.05 kHz stereo @ 145 kbps
- * both reproduce the opaque "failed to append sample buffer" above their respective cap).
+ * Per-channel caps are derived from Apple's AudioToolbox AAC-LC documentation. If the
+ * platform happens to accept configurations the linear model rejects, callers will see a
+ * pre-check `UnsupportedBitrate` even though the real encoder would have succeeded — acceptable
+ * over-restriction for a conservative model.
  */
 internal fun checkSupportedIosBitrate(config: AudioCompressionConfig) {
-    val maxPerChannel = when {
-        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
-        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
-        config.sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
-        else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
-    }
-    val maxBitrate = maxPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    val maxBitrate = iosAacMaxBitrate(config.sampleRate, config.channels)
     if (config.bitrate > maxBitrate) {
-        throw AudioCompressionError.UnsupportedConfiguration(
+        throw AudioCompressionError.UnsupportedBitrate(
             "iOS AAC encoder does not support ${config.bitrate} bps at " +
                 "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
                 "max supported is $maxBitrate bps",
         )
     }
-    // Apple's AAC-LC encoder also rejects bitrates below a per-sample-rate **minimum**.
-    // The surrounding failure mode is identical to the over-cap case ("failed to append
-    // sample buffer") so we fail fast with the same typed error. Minimums empirically
-    // determined from Apple AudioToolbox AAC-LC parameters and confirmed by property-test
-    // shrinks (32 kHz stereo @ 42 kbps fails; 32 kHz stereo @ 48 kbps succeeds).
-    val minPerChannel = when {
-        config.sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
-        config.sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
-        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
-    }
-    val minBitrate = minPerChannel * IOS_KBPS_TO_BPS * config.channels.count
+    val minBitrate = iosAacMinBitrate(config.sampleRate, config.channels)
     if (config.bitrate < minBitrate) {
-        throw AudioCompressionError.UnsupportedConfiguration(
+        throw AudioCompressionError.UnsupportedBitrate(
             "iOS AAC encoder does not support ${config.bitrate} bps at " +
                 "${config.sampleRate} Hz × ${config.channels.count} channel(s); " +
                 "minimum supported is $minBitrate bps",
         )
     }
+}
+
+/**
+ * Maximum bitrate (in bps) that AudioToolbox's AAC-LC encoder accepts for the given
+ * [sampleRate] and [channels], per a conservative linear per-channel model. Actual
+ * platform behaviour may accept slightly higher values — the real check happens at
+ * `AVAssetWriterInput.append()` time.
+ */
+internal fun iosAacMaxBitrate(sampleRate: Int, channels: AudioChannels): Int =
+    linearPerChannelMaxKbps(sampleRate) * channels.count * IOS_KBPS_TO_BPS
+
+private fun linearPerChannelMaxKbps(sampleRate: Int): Int = when {
+    sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MAX_KBPS_LOW_RATE
+    sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MAX_KBPS_MID_RATE
+    sampleRate <= IOS_AAC_HIGH_RATE_HZ -> IOS_AAC_MAX_KBPS_HIGH_RATE
+    else -> IOS_AAC_MAX_KBPS_VERY_HIGH_RATE
+}
+
+/**
+ * Minimum bitrate (in bps) per the conservative linear model — see [iosAacMaxBitrate].
+ */
+internal fun iosAacMinBitrate(sampleRate: Int, channels: AudioChannels): Int {
+    val minPerChannelKbps = when {
+        sampleRate <= IOS_AAC_LOW_RATE_HZ -> IOS_AAC_MIN_KBPS_LOW_RATE
+        sampleRate <= IOS_AAC_MID_RATE_HZ -> IOS_AAC_MIN_KBPS_MID_RATE
+        else -> IOS_AAC_MIN_KBPS_HIGH_RATE
+    }
+    return minPerChannelKbps * IOS_KBPS_TO_BPS * channels.count
 }
 
 private const val IOS_KBPS_TO_BPS = 1_000
@@ -251,6 +316,29 @@ private const val IOS_AAC_MAX_KBPS_VERY_HIGH_RATE = 192
 private const val IOS_AAC_MIN_KBPS_LOW_RATE = 16
 private const val IOS_AAC_MIN_KBPS_MID_RATE = 24
 private const val IOS_AAC_MIN_KBPS_HIGH_RATE = 32
+
+// AudioChannelLayout struct: mChannelLayoutTag (UInt32) + mChannelBitmap (UInt32) +
+// mNumberChannelDescriptions (UInt32) = 12 bytes. When using a tag with zero descriptions,
+// the variable-length mChannelDescriptions array is empty.
+private const val AUDIO_CHANNEL_LAYOUT_STRUCT_SIZE = 12
+
+@Suppress("MagicNumber")
+@OptIn(BetaInteropApi::class, ExperimentalForeignApi::class)
+internal fun channelLayoutData(channels: AudioChannels): NSData? {
+    val tag: UInt = when (channels) {
+        AudioChannels.MONO, AudioChannels.STEREO -> null
+        AudioChannels.FIVE_POINT_ONE -> (121u shl 16) or 6u // kAudioChannelLayoutTag_MPEG_5_1_A
+        AudioChannels.SEVEN_POINT_ONE -> (128u shl 16) or 8u // kAudioChannelLayoutTag_MPEG_7_1_C
+    } ?: return null
+    val bytes = ByteArray(AUDIO_CHANNEL_LAYOUT_STRUCT_SIZE)
+    bytes[0] = (tag and 0xFFu).toByte()
+    bytes[1] = ((tag shr 8) and 0xFFu).toByte()
+    bytes[2] = ((tag shr 16) and 0xFFu).toByte()
+    bytes[3] = ((tag shr 24) and 0xFFu).toByte()
+    return bytes.usePinned { pinned ->
+        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+    }
+}
 
 @OptIn(ExperimentalForeignApi::class)
 private class IosPipeline(
@@ -275,12 +363,13 @@ private class IosPipeline(
         AVNumberOfChannelsKey to channelCount,
     )
 
-    private val encodingSettings: Map<Any?, *> = mapOf(
-        AVFormatIDKey to kAudioFormatMPEG4AAC,
-        AVEncoderBitRateKey to config.bitrate,
-        AVSampleRateKey to config.sampleRate,
-        AVNumberOfChannelsKey to channelCount,
-    )
+    private val encodingSettings: Map<Any?, *> = buildMap {
+        put(AVFormatIDKey, kAudioFormatMPEG4AAC)
+        put(AVEncoderBitRateKey, config.bitrate)
+        put(AVSampleRateKey, config.sampleRate)
+        put(AVNumberOfChannelsKey, channelCount)
+        channelLayoutData(config.channels)?.let { put(AVChannelLayoutKey, it) }
+    }
 
     @Suppress("UNCHECKED_CAST")
     suspend fun execute(onProgress: suspend (Float) -> Unit) {

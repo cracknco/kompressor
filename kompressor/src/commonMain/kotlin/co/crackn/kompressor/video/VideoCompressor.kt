@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
@@ -47,6 +52,11 @@ public interface VideoCompressor {
      * @param config Compression settings (codec, resolution, bitrate, etc.).
      * @param onProgress Called with a value between 0.0 and 1.0 as compression progresses.
      * @return [Result] wrapping [CompressionResult] on success, or a [VideoCompressionError] on failure.
+     *
+     * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
+     * calls from different coroutines or OS processes on the same instance are safe provided
+     * every call writes to a distinct output path. Concurrent calls that share an output path
+     * produce undefined results. See `docs/threading-model.md`.
      */
     public suspend fun compress(
         inputPath: String,

@@ -1,0 +1,67 @@
+name: Regression
+description: Report something that used to work but is now broken
+labels: ["regression"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A regression is a feature that worked in a previous version but no longer does.
+        Please provide as much version detail as possible to help us narrow down the change.
+
+  - type: input
+    id: version-worked
+    attributes:
+      label: Last working version
+      description: The most recent version where this feature worked correctly.
+      placeholder: "e.g. 0.9.0"
+    validations:
+      required: true
+
+  - type: input
+    id: version-broken
+    attributes:
+      label: First broken version
+      description: The earliest version where you noticed the regression.
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Which platform is affected?
+      options:
+        - Android
+        - iOS
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: device-model
+    attributes:
+      label: Device model (optional)
+      description: If the regression is device-specific, which device(s) exhibit it?
+      placeholder: "e.g. Pixel 8, Samsung Galaxy S24, iPhone 15 Pro"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What broke?
+      description: Describe the behavior that regressed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: bisect
+    attributes:
+      label: Bisect results
+      description: |
+        If you were able to bisect, paste the commit or version range here.
+        This is optional but helps us a lot.
+      placeholder: "e.g. regression introduced between abc1234 and def5678"
+    validations:
+      required: false

@@ -1,11 +1,18 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.image
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.os.Build
 import androidx.exifinterface.media.ExifInterface
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
@@ -17,6 +24,7 @@ import java.io.IOException
 import java.io.InputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
+@OptIn(ExperimentalKompressorApi::class)
 internal class AndroidImageCompressor : ImageCompressor {
 
     override suspend fun compress(
@@ -24,7 +32,6 @@ internal class AndroidImageCompressor : ImageCompressor {
         outputPath: String,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        require(config.format == ImageFormat.JPEG) { "Only JPEG format is currently supported" }
         try {
             doCompress(inputPath, outputPath, config)
         } catch (e: ImageCompressionError) {
@@ -41,10 +48,15 @@ internal class AndroidImageCompressor : ImageCompressor {
         outputPath: String,
         config: ImageCompressionConfig,
     ): CompressionResult {
+        androidOutputGate(config.format, Build.VERSION.SDK_INT)?.let { throw it }
+
         val startNanos = System.nanoTime()
 
         val source = ImageSource.of(inputPath)
         val inputSize = source.size()
+        val detectedFormat = detectInputImageFormat(source.readHeader(), fileExtension(inputPath))
+        androidInputGate(detectedFormat, Build.VERSION.SDK_INT)?.let { throw it }
+
         val exifRotation = source.readExifRotation()
         val rawDims = source.decodeRawDimensions()
         val orientedDims = applyRotationToDimensions(rawDims, exifRotation)
@@ -57,7 +69,7 @@ internal class AndroidImageCompressor : ImageCompressor {
         val bitmap = source.decodeSampledBitmap(rawDims, target, exifRotation)
         try {
             currentCoroutineContext().ensureActive()
-            resizeAndWrite(bitmap, target, outputPath, config.quality)
+            resizeAndWrite(bitmap, target, outputPath, config)
         } finally {
             bitmap.recycle()
         }
@@ -70,10 +82,15 @@ internal class AndroidImageCompressor : ImageCompressor {
     private fun applyRotationToDimensions(dims: ImageDimensions, rotation: ExifRotation): ImageDimensions =
         if (rotation.swapsDimensions) ImageDimensions(dims.height, dims.width) else dims
 
-    private fun resizeAndWrite(bitmap: Bitmap, target: ImageDimensions, outputPath: String, quality: Int) {
+    private fun resizeAndWrite(
+        bitmap: Bitmap,
+        target: ImageDimensions,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ) {
         val scaled = resizeBitmapIfNeeded(bitmap, target)
         try {
-            writeBitmapAsJpeg(scaled, outputPath, quality)
+            writeBitmap(scaled, outputPath, config)
         } finally {
             if (scaled !== bitmap) scaled.recycle()
         }
@@ -81,24 +98,21 @@ internal class AndroidImageCompressor : ImageCompressor {
 
     private fun resizeBitmapIfNeeded(bitmap: Bitmap, target: ImageDimensions): Bitmap {
         if (bitmap.width == target.width && bitmap.height == target.height) return bitmap
-        // codebadger:suppress(resource-leak) caller (resizeAndWrite) recycles in finally block
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
-    private fun writeBitmapAsJpeg(bitmap: Bitmap, outputPath: String, quality: Int) {
+    private fun writeBitmap(bitmap: Bitmap, outputPath: String, config: ImageCompressionConfig) {
+        val compressFormat = androidCompressFormat(config.format)
         // Capture the compress result inside `use { }` so the stream is closed before we throw.
-        // Throwing inside the use-block works too but leaves the throw-point visibly inside the
-        // open-stream frame, which static analysers (CodeBadger/Joern) flag as a potential leak
-        // of sibling resources (e.g. the caller-owned Bitmap). Returning the boolean and then
-        // throwing after close moves the error path to a point where the I/O resource is
-        // provably released — the ownership contract for the Bitmap itself lives with the
-        // caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
+        // Returning the boolean and then throwing after close moves the error path to a point
+        // where the I/O resource is provably released — the Bitmap ownership contract lives with
+        // the caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
         val success = FileOutputStream(outputPath).use { stream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+            bitmap.compress(compressFormat, config.quality, stream)
         }
         if (!success) {
             throw ImageCompressionError.EncodingFailed(
-                "Bitmap.compress(JPEG, quality=$quality) returned false for: $outputPath",
+                "Bitmap.compress(${config.format}, quality=${config.quality}) returned false for: $outputPath",
             )
         }
     }
@@ -107,6 +121,36 @@ internal class AndroidImageCompressor : ImageCompressor {
         const val NANOS_PER_MILLI = 1_000_000L
     }
 }
+
+/**
+ * Maps the library's [ImageFormat] to the platform [Bitmap.CompressFormat]. The gate
+ * in [androidOutputGate] has already rejected formats unavailable on the current API level,
+ * so every branch here is reachable at its respective minimum SDK.
+ */
+@OptIn(ExperimentalKompressorApi::class)
+private fun androidCompressFormat(format: ImageFormat): Bitmap.CompressFormat = when (format) {
+    ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
+    ImageFormat.WEBP -> androidWebPFormat()
+    ImageFormat.AVIF -> androidAvifFormat()
+    ImageFormat.HEIC -> error("HEIC output should be rejected by androidOutputGate before reaching here")
+}
+
+// `Bitmap.CompressFormat.WEBP` is deprecated as of API 30 in favour of `WEBP_LOSSY` /
+// `WEBP_LOSSLESS`, but still works on API 24 where the new variants don't exist. Pick the
+// lossy variant above API 30 since we expose a single `quality` parameter.
+@Suppress("DEPRECATION")
+private fun androidWebPFormat(): Bitmap.CompressFormat =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Bitmap.CompressFormat.WEBP_LOSSY
+    } else {
+        Bitmap.CompressFormat.WEBP
+    }
+
+// `Bitmap.CompressFormat.AVIF` is API 34+; the androidOutputGate has already thrown on older.
+// Use valueOf to avoid a compile-time dependency on compileSdk ≥ 34 (we build against 36,
+// which provides it, so this is just insurance against downgrades).
+private fun androidAvifFormat(): Bitmap.CompressFormat =
+    Bitmap.CompressFormat.valueOf("AVIF")
 
 /**
  * Describes the EXIF orientation transform to apply to raw pixel data.
@@ -124,7 +168,7 @@ private data class ExifRotation(
 /**
  * Abstracts the two input-path forms the compressor accepts — filesystem paths (`/sdcard/…`,
  * `file://…`) and `content://` URIs delivered by share sheets / the photo picker / SAF. Both
- * code paths need the same four operations (`size()`, `readExifRotation()`,
+ * code paths need the same five operations (`size()`, `readHeader()`, `readExifRotation()`,
  * `decodeRawDimensions()`, `decodeSampledBitmap(...)`); dispatching through a sealed interface
  * keeps the compressor body linear while the two file-access layers (java.io.File vs
  * ContentResolver) stay isolated.
@@ -132,6 +176,7 @@ private data class ExifRotation(
 private sealed interface ImageSource {
 
     fun size(): Long
+    fun readHeader(): ByteArray
     fun readExifRotation(): ExifRotation
     fun decodeRawDimensions(): ImageDimensions
     fun decodeSampledBitmap(
@@ -152,11 +197,16 @@ private class FilePathSource(private val path: String) : ImageSource {
 
     override fun size(): Long = File(path).length()
 
+    override fun readHeader(): ByteArray = try {
+        File(path).inputStream().use { it.readFirstBytes(IMAGE_SNIFF_BYTES) }
+    } catch (e: FileNotFoundException) {
+        throw ImageCompressionError.IoFailed("Input file not found: $path", e)
+    }
+
     override fun readExifRotation(): ExifRotation = decodeExifOrientation(ExifInterface(path))
 
     override fun decodeRawDimensions(): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
         BitmapFactory.decodeFile(path, options)
         if (options.outWidth <= 0 || options.outHeight <= 0) {
             if (!File(path).exists()) {
@@ -193,6 +243,8 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         pfd.statSize.coerceAtLeast(0L)
     } ?: 0L
 
+    override fun readHeader(): ByteArray = openStream().use { it.readFirstBytes(IMAGE_SNIFF_BYTES) }
+
     override fun readExifRotation(): ExifRotation = openStream().use { stream ->
         decodeExifOrientation(ExifInterface(stream))
     }
@@ -200,7 +252,6 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     override fun decodeRawDimensions(): ImageDimensions {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         openStream().use { stream ->
-            // codebadger:suppress(resource-leak) inJustDecodeBounds=true — no bitmap allocated
             BitmapFactory.decodeStream(stream, null, options)
         }
         if (options.outWidth <= 0 || options.outHeight <= 0) {
@@ -216,7 +267,6 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     ): Bitmap {
         val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
         val decoded = openStream().use { stream ->
-            // codebadger:suppress(resource-leak) Bitmap ownership transfers to caller via rotateOrRecycle.
             BitmapFactory.decodeStream(stream, null, options)
                 ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $uri")
         }
@@ -224,9 +274,19 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     }
 
     private fun openStream(): InputStream =
-        // codebadger:suppress(resource-leak) Stream closed by caller via `use { }`.
         resolver.openInputStream(uri)
             ?: throw ImageCompressionError.IoFailed("ContentResolver returned null input stream for $uri")
+}
+
+private fun InputStream.readFirstBytes(count: Int): ByteArray {
+    val buffer = ByteArray(count)
+    var offset = 0
+    while (offset < count) {
+        val read = read(buffer, offset, count - offset)
+        if (read <= 0) break
+        offset += read
+    }
+    return if (offset == count) buffer else buffer.copyOf(offset)
 }
 
 private fun decodeExifOrientation(exif: ExifInterface): ExifRotation =

@@ -1,27 +1,36 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor
 
 import android.content.Context
 import androidx.startup.Initializer
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 internal object KompressorContext {
-    // Nullable backing rather than `lateinit` so [resetForTest] can clear it between tests
-    // exercising the uninitialized → access failure path. Production code never calls
-    // [resetForTest]; App Startup invokes [init] exactly once per process.
-    @Volatile
-    private var _appContext: Context? = null
+    private val _appContext = AtomicReference<Context?>(null)
+    private val _initCount = AtomicInteger(0)
 
     val appContext: Context
-        get() = checkNotNull(_appContext) {
+        get() = checkNotNull(_appContext.get()) {
             "Kompressor is not initialized. Ensure App Startup is not disabled for KompressorInitializer."
         }
 
     fun init(context: Context) {
-        _appContext = context.applicationContext
+        val appCtx = context.applicationContext
+        if (_appContext.compareAndSet(null, appCtx)) {
+            _initCount.incrementAndGet()
+        }
     }
 
-    /** Test-only hook to reset the singleton between tests. Do not call from production code. */
+    internal val initCount: Int get() = _initCount.get()
+
     internal fun resetForTest() {
-        _appContext = null
+        _appContext.set(null)
+        _initCount.set(0)
     }
 }
 

@@ -28,3 +28,20 @@ naming:
     active: true
   VariableNaming:
     active: true
+
+# Typed-error taxonomy: extend `TooGenericExceptionThrown` to block untyped exception
+# types from leaking out of public compress() APIs. Detekt's rule is AST-based and matches
+# `throw <TypeName>(...)` expressions only — `kotlin.error(...)` / `kotlin.check(...)` and
+# `require` / `check` remain valid for programmer-error contract violations, since platform
+# wrappers that re-throw these are remapped to typed errors by `mapTo*Error()` helpers.
+exceptions:
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - Error
+      - Exception
+      - NullPointerException
+      - RuntimeException
+      - Throwable
+      - IllegalStateException
+      - IllegalArgumentException

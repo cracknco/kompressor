@@ -1,3 +1,8 @@
+/*
+ * Copyright 2025 crackn.co
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package co.crackn.kompressor.audio
 
 /**
@@ -70,6 +75,19 @@ public sealed class AudioCompressionError(
         public val details: String,
         cause: Throwable? = null,
     ) : AudioCompressionError("Unsupported configuration: $details", cause)
+
+    /**
+     * The requested bitrate falls outside the platform encoder's supported range for the given
+     * sample rate and channel count. Callers should adjust the bitrate to fall within the range
+     * reported in [details] — unlike [UnsupportedConfiguration] (which signals a fundamentally
+     * incompatible layout such as upmixing), this error is recoverable by choosing a different
+     * bitrate.
+     */
+    public class UnsupportedBitrate(
+        /** Free-form diagnostic — requested vs. supported bitrate range. */
+        public val details: String,
+        cause: Throwable? = null,
+    ) : AudioCompressionError("Unsupported bitrate: $details", cause)
 
     /** Fallback for platform errors we couldn't classify. */
     public class Unknown(
