@@ -93,12 +93,28 @@ public sealed class VideoCompressionError(
     public class IoFailed(val details: String, cause: Throwable? = null) :
         VideoCompressionError("IO failed: $details", cause)
 
+    public class Hdr10NotSupported(
+        val device: String,
+        val codec: String,
+        val reason: String,
+        cause: Throwable? = null,
+    ) : VideoCompressionError(
+        "HEVC Main10 HDR10 not supported on this device: device=$device, codec=$codec, reason=$reason",
+        cause,
+    )
+
     public class Unknown(val details: String, cause: Throwable? = null) :
         VideoCompressionError("Compression failed: $details", cause)
 }
 ```
 
-The video hierarchy mirrors audio without `UnsupportedConfiguration`.
+| Subtype | When it fires | What to do |
+| ------- | ------------- | ---------- |
+| `UnsupportedSourceFormat` | No on-device decoder supports the source's codec / profile / level, or the container wasn't recognised. | Offer a "convert first" flow. |
+| `Hdr10NotSupported` | Android only. Caller opted into `DynamicRange.HDR10` but this device either does not advertise HEVC Main10 + `FEATURE_HdrEditing` (capability matrix check) **or** declares it but fails the active runtime probe (OEM firmware bug — allocating the encoder for real throws). | Offer an SDR fallback (drop `DynamicRange.HDR10`) or show a "HDR10 requires a newer device" message. Fields `device` / `codec` / `reason` are the diagnostic for bug reports. |
+| `DecodingFailed`, `EncodingFailed`, `IoFailed`, `Unknown` | As for audio. | — |
+
+The `Hdr10NotSupported` error is a dedicated subtype because the remediation is distinct — there's nothing wrong with the *source*, the caller simply asked for an output envelope this device cannot hit. See the [HDR10 compatibility matrix](/guides/probe-and-compatibility#hdr10-compatibility-android) for the device-level story.
 
 ## Image failures
 
