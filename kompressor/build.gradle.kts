@@ -142,6 +142,11 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.androidx.test.runner)
             implementation(libs.androidx.test.rules)
+            // CRA-50 — LeakCanary is scoped to the instrumentation test classpath so heap
+            // dumps / retained-instance detection run alongside our golden tests, but the
+            // library's published artifact ships zero LeakCanary bytes. If a leak slips
+            // into the Media3/AVFoundation integration, `CompressionLeakTest` fails CI.
+            implementation(libs.leakcanary.android.instrumentation)
         }
     }
 }
