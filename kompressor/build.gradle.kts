@@ -233,8 +233,14 @@ dokka {
         // External doc links so Kotlin stdlib / coroutines / Android SDK symbols are clickable
         // instead of plain text. Without these, e.g. `kotlinx.coroutines.flow.Flow` references in
         // the API render as dead strings.
+        // Pin `packageListUrl` on both links. Without an explicit URL, Dokka tries to derive it
+        // by appending `/package-list` to the base `url` — which is correct today for both
+        // endpoints, but a silent failure mode if JetBrains or Google ever reorganise their docs
+        // tree (links render as plain text instead of anchors, no build warning). Pinning keeps
+        // the behaviour audit-able at review time.
         externalDocumentationLinks.register("kotlinx-coroutines") {
             url.set(URI("https://kotlinlang.org/api/kotlinx.coroutines/"))
+            packageListUrl.set(URI("https://kotlinlang.org/api/kotlinx.coroutines/package-list"))
         }
         externalDocumentationLinks.register("android") {
             url.set(URI("https://developer.android.com/reference/"))

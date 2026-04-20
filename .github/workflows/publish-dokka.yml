@@ -68,8 +68,14 @@ jobs:
           # semantic-release cuts tags like `v1.2.3`; strip the leading `v` so the URL
           # is `/api/1.2.3/` rather than `/api/v1.2.3/`.
           resolved="${resolved#v}"
-          # Defensive guard against path traversal or shell metachars through a crafted
-          # tag name. Any real semver-ish tag matches this; anything else is rejected.
+          # Defensive guards against path traversal, shell metachars, and pathologically long
+          # tag names. Real semver tags (`1.2.3`, `1.0.0-rc.4+build.99`) never exceed ~30 chars;
+          # 64 is generous enough to absorb odd build-metadata suffixes without letting a crafted
+          # release name explode `api/${VERSION}/` into a filesystem hazard.
+          if [[ ${#resolved} -gt 64 ]]; then
+            echo "::error::Refusing to publish docs for an over-long version string (${#resolved} chars, max 64)."
+            exit 1
+          fi
           if ! [[ "${resolved}" =~ ^[A-Za-z0-9._+-]+$ ]]; then
             echo "::error::Refusing to publish docs for version '${resolved}' — only [A-Za-z0-9._+-] is allowed."
             exit 1
@@ -115,6 +121,9 @@ jobs:
         # documented as config-cache-compatible, but its interaction with the Android KMP
         # plugin + vanniktech publishing hasn't been stress-tested on this repo. The runs
         # here are infrequent (one per release) so the cold-cache cost is negligible.
+        # TODO: revisit this flag after a Dokka v2.2+ / Vanniktech 0.37+ bump lands on this
+        # repo — verify a release with the flag removed, then drop it. Tracked follow-up in
+        # the PR description and in `docs/ci/dokka-config-cache.md` if/when we pin it down.
         run: ./gradlew :kompressor:dokkaGeneratePublicationHtml "-Pversion=${DOKKA_VERSION}" "-PsourceLinkRef=v${DOKKA_VERSION}" --no-configuration-cache
 
       - name: Publish to gh-pages
@@ -145,11 +154,19 @@ jobs:
             git fetch origin gh-pages --depth 1
             git worktree add "${worktree}" origin/gh-pages
             # Turn the detached HEAD into a proper `gh-pages` branch inside the worktree.
-            # If `git switch` fails for any reason (ref-corruption, pre-existing local branch
-            # on the runner, etc.) surface it as a warning so the log tells us — rather than
-            # `|| true` which would mask a real failure and let us push from detached HEAD.
-            (cd "${worktree}" && git switch -c gh-pages) \
-              || echo "::warning::git switch -c gh-pages failed; proceeding from detached HEAD (push target is HEAD:gh-pages)."
+            # The eventual `git push origin HEAD:gh-pages` at the end of this step still works
+            # from a detached HEAD (the remote ref is named explicitly), so a failure here is
+            # functionally recoverable — but silently proceeding would hide real problems like
+            # ref-corruption or a stale local branch on a re-used runner. Surface enough context
+            # in the warning that a reviewer can diagnose the next occurrence without replaying
+            # the run: the working-tree summary from the worktree itself.
+            if ! (cd "${worktree}" && git switch -c gh-pages); then
+              {
+                echo "::warning::git switch -c gh-pages failed; proceeding from detached HEAD (push target is HEAD:gh-pages)."
+                echo "::warning::Worktree status follows (for diagnosis):"
+                (cd "${worktree}" && git status --short --branch) || true
+              }
+            fi
           else
             # First-time publish: create the orphan branch inline.
             git worktree add --no-checkout "${worktree}" HEAD
