@@ -88,28 +88,34 @@ trap cleanup EXIT
 # unrelated fixture churn).
 KTEST_FILTER="co.crackn.kompressor.IosCompressionLeakTest.*"
 
-# Resolve `xcrun` to an absolute path. `xctrace record --launch -- <cmd>` does
-# NOT PATH-resolve <cmd> (it's fed straight to posix_spawn as a path), so a
-# bare `xcrun` argument fails with `Path not found 'xcrun'`. Equally, driving
-# the launch via `xctrace --device … --launch -- <host-relative-path-to-kexe>`
-# fails because xctrace hands the path to the simulator's posix_spawn, which
-# has no visibility into host-relative paths (`posix_spawn failure: test.kexe
-# (No such file or directory)`). `xcrun simctl spawn <UDID> <absolute-host-path>`
-# bridges both: simctl mounts the host filesystem into the simulator and
-# launches the Mach-O in the sim runtime, while xctrace attaches its Allocations
-# + Leaks instruments to the spawned test.kexe process itself.
-XCRUN_PATH="$(command -v xcrun || true)"
-if [[ -z "$XCRUN_PATH" ]]; then
-  echo "::error title=iOS leak test::xcrun not found on PATH. Install Xcode / Command Line Tools."
-  exit 2
-fi
+# Launch target: an absolute path to the host-side `test.kexe`. `$BINARY` is
+# repo-relative (we `cd $REPO_ROOT` at the top), so prefix with `$REPO_ROOT`
+# for an absolute path the simulator can resolve.
+#
+# Path iteration history (so the next maintainer doesn't re-walk it):
+#   - `--launch -- xcrun simctl spawn <UDID> <path>`: fails two ways — (a)
+#     xctrace doesn't PATH-resolve the bare `xcrun` command, producing
+#     `Path not found 'xcrun'`, and (b) even with `xcrun`'s absolute path,
+#     xctrace attaches its Allocations + Leaks instruments to the `xcrun`
+#     *parent* process (which forks into the sim and exits fast). The scanner
+#     then reports `failed to create VMUTaskMemoryScanner, probably because
+#     the target's libmalloc hasn't been initialized` — it's scanning xcrun's
+#     dying heap, not test.kexe's live one.
+#   - `--device <UDID> --launch -- <relative-path>`: xctrace hands the path
+#     to the simulator's posix_spawn which has no host-relative-path
+#     visibility: `posix_spawn failure: test.kexe (No such file or directory)`.
+#   - `--device <UDID> --launch -- <absolute-host-path>` (this form): xctrace
+#     bridges the host filesystem into the simulator's spawn and attaches
+#     instruments to the resulting test.kexe process directly — no xcrun
+#     wrapper in between.
 ABS_BINARY="$REPO_ROOT/$BINARY"
 
 echo "==> Recording Leaks trace"
 xctrace record \
+  --device "$DEVICE_UDID" \
   --template 'Leaks' \
   --output "$TRACE_PATH" \
-  --launch -- "$XCRUN_PATH" simctl spawn "$DEVICE_UDID" "$ABS_BINARY" --ktest_filter="$KTEST_FILTER"
+  --launch -- "$ABS_BINARY" --ktest_filter="$KTEST_FILTER"
 
 echo "==> Exporting leaks table"
 # The Leaks template produces a `leaks` schema on the main run; each row is one
