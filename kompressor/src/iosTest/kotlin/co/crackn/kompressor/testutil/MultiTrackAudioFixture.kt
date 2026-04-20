@@ -41,16 +41,25 @@ object MultiTrackAudioFixture {
     private const val SAMPLE_RATE = 44_100
 
     /**
-     * Create [outputPath] with one mono PCM audio track per entry in [trackFrequencies], each
-     * carrying the listed sine tone (Hz) for [durationSec] seconds.
+     * Create [outputPath] with one audio track per entry in [trackFrequencies], each carrying
+     * the listed sine tone (Hz) for [durationSec] seconds.
+     *
+     * [channelsPerTrack] controls per-track channel count. Defaults to 1 (mono) for backwards
+     * compatibility. When set to 2 (stereo), each track duplicates the same sine tone on both
+     * channels so mono downmix at read time still yields a clean single-frequency peak —
+     * required for Goertzel-based verification in the fast-path AVAudioMix tests where the
+     * caller's config is default STEREO and the upmix pre-flight would otherwise reject a
+     * mono source.
      */
     fun createMultiTrackAudioMp4(
         outputPath: String,
         durationSec: Int,
         trackFrequencies: List<Int>,
+        channelsPerTrack: Int = 1,
     ): String {
         require(durationSec > 0) { "durationSec must be > 0" }
         require(trackFrequencies.isNotEmpty()) { "at least one track required" }
+        require(channelsPerTrack in 1..2) { "channelsPerTrack must be 1 or 2, was $channelsPerTrack" }
 
         val tempDir = NSTemporaryDirectory() + "kompressor-multitrack-${NSUUID().UUIDString}/"
         NSFileManager.defaultManager.createDirectoryAtPath(
@@ -59,7 +68,7 @@ object MultiTrackAudioFixture {
         try {
             val singleTrackPaths = trackFrequencies.mapIndexed { idx, freq ->
                 val path = "$tempDir/track_$idx.wav"
-                writeSineMonoWav(path, freq.toDouble(), durationSec)
+                writeSineWav(path, freq.toDouble(), durationSec, channelsPerTrack)
                 path
             }
             composeMultiTrackMp4(outputPath, singleTrackPaths)
@@ -70,16 +79,19 @@ object MultiTrackAudioFixture {
     }
 
     /**
-     * Write [path] as a mono PCM RIFF/WAV carrying a sine wave at [freq] Hz for [durationSec]
-     * seconds. AVFoundation can open WAV files directly, and [WavGenerator] produces compliant
-     * headers, so this is the lowest-friction way to build a single-track audio asset.
+     * Write [path] as a PCM RIFF/WAV with [channels] channels carrying a sine wave at [freq] Hz
+     * for [durationSec] seconds. Every channel carries the SAME tone (via
+     * [WavGenerator.generateWavBytes]'s constant per-channel multiplier override) so that a
+     * downstream mono downmix still dominates at [freq] — the default
+     * `freq * (channelIndex + 1)` multiplier would introduce a second tone on channel 1+.
      */
-    private fun writeSineMonoWav(path: String, freq: Double, durationSec: Int) {
+    private fun writeSineWav(path: String, freq: Double, durationSec: Int, channels: Int) {
         val bytes = WavGenerator.generateWavBytes(
             durationSeconds = durationSec,
             sampleRate = SAMPLE_RATE,
-            channels = 1,
+            channels = channels,
             toneFrequency = freq,
+            perChannelFrequencyMultiplier = { 1.0 },
         )
         writeBytes(path, bytes)
     }

@@ -11,10 +11,13 @@ import kotlin.math.sin
 /**
  * Generates a valid RIFF WAV file as a [ByteArray] using pure Kotlin — no platform dependencies.
  *
- * Each channel gets a distinct sine-wave frequency (440 Hz * (channelIndex + 1)) so that
- * channel-mixing logic can be verified downstream. [bitsPerSample] selects the PCM sample width
- * ([8], [16], [24], or [32]); the default [16] keeps existing callers byte-identical. 8-bit WAV
- * samples are unsigned per the RIFF spec, all wider widths are signed little-endian.
+ * By default each channel gets a distinct sine-wave frequency (`toneFrequency * (channelIndex + 1)`)
+ * so that channel-mixing logic can be verified downstream. Pass
+ * [perChannelFrequencyMultiplier] = `{ 1.0 }` when every channel should carry the same tone
+ * (required when the consumer mono-downmixes at read time and expects a single dominant peak).
+ * [bitsPerSample] selects the PCM sample width ([8], [16], [24], or [32]); the default [16]
+ * keeps existing callers byte-identical. 8-bit WAV samples are unsigned per the RIFF spec; all
+ * wider widths are signed little-endian.
  */
 object WavGenerator {
 
@@ -25,6 +28,7 @@ object WavGenerator {
         channels: Int,
         toneFrequency: Double = TONE_FREQUENCY,
         bitsPerSample: Int = DEFAULT_BITS_PER_SAMPLE,
+        perChannelFrequencyMultiplier: (channelIndex: Int) -> Double = { (it + 1).toDouble() },
     ): ByteArray {
         require(sampleRate > 0) { "sampleRate must be > 0, was $sampleRate" }
         require(durationSeconds > 0) { "durationSeconds must be > 0, was $durationSeconds" }
@@ -59,11 +63,11 @@ object WavGenerator {
         writeString(bytes, 36, "data")
         writeIntLE(bytes, 40, dataSizeInt)
 
-        // PCM sine waves — distinct frequencies per channel
+        // PCM sine waves — per-channel frequency controlled by the caller-supplied multiplier.
         var offset = WAV_HEADER_SIZE
         for (i in 0L until totalSamples) {
             for (ch in 0 until channels) {
-                val frequency = toneFrequency * (ch + 1)
+                val frequency = toneFrequency * perChannelFrequencyMultiplier(ch)
                 val unit = sin(2.0 * PI * frequency * i / sampleRate)
                 offset = writeSample(bytes, offset, unit, bitsPerSample)
             }
