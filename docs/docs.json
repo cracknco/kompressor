@@ -63,7 +63,7 @@
     "primary": {
       "type": "button",
       "label": "Maven Central",
-      "href": "https://central.sonatype.com/artifact/co.crackn.kompressor/kompressor"
+      "href": "https://central.sonatype.com/artifact/co.crackn/kompressor"
     }
   },
   "footer": {
