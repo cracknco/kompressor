@@ -205,7 +205,17 @@ kover {
 // (`kompressor/build/dokka/html/`) matches the path documented in the DoD and the publish workflow.
 dokka {
     moduleName.set("kompressor")
+    // Local `./gradlew :kompressor:dokkaHtml` invocations will stamp the hardcoded `version`
+    // on line 24 ("0.1.0") in the footer, search index, and JSON metadata. CI overrides this
+    // by passing `-Pversion=<release-tag>` from `.github/workflows/publish-dokka.yml` so
+    // gh-pages archives reflect the real release version.
     moduleVersion.set(project.version.toString())
+
+    // Ref used to build GitHub source-link URLs. Defaults to `main` so local Dokka runs
+    // resolve to the latest code; the release workflow overrides via `-PsourceLinkRef=v<version>`
+    // so immutable `/api/<version>/` archives point at the matching release tag and don't drift
+    // as `main` evolves.
+    val sourceLinkRef = (project.findProperty("sourceLinkRef") as? String) ?: "main"
 
     dokkaSourceSets.configureEach {
         // Hide anything not part of the public API contract. `internal` visibility is only used
@@ -217,7 +227,7 @@ dokka {
         // the implementation. `remoteLineSuffix` is `#L` for GitHub's anchor convention.
         sourceLink {
             localDirectory.set(projectDir.resolve("src"))
-            remoteUrl.set(URI("https://github.com/cracknco/kompressor/tree/main/kompressor/src"))
+            remoteUrl.set(URI("https://github.com/cracknco/kompressor/tree/$sourceLinkRef/kompressor/src"))
             remoteLineSuffix.set("#L")
         }
         // External doc links so Kotlin stdlib / coroutines / Android SDK symbols are clickable

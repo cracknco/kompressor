@@ -95,7 +95,15 @@ jobs:
         # `-Pversion=...` overrides the module version baked into the generated pages
         # so the footer + search index reflect the released version rather than the
         # `0.1.0` placeholder hardcoded in `kompressor/build.gradle.kts`.
-        run: ./gradlew :kompressor:dokkaGeneratePublicationHtml "-Pversion=${DOKKA_VERSION}" --no-configuration-cache
+        # `-PsourceLinkRef=v<version>` pins every GitHub source-link anchor to the release
+        # tag — without this, immutable `/api/<version>/` archives would silently drift as
+        # `main` evolves (clicking a source link on v1.0.0 pages years later would land on
+        # whatever `main` looks like then, not the v1.0.0 code).
+        # `--no-configuration-cache` is kept as a precaution: the Dokka v2 Gradle plugin is
+        # documented as config-cache-compatible, but its interaction with the Android KMP
+        # plugin + vanniktech publishing hasn't been stress-tested on this repo. The runs
+        # here are infrequent (one per release) so the cold-cache cost is negligible.
+        run: ./gradlew :kompressor:dokkaGeneratePublicationHtml "-Pversion=${DOKKA_VERSION}" "-PsourceLinkRef=v${DOKKA_VERSION}" --no-configuration-cache
 
       - name: Publish to gh-pages
         env:
@@ -105,11 +113,9 @@ jobs:
           set -euo pipefail
 
           # `inputs.update_latest` is only set on workflow_dispatch runs; on the
-          # `release` trigger the variable is empty — default that case to true.
+          # `release` trigger the variable is empty — `${VAR:-true}` handles both the
+          # unset and empty-string cases.
           update_latest="${UPDATE_LATEST:-true}"
-          if [[ -z "${update_latest}" ]]; then
-            update_latest="true"
-          fi
 
           src="kompressor/build/dokka/html"
           if [[ ! -d "${src}" ]]; then
@@ -126,7 +132,12 @@ jobs:
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
             git fetch origin gh-pages --depth 1
             git worktree add "${worktree}" origin/gh-pages
-            (cd "${worktree}" && git switch -c gh-pages) || true
+            # Turn the detached HEAD into a proper `gh-pages` branch inside the worktree.
+            # If `git switch` fails for any reason (ref-corruption, pre-existing local branch
+            # on the runner, etc.) surface it as a warning so the log tells us — rather than
+            # `|| true` which would mask a real failure and let us push from detached HEAD.
+            (cd "${worktree}" && git switch -c gh-pages) \
+              || echo "::warning::git switch -c gh-pages failed; proceeding from detached HEAD (push target is HEAD:gh-pages)."
           else
             # First-time publish: create the orphan branch inline.
             git worktree add --no-checkout "${worktree}" HEAD
