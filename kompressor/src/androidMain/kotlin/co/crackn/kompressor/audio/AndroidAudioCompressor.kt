@@ -23,6 +23,10 @@ import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.NoOpLogger
+import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
@@ -51,6 +55,7 @@ import kotlinx.coroutines.withContext
  * [toAudioCompressionError] so callers can `when`-branch on subtypes.
  */
 internal class AndroidAudioCompressor(
+    private val logger: SafeLogger = SafeLogger(NoOpLogger),
     /**
      * Extra audio processors appended to the Effects chain **for testing only**. Production
      * `createKompressor()` uses the default empty list. Device tests inject a slow / blocking
@@ -72,36 +77,55 @@ internal class AndroidAudioCompressor(
             .intersect(setOf(MimeTypes.AUDIO_AAC))
     }
 
+    // LongMethod suppressed: the body is an `instrumentCompress` wrap (CRA-47) around the Media3
+    // Transformer integration. The message builders (tag + three messages + passthrough DEBUG log)
+    // are the source of the extra lines. Extracting them as private helpers moves complexity
+    // around without clarifying intent, so we accept the length here.
+    @Suppress("LongMethod")
     override suspend fun compress(
         inputPath: String,
         outputPath: String,
         config: AudioCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val startNanos = System.nanoTime()
-        onProgress(0f)
-        val inputSize = resolveMediaInputSize(inputPath)
-        // Pre-flight: reject obviously-empty inputs with a typed IO error instead of letting
-        // Media3 surface an opaque decoder-init failure. `resolveMediaInputSize` returns 0 for
-        // unreadable sources as well, so we only reject when the file exists and is zero bytes;
-        // a genuinely missing file will surface its own error downstream.
-        if (inputPath.startsWith("/") && inputSize == 0L && File(inputPath).exists()) {
-            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        logger.instrumentCompress(
+            tag = LogTags.AUDIO,
+            startMessage = {
+                "compress() start in=$inputPath out=$outputPath " +
+                    "bitrate=${config.bitrate} sampleRate=${config.sampleRate} " +
+                    "channels=${config.channels} trackIndex=${config.audioTrackIndex}"
+            },
+            successMessage = { r ->
+                "compress() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+            },
+            failureMessage = { "compress() failed in=$inputPath" },
+        ) {
+            val startNanos = System.nanoTime()
+            onProgress(0f)
+            val inputSize = resolveMediaInputSize(inputPath)
+            // Pre-flight: reject obviously-empty inputs with a typed IO error instead of letting
+            // Media3 surface an opaque decoder-init failure. `resolveMediaInputSize` returns 0 for
+            // unreadable sources as well, so we only reject when the file exists and is zero bytes;
+            // a genuinely missing file will surface its own error downstream.
+            if (inputPath.startsWith("/") && inputSize == 0L && File(inputPath).exists()) {
+                throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+            }
+
+            rejectNonFileOutputPath(outputPath)
+            val probeResult = probeAndValidateInput(inputPath, config)
+
+            deletingOutputOnFailure(outputPath) {
+                runTransformerWithTrackSelection(
+                    inputPath, outputPath, config, probeResult.format, onProgress,
+                )
+            }
+
+            onProgress(1f)
+            val outputSize = File(outputPath).length()
+            val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
+            CompressionResult(inputSize, outputSize, durationMs)
         }
-
-        rejectNonFileOutputPath(outputPath)
-        val probeResult = probeAndValidateInput(inputPath, config)
-
-        deletingOutputOnFailure(outputPath) {
-            runTransformerWithTrackSelection(
-                inputPath, outputPath, config, probeResult.format, onProgress,
-            )
-        }
-
-        onProgress(1f)
-        val outputSize = File(outputPath).length()
-        val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
-        CompressionResult(inputSize, outputSize, durationMs)
     }
 
     /**
@@ -158,6 +182,11 @@ internal class AndroidAudioCompressor(
                 val canPassthrough = plan.isEmpty &&
                     probe?.mime == MimeTypes.AUDIO_AAC &&
                     probe.bitrate.qualifiesForPassthrough(config.bitrate)
+                logger.debug(LogTags.AUDIO) {
+                    "Transformer path: passthrough=$canPassthrough probeMime=${probe?.mime} " +
+                        "probeSampleRate=${probe?.sampleRate} probeChannels=${probe?.channels} " +
+                        "probeBitrate=${probe?.bitrate}"
+                }
                 val transformer = buildTransformer(context, config, canPassthrough)
                 val item = buildEditedMediaItem(inputPath, plan, canPassthrough)
                 awaitMedia3Export(transformer, item, outputPath, onProgress)

@@ -22,6 +22,26 @@ style:
     maxLineLength: 120
   WildcardImport:
     active: true
+  # CRA-47: enforce that every library-side log goes through `KompressorLogger`.
+  # `android.util.Log` (any member) is forbidden everywhere in `kompressor/src`
+  # except the single `PlatformLogger.android.kt` actual that adapts the raw API
+  # onto the logger contract. `ForbiddenImport` is AST-based, so it catches even
+  # renamed imports (`import android.util.Log as Logcat`). This rule pairs with
+  # `scripts/check-no-raw-logging.sh`, which also catches `NSLog(` (not
+  # importable from Kotlin/Native, so Detekt can't see it) and bare `println`.
+  ForbiddenImport:
+    active: true
+    excludes:
+      - "**/PlatformLogger.android.kt"
+      - "**/PlatformLogger.ios.kt"
+      - "**/commonTest/**"
+      - "**/androidHostTest/**"
+      - "**/androidDeviceTest/**"
+      - "**/iosTest/**"
+      - "**/sample/**"
+    imports:
+      - value: "android.util.Log"
+        reason: "Use co.crackn.kompressor.logging.KompressorLogger (see docs/logging.md). Only PlatformLogger.android.kt may import android.util.Log."
 
 naming:
   FunctionNaming:

@@ -11,6 +11,10 @@ import co.crackn.kompressor.audio.AudioCompressor
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.ImageCompressor
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.logging.KompressorLogger
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.PlatformLogger
+import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressor
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -29,15 +33,30 @@ import platform.AVFoundation.tracksWithMediaType
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSURL
 
-internal class IosKompressor : Kompressor {
-    override val image: ImageCompressor by lazy { IosImageCompressor() }
-    override val video: VideoCompressor by lazy { IosVideoCompressor() }
-    override val audio: AudioCompressor by lazy { IosAudioCompressor() }
+internal class IosKompressor(logger: KompressorLogger) : Kompressor {
+    private val safeLogger = SafeLogger(logger)
+
+    override val image: ImageCompressor by lazy { IosImageCompressor(safeLogger) }
+    override val video: VideoCompressor by lazy { IosVideoCompressor(safeLogger) }
+    override val audio: AudioCompressor by lazy { IosAudioCompressor(safeLogger) }
 
     private val capabilities: DeviceCapabilities by lazy { queryDeviceCapabilities() }
 
     override suspend fun probe(inputPath: String): Result<SourceMediaInfo> = withContext(Dispatchers.Default) {
-        suspendRunCatching { probeIosSource(inputPath) }
+        safeLogger.debug(LogTags.PROBE) { "probe() inputPath=$inputPath" }
+        val result = suspendRunCatching { probeIosSource(inputPath) }
+        result.fold(
+            onSuccess = { info ->
+                safeLogger.info(LogTags.PROBE) {
+                    "probe() ok — ${info.width}x${info.height} durationMs=${info.durationMs} " +
+                        "audioTracks=${info.audioTrackCount}"
+                }
+            },
+            onFailure = { throwable ->
+                safeLogger.warn(LogTags.PROBE, throwable) { "probe() failed for $inputPath" }
+            },
+        )
+        result
     }
 
     override fun canCompress(info: SourceMediaInfo): Supportability =
@@ -46,11 +65,18 @@ internal class IosKompressor : Kompressor {
             capabilities = capabilities,
             requiredOutputVideoMime = MIME_VIDEO_H264,
             requiredOutputAudioMime = MIME_AUDIO_AAC,
-        )
+        ).also { verdict ->
+            safeLogger.debug(LogTags.PROBE) {
+                "canCompress() verdict=${verdict::class.simpleName}"
+            }
+        }
 }
 
 /** Creates an iOS [Kompressor] backed by AVFoundation and VideoToolbox. */
-public actual fun createKompressor(): Kompressor = IosKompressor()
+public actual fun createKompressor(): Kompressor = IosKompressor(PlatformLogger())
+
+/** Creates an iOS [Kompressor] that routes diagnostics through [logger]. */
+public actual fun createKompressor(logger: KompressorLogger): Kompressor = IosKompressor(logger)
 
 @OptIn(ExperimentalForeignApi::class)
 @Suppress("UNCHECKED_CAST")
