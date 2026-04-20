@@ -36,7 +36,7 @@ mockk = "1.14.9"
 # Dokka Gradle Plugin v2. Version decoupled from Kotlin — picks its own analyzer. Bump
 # carefully together with the Kotlin version and verify `./gradlew :kompressor:dokkaGenerate`
 # still succeeds: Dokka v2.1 is validated against Kotlin 2.3.x.
-dokka = "2.1.0"
+dokka = "2.2.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
