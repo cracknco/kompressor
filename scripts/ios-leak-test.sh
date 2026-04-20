@@ -87,14 +87,20 @@ trap cleanup EXIT
 KTEST_FILTER="co.crackn.kompressor.IosCompressionLeakTest.*"
 
 echo "==> Recording Leaks trace"
-# `--launch -- xcrun simctl spawn …` runs the test binary inside the simulator
-# runtime while xctrace attaches the Allocations + Leaks instruments. The
-# trailing `--` keeps downstream args (filter, -standalone output flag) from
-# being interpreted by xctrace itself.
+# `--device <UDID> --launch -- <test.kexe>` routes the launch into the booted
+# simulator runtime so xctrace attaches the Allocations + Leaks instruments to
+# the *actual* test.kexe process running in the simulator, not a host-side
+# wrapper. An earlier revision chained `--launch -- xcrun simctl spawn …` which
+# has two failure modes: (a) xctrace's `--launch` expects a path and cannot PATH-
+# resolve `xcrun` (CI saw `Path not found 'xcrun'`), and (b) even with the full
+# path, xctrace would record the simctl wrapper process — which allocates almost
+# nothing — instead of the test binary, giving silent false-negatives. `--device`
+# makes the target unambiguous.
 xctrace record \
+  --device "$DEVICE_UDID" \
   --template 'Leaks' \
   --output "$TRACE_PATH" \
-  --launch -- xcrun simctl spawn "$DEVICE_UDID" "$BINARY" --ktest_filter="$KTEST_FILTER"
+  --launch -- "$BINARY" --ktest_filter="$KTEST_FILTER"
 
 echo "==> Exporting leaks table"
 # The Leaks template produces a `leaks` schema on the main run; each row is one
