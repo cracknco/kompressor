@@ -1,11 +1,23 @@
 import com.android.build.api.dsl.androidLibrary
 
+import java.net.URI
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kover)
     alias(libs.plugins.binaryCompatibilityValidator)
+    // Dokka v2 — generates the HTML API reference consumed by the gh-pages publishing workflow
+    // (`.github/workflows/publish-dokka.yml`). The same HTML output is also packaged as the
+    // `-javadoc.jar` attached to every Maven Central release — see the `mavenPublishing` block
+    // below. We intentionally do NOT apply `org.jetbrains.dokka-javadoc`: Dokka v2's Javadoc
+    // plugin does not yet support Kotlin Multiplatform (it aborts with "Pre-generation validity
+    // check failed: Dokka Javadoc plugin currently does not support generating documentation for
+    // multiplatform project"). Using the HTML bundle as the javadoc JAR is the standard workaround
+    // across KMP libraries on Maven Central (kotlinx-serialization, Ktor, etc.) — consumers get a
+    // navigable, up-to-date reference in the JAR either way.
+    alias(libs.plugins.dokka)
 }
 
 group = "co.crackn"
@@ -188,6 +200,79 @@ kover {
     }
 }
 
+// Dokka configuration — generates the HTML API reference consumed by `publish-dokka.yml` and the
+// Javadoc HTML attached as `-javadoc.jar` to every Maven Central release. Default output location
+// (`kompressor/build/dokka/html/`) matches the path documented in the DoD and the publish workflow.
+dokka {
+    moduleName.set("kompressor")
+    // Local `./gradlew :kompressor:dokkaHtml` invocations will stamp the hardcoded `version`
+    // on line 24 ("0.1.0") in the footer, search index, and JSON metadata. CI overrides this
+    // by passing `-Pversion=<release-tag>` from `.github/workflows/publish-dokka.yml` so
+    // gh-pages archives reflect the real release version.
+    moduleVersion.set(project.version.toString())
+
+    // Ref used to build GitHub source-link URLs. Defaults to `main` so local Dokka runs
+    // resolve to the latest code; the release workflow overrides via `-PsourceLinkRef=v<version>`
+    // so immutable `/api/<version>/` archives point at the matching release tag and don't drift
+    // as `main` evolves.
+    val sourceLinkRef = (project.findProperty("sourceLinkRef") as? String) ?: "main"
+
+    dokkaSourceSets.configureEach {
+        // Hide anything not part of the public API contract. `internal` visibility is only used
+        // for platform implementations (e.g. `AndroidImageCompressor`) that must not leak into
+        // the reference; Dokka's default already excludes them — the explicit list is a guard
+        // against future visibility drift.
+        documentedVisibilities.set(setOf(org.jetbrains.dokka.gradle.engine.parameters.VisibilityModifier.Public))
+        // Link back to the source lines on GitHub so readers can jump from the reference into
+        // the implementation. `remoteLineSuffix` is `#L` for GitHub's anchor convention.
+        sourceLink {
+            localDirectory.set(projectDir.resolve("src"))
+            remoteUrl.set(URI("https://github.com/cracknco/kompressor/tree/$sourceLinkRef/kompressor/src"))
+            remoteLineSuffix.set("#L")
+        }
+        // External doc links so Kotlin stdlib / coroutines / Android SDK symbols are clickable
+        // instead of plain text. Without these, e.g. `kotlinx.coroutines.flow.Flow` references in
+        // the API render as dead strings.
+        // Pin `packageListUrl` on both links. Without an explicit URL, Dokka tries to derive it
+        // by appending `/package-list` to the base `url` — which is correct today for both
+        // endpoints, but a silent failure mode if JetBrains or Google ever reorganise their docs
+        // tree (links render as plain text instead of anchors, no build warning). Pinning keeps
+        // the behaviour audit-able at review time.
+        externalDocumentationLinks.register("kotlinx-coroutines") {
+            url.set(URI("https://kotlinlang.org/api/kotlinx.coroutines/"))
+            packageListUrl.set(URI("https://kotlinlang.org/api/kotlinx.coroutines/package-list"))
+        }
+        externalDocumentationLinks.register("android") {
+            url.set(URI("https://developer.android.com/reference/"))
+            packageListUrl.set(URI("https://developer.android.com/reference/package-list"))
+        }
+
+        includes.from(project.layout.projectDirectory.file("dokka/module.md"))
+    }
+
+    pluginsConfiguration.html {
+        footerMessage.set(
+            "Kompressor is licensed under Apache 2.0. " +
+                "See the <a href=\"https://cracknco.github.io/kompressor/\">user guide</a> " +
+                "for conceptual documentation.",
+        )
+        // Links back to the Mintlify documentation site — keeps the two surfaces cross-linked so
+        // readers who land on the generated reference don't get stuck (CRA-40 DoD: "liens croisés
+        // avec Mintlify site").
+        homepageLink.set("https://cracknco.github.io/kompressor/")
+    }
+}
+
+// DoD alias: `./gradlew dokkaHtml` must produce the HTML reference at
+// `kompressor/build/dokka/html/` (CRA-40). Dokka v2's canonical task is
+// `dokkaGeneratePublicationHtml`; keeping the legacy `dokkaHtml` name as a lightweight wrapper
+// means build scripts, docs, and muscle memory keep working through the v1 → v2 migration.
+tasks.register("dokkaHtml") {
+    group = "documentation"
+    description = "Generate HTML API docs into kompressor/build/dokka/html/ (alias for dokkaGeneratePublicationHtml)."
+    dependsOn("dokkaGeneratePublicationHtml")
+}
+
 mavenPublishing {
     // `automaticRelease = true` uploads the bundle to Sonatype Central Portal AND auto-promotes it
     // to Maven Central in one CI pass. The previous plain `publishToMavenCentral()` left every
@@ -195,6 +280,15 @@ mavenPublishing {
     // — with three consecutive releases (0.1.0 / 0.2.0 / 0.2.1) piling up unpromoted, this was a
     // silent publish-pipeline failure (BUILD SUCCESSFUL but nothing on repo1.maven.org). Auto-
     // promote means every tagged release reaches consumers without manual intervention.
+    // Point the javadoc JAR at Dokka v2's HTML publication task explicitly — see the plugin-
+    // application comment above for why we can't use the dedicated Javadoc plugin on a KMP
+    // project. Without this explicit wiring the Vanniktech plugin falls back to its own empty-
+    // stub JAR, which Maven Central accepts but gives consumers no rendered reference.
+    configure(
+        com.vanniktech.maven.publish.KotlinMultiplatform(
+            javadocJar = com.vanniktech.maven.publish.JavadocJar.Dokka("dokkaGeneratePublicationHtml"),
+        ),
+    )
     publishToMavenCentral(automaticRelease = true)
 
     signAllPublications()
