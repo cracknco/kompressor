@@ -111,4 +111,20 @@ public fun interface KompressorLogger {
      * **Must not throw.** See the class KDoc for the full contract.
      */
     public fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?)
+
+    /**
+     * Optional fast-path hook: return `false` to tell the library this logger will ignore records
+     * at [level], so the library can skip building the message string and calling [log].
+     *
+     * The default returns `true`, keeping the ADR-003 § 3 rule — "library does not filter,
+     * implementation does" — intact for simple loggers that always dispatch. Implementations that
+     * statically silence a level (e.g. [NoOpLogger]) or use a threshold known up front should
+     * override this to avoid per-emission formatting cost on hot paths like per-sample-buffer
+     * `VERBOSE` traces.
+     *
+     * **Must not throw.** The library wraps calls in a catch-all; a thrown exception is swallowed
+     * and the caller proceeds as if `isEnabled` returned `true` (safer default — erring on the
+     * side of dispatching keeps diagnostics visible rather than silently dropped).
+     */
+    public fun isEnabled(level: LogLevel): Boolean = true
 }

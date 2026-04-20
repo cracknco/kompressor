@@ -23,4 +23,10 @@ public object NoOpLogger : KompressorLogger {
     override fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         // Intentionally empty — this logger discards every record.
     }
+
+    // Short-circuit the library's lazy-message builder on every call. Without this, a consumer
+    // wiring `createKompressor(logger = NoOpLogger)` would still pay the string-concat cost on
+    // every `logger.debug { ... }` because the library materialises the message before dispatch.
+    // Returning `false` for all levels lets SafeLogger skip the message lambda entirely.
+    override fun isEnabled(level: LogLevel): Boolean = false
 }

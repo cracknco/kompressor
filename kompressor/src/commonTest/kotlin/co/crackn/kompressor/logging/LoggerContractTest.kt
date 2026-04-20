@@ -66,6 +66,15 @@ class LoggerContractTest {
         // must observe every record. Each coroutine uses a distinct tag ("tag-$workerId") and the
         // recorder partitions by tag, so no cross-worker races can drop records — the assertion
         // measures the contract's reach rather than fighting a shared counter.
+        //
+        // Synchronisation model: each bucket's `MutableList` is written by exactly one coroutine
+        // during its lifetime, so no data race between writers. The main-thread reads in the final
+        // `repeat(...) { recorder.countFor(...) }` block happen AFTER `jobs.awaitAll()`, which
+        // establishes a happens-before edge — kotlinx.coroutines' Deferred.await, like Job.join,
+        // publishes the awaited coroutine's writes to the awaiter. So the unsynchronised lists
+        // are safe to read here. A shared atomic counter was the obvious alternative but would
+        // have pulled in `kotlinx-atomicfu` as a test-only dependency — the partition-by-tag +
+        // awaitAll design keeps the test at zero extra deps.
         val recorder = PartitionedRecordingLogger()
         val safe = SafeLogger(recorder)
 
@@ -81,7 +90,8 @@ class LoggerContractTest {
         jobs.awaitAll()
 
         // Every worker's partition must contain exactly `perCoroutine` records, proving no
-        // emissions were lost to concurrency.
+        // emissions were lost to concurrency. `awaitAll()` above is the happens-before edge
+        // that makes these reads see every per-bucket write.
         repeat(coroutineCount) { workerId ->
             recorder.countFor("tag-$workerId") shouldBe perCoroutine
         }

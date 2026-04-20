@@ -18,11 +18,15 @@ package co.crackn.kompressor.logging
  * same logger (that would recurse and compound the damage on a logger that's already broken).
  *
  * Lazy message producers (e.g. [debug] / [verbose]) accept a `() -> String` lambda so the call
- * site stays readable without forcing allocation at the argument position, but the library always
- * materialises the message before dispatching to the delegate — level-threshold filtering is the
- * delegate's responsibility per ADR-003 § 3 ("library does not filter, implementation does"). At
- * ERROR / WARN we materialise eagerly at the call site; the allocation is negligible next to the
- * failing I/O it describes.
+ * site stays readable without forcing allocation at the argument position. [SafeLogger] queries
+ * [KompressorLogger.isEnabled] once per emission and skips the lambda entirely when the delegate
+ * reports the level as disabled — this makes `NoOpLogger` truly allocation-free on hot paths and
+ * lets threshold-based loggers (production WARN-only, release DEBUG-off) short-circuit before
+ * any string concatenation runs. The default `isEnabled` returns `true`, preserving the
+ * ADR-003 § 3 baseline ("library does not filter, implementation does") for loggers that don't
+ * implement the hook. At ERROR / WARN we still materialise eagerly at the call site because the
+ * allocation is negligible next to the failing I/O those levels describe, and skipping them would
+ * hide real failures.
  */
 internal class SafeLogger(private val delegate: KompressorLogger) {
     // Thread-safety: `delegate` is immutable after construction. Every call reads the same
@@ -50,19 +54,29 @@ internal class SafeLogger(private val delegate: KompressorLogger) {
     }
 
     /**
-     * Emits [level] with a lazily-built message.
+     * Emits [level] with a lazily-built message, short-circuiting when the delegate reports the
+     * level as disabled.
      *
-     * We always build the message here regardless of any filter the delegate applies — the library
-     * cannot know the delegate's runtime filter without querying it, and the contract places the
-     * fast-path filter on the implementation. Lambdas keep the call-site readable; the lambda
-     * invocation itself is cheaper than the string concat / number formatting it gates.
+     * The `isEnabled` default is `true` for delegates that don't implement the hook, so
+     * behaviour is unchanged for them (message built + dispatched). Delegates that override —
+     * notably [NoOpLogger], and threshold-based consumer loggers — skip the lambda entirely,
+     * avoiding string-concat cost on hot paths. A thrown `isEnabled` is caught and treated as
+     * `true`: we would rather pay the cost than silently drop a diagnostic on behalf of a
+     * broken predicate.
      */
+    @Suppress("TooGenericExceptionCaught")
     private inline fun emitLazy(
         level: LogLevel,
         tag: String,
         throwable: Throwable?,
         message: () -> String,
     ) {
+        val enabled = try {
+            delegate.isEnabled(level)
+        } catch (_: Throwable) {
+            true
+        }
+        if (!enabled) return
         emitEager(level, tag, message(), throwable)
     }
 

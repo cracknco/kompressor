@@ -68,7 +68,7 @@ filter expression and get parity.
 | `VERBOSE` | Fine-grained per-step trace. Silent by default on both platforms. | Reserved — no library emissions today. Available for future `MediaCodec` per-buffer traces. |
 | `DEBUG` | Developer-oriented decisions: codec path chosen, passthrough on/off, HW→SW fallback, pipeline branch. | Probe start line; `AndroidAudioCompressor` passthrough vs transcode decision; `IosVideoCompressor` ExportSession vs AssetWriter decision; cancellation of an in-flight compress. |
 | `INFO` | High-level operation lifecycle: started, completed. | `compress()` entry point via `SafeLogger.instrumentCompress` — one line on start, one on success, for image / audio / video on both platforms. |
-| `WARN` | Recoverable anomaly or expected failure: probe couldn't read, HDR tone-mapping applied, passthrough disabled because bitrate/channels drift. | Probe failure; future HW→SW fallbacks. |
+| `WARN` | Recoverable anomaly or expected failure: probe couldn't read, HDR tone-mapping applied, a requested configuration couldn't be honoured but the pipeline recovered. | Probe failure; future HW→SW fallbacks. Reserved for future use: when the caller's config can't be honoured (e.g. passthrough requested but source drifted) the library would emit WARN here. Today the library picks a path without inferring caller intent, so path-selection is DEBUG instead of WARN — see the [`DEBUG` row](#2-level-taxonomy). |
 | `ERROR` | Unrecoverable failure — the operation is about to surface a typed error to the caller. | `compress()` failure path via `instrumentCompress`; the throwable is attached. |
 
 What this means in practice for each pipeline:
@@ -93,11 +93,20 @@ to the layer that knows — a release build using Timber's `ReleaseTree`
 already mutes everything below WARN; re-implementing that filter in the
 library would mean either duplicating the host's rule or overriding it.
 
-The only concession the library makes is **lazy message construction**:
-VERBOSE / DEBUG / INFO call sites pass a `() -> String` lambda that is
-evaluated inside `SafeLogger.emitLazy`. For WARN / ERROR we materialise
-eagerly — the hot path is already failing, and the string concat cost is
-negligible next to the I/O that prompted it.
+The library makes two concessions:
+
+- **Lazy message construction.** VERBOSE / DEBUG / INFO call sites pass a
+  `() -> String` lambda that is evaluated inside `SafeLogger.emitLazy`. For
+  WARN / ERROR we materialise eagerly — the hot path is already failing, and
+  the string concat cost is negligible next to the I/O that prompted it.
+- **`isEnabled(level)` fast-path hook.** `KompressorLogger.isEnabled` has a
+  default `true` implementation, so simple loggers stay "dispatch every
+  record". Delegates that statically silence a level — `NoOpLogger`, a
+  production threshold logger — override the hook, and `SafeLogger` skips
+  the lazy-message lambda entirely when the hook reports the level as
+  disabled. This is what makes `NoOpLogger` truly allocation-free on hot
+  paths like per-sample-buffer VERBOSE traces, without undoing the "library
+  does not filter" baseline for loggers that simply dispatch everything.
 
 ### 4. Tag vocabulary
 

@@ -59,12 +59,13 @@ report_hits() {
 # line or a non-identifier character before the token.
 report_hits '(^|[^a-zA-Z0-9_])println[[:space:]]*\(' "println"
 
-# `print(` — bare Kotlin stdlib print (no newline). The previous rule already
-# covers `println`; to avoid double-flagging it here, require the token
-# starts with `print` followed immediately by `(` or whitespace-then-`(`, and
-# ensure the preceding character is not part of the `println` token by
-# anchoring on non-letter before `p`.
-report_hits '(^|[^a-zA-Z0-9_])print[[:space:]]*\(' "print"
+# `print(` — bare Kotlin stdlib print (no newline). Anchored to start-of-line,
+# leading whitespace, or `{` (lambda body) so a legitimate method call like
+# `writer.print(...)` / `sb.print(...)` isn't false-flagged — those have `.`
+# before `print`. The previous `println` rule already covers that token so
+# this one won't double-flag; `println(foo)` has `l` (not a valid anchor
+# character) immediately before `print`, failing the preceding-char class.
+report_hits '(^|[[:space:]{])print[[:space:]]*\(' "print"
 
 # Fully-qualified `android.util.Log.v/d/i/w/e(` — direct Logcat write.
 report_hits 'android\.util\.Log\.[vdiwef][[:space:]]*\(' "android.util.Log"

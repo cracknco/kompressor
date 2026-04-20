@@ -408,7 +408,12 @@ public final class co/crackn/kompressor/image/ImagePresets {
 }
 
 public abstract interface class co/crackn/kompressor/logging/KompressorLogger {
+	public fun isEnabled (Lco/crackn/kompressor/logging/LogLevel;)Z
 	public abstract fun log (Lco/crackn/kompressor/logging/LogLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+}
+
+public final class co/crackn/kompressor/logging/KompressorLogger$DefaultImpls {
+	public static fun isEnabled (Lco/crackn/kompressor/logging/KompressorLogger;Lco/crackn/kompressor/logging/LogLevel;)Z
 }
 
 public final class co/crackn/kompressor/logging/LogLevel : java/lang/Enum {
@@ -425,6 +430,7 @@ public final class co/crackn/kompressor/logging/LogLevel : java/lang/Enum {
 
 public final class co/crackn/kompressor/logging/NoOpLogger : co/crackn/kompressor/logging/KompressorLogger {
 	public static final field INSTANCE Lco/crackn/kompressor/logging/NoOpLogger;
+	public fun isEnabled (Lco/crackn/kompressor/logging/LogLevel;)Z
 	public fun log (Lco/crackn/kompressor/logging/LogLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
 }
 

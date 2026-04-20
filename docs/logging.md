@@ -229,12 +229,18 @@ Rationale and the `SafeLogger` design in
 DEBUG). Implementations **must** filter by `LogLevel` as early as possible —
 ideally before any string concatenation or formatting.
 
-The library always materialises the lazy message lambda before dispatching to
-the delegate — level filtering is the delegate's responsibility (ADR-003 § 3).
-The `() -> String` parameter keeps the call site readable but is not a free
-short-circuit. Your delegate sees every record the library emits and must
-filter as early as possible. If you want "only WARN and up in production",
-filter in your implementation:
+The library materialises the lazy message lambda once per emission, *unless*
+your logger opts out of a level via `isEnabled`. Without `isEnabled` your
+delegate sees every record and is responsible for filtering — this is the
+ADR-003 § 3 baseline (library does not filter, implementation does).
+
+### `isEnabled` — opt-in fast-path
+
+`KompressorLogger.isEnabled(level): Boolean` has a default implementation that
+returns `true`, so simple loggers stay "dispatch everything". Override it when
+your logger will statically drop records at a given level (e.g. production
+WARN-and-up, or total silence) to tell the library it can skip the message
+lambda entirely:
 
 ```kotlin
 class ProductionLogger(private val delegate: KompressorLogger) : KompressorLogger {
@@ -242,8 +248,19 @@ class ProductionLogger(private val delegate: KompressorLogger) : KompressorLogge
         if (level.priority < LogLevel.WARN.priority) return
         delegate.log(level, tag, message, throwable)
     }
+
+    // Override so `SafeLogger` skips building the message string altogether — not just the
+    // dispatch to `log`. Important for hot paths (per-buffer traces, frequent passthrough
+    // decisions) where the string concat alone is measurable.
+    override fun isEnabled(level: LogLevel): Boolean = level.priority >= LogLevel.WARN.priority
 }
 ```
+
+`NoOpLogger` overrides `isEnabled` to return `false` for every level, which is
+why `createKompressor(logger = NoOpLogger)` is truly allocation-free on the
+library's hot paths. Your delegate only needs to override `isEnabled` if it
+cares about the saved allocation — the default `true` is correct for everyday
+Timber / SwiftLog / `os_log` bridges that just dispatch.
 
 `LogLevel.priority` is the canonical comparator — never compare by enum
 ordinal, the ordering of `LogLevel` declarations is incidental.
