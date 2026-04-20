@@ -33,6 +33,10 @@ gadulka = "1.11.0"
 composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
 mockk = "1.14.9"
+# LeakCanary — memory-leak detection for androidDeviceTest only. Scoped strictly to the
+# instrumentation test classpath (`leakcanary-android-instrumentation`); never lands in
+# the published `:kompressor` artifact. Bump in lockstep with ShARK/Kotlin support matrix.
+leakcanary = "2.14"
 # Dokka Gradle Plugin v2. Version decoupled from Kotlin — picks its own analyzer. Bump
 # carefully together with the Kotlin version and verify `./gradlew :kompressor:dokkaGenerate`
 # still succeeds: Dokka v2.1 is validated against Kotlin 2.3.x.
@@ -67,6 +71,11 @@ lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifec
 gadulka = { module = "eu.iamkonstantin.kotlin:gadulka", version.ref = "gadulka" }
 compose-multiplatform-media-player = { module = "network.chaintech:compose-multiplatform-media-player", version.ref = "composeMultiplatformMediaPlayer" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+# LeakCanary instrumentation artifact. Intentionally *not* `leakcanary-android` (the one that
+# ships with debug apps and pops a notification) — we want the synchronous/in-process
+# `detectLeaks()` API that fails a JUnit test when retained instances are found. See
+# CompressionLeakTest in androidDeviceTest.
+leakcanary-android-instrumentation = { module = "com.squareup.leakcanary:leakcanary-android-instrumentation", version.ref = "leakcanary" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
