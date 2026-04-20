@@ -10,9 +10,10 @@ This page is the engineering reference. For the shorter user-facing walkthrough 
 [`docs/concepts/errors.mdx`](concepts/errors.mdx) (rendered into the Mintlify site).
 
 > **Auto-generated from source.** Do not edit by hand — run
-> `kotlin scripts/gen-error-taxonomy.kts` after modifying any of the three
-> `…CompressionError.kt` sealed classes and commit the result. `--check` gives
-> a non-zero exit code when the committed doc is stale.
+> `./scripts/regenerate-error-taxonomy.sh` after modifying any of the three
+> `…CompressionError.kt` sealed classes and commit the result. The companion
+> `ErrorTaxonomyDocUpToDateTest` in `androidHostTest` fails CI when the committed
+> doc drifts from the source.
 
 ## How to read this page
 
@@ -178,9 +179,13 @@ concurrency contract.
 
 ```bash
 # From the repo root:
-kotlin scripts/gen-error-taxonomy.kts            # rewrite docs/error-handling.md
-kotlin scripts/gen-error-taxonomy.kts --check    # CI drift check, exits non-zero on drift
+./scripts/regenerate-error-taxonomy.sh           # rewrite docs/error-handling.md in place
+./gradlew :kompressor:testAndroidHostTest \
+  --tests co.crackn.kompressor.errortaxonomy.ErrorTaxonomyDocUpToDateTest
+                                                 # verify drift (runs on every PR via CI)
 ```
 
-The script parses the three `…CompressionError.kt` sources with regex, renders this
-file, and (in `--check` mode) diffs it against the committed copy.
+The test parses the three `…CompressionError.kt` sources with regex, renders this
+file, and asserts the committed copy is byte-identical. Pass
+`-PregenerateErrorTaxonomyDoc=true` to switch the test from verify mode into rewrite
+mode — the wrapper script above is a thin shortcut for that invocation.
