@@ -1,0 +1,162 @@
+name: Publish Dokka
+
+# Publishes the Kompressor API reference (Dokka HTML) to the `gh-pages` branch
+# under two stable URLs per release:
+#   - https://cracknco.github.io/kompressor/api/<version>/  (immutable archive)
+#   - https://cracknco.github.io/kompressor/api/latest/     (alias to newest)
+#
+# Triggered automatically when `release.yml` publishes a GitHub Release (via
+# `semantic-release`). Also exposes `workflow_dispatch` so a docs-only fix can
+# be re-published for an existing version without cutting a new library release.
+#
+# Security note: every external input (`inputs.version`, `github.event.release.*`)
+# is passed through an `env:` block and validated against a strict regex in bash
+# rather than interpolated directly into `run:` scripts — see the workflow-injection
+# pattern documented at
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish docs under (e.g. 1.2.3). Defaults to the latest release tag.'
+        required: false
+        type: string
+      update_latest:
+        description: 'Also update /api/latest/ alias. Disable for back-porting docs to an older release.'
+        required: false
+        type: boolean
+        default: true
+
+# Serialise Dokka publishes — concurrent pushes to `gh-pages` race each other and
+# the first loser has to retry. `cancel-in-progress: false` because the currently
+# running job is publishing a real release we do not want to drop on the floor.
+concurrency:
+  group: publish-dokka
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build & deploy Dokka to gh-pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Need full history so we can add the `gh-pages` branch as a worktree
+          # rather than re-cloning into a temp dir.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+
+      - name: Resolve target version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_VERSION}" ]]; then
+            resolved="${INPUT_VERSION}"
+          elif [[ -n "${RELEASE_TAG}" ]]; then
+            resolved="${RELEASE_TAG}"
+          else
+            echo "::error::Neither workflow_dispatch input nor release tag_name is set."
+            exit 1
+          fi
+          # semantic-release cuts tags like `v1.2.3`; strip the leading `v` so the URL
+          # is `/api/1.2.3/` rather than `/api/v1.2.3/`.
+          resolved="${resolved#v}"
+          # Defensive guard against path traversal or shell metachars through a crafted
+          # tag name. Any real semver-ish tag matches this; anything else is rejected.
+          if ! [[ "${resolved}" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+            echo "::error::Refusing to publish docs for version '${resolved}' — only [A-Za-z0-9._+-] is allowed."
+            exit 1
+          fi
+          echo "version=${resolved}" >> "$GITHUB_OUTPUT"
+          echo "Publishing Dokka for version: ${resolved}"
+
+      - name: Generate Dokka HTML
+        env:
+          # Resolved (and regex-validated) version from the previous step. Passing it
+          # via `env:` avoids the shell-injection pattern caught by GitHub Actions
+          # security guides.
+          DOKKA_VERSION: ${{ steps.version.outputs.version }}
+        # `-Pversion=...` overrides the module version baked into the generated pages
+        # so the footer + search index reflect the released version rather than the
+        # `0.1.0` placeholder hardcoded in `kompressor/build.gradle.kts`.
+        run: ./gradlew :kompressor:dokkaGeneratePublicationHtml "-Pversion=${DOKKA_VERSION}" --no-configuration-cache
+
+      - name: Publish to gh-pages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          UPDATE_LATEST: ${{ inputs.update_latest }}
+        run: |
+          set -euo pipefail
+
+          # `inputs.update_latest` is only set on workflow_dispatch runs; on the
+          # `release` trigger the variable is empty — default that case to true.
+          update_latest="${UPDATE_LATEST:-true}"
+          if [[ -z "${update_latest}" ]]; then
+            update_latest="true"
+          fi
+
+          src="kompressor/build/dokka/html"
+          if [[ ! -d "${src}" ]]; then
+            echo "::error::Dokka HTML output missing at ${src}. Did dokkaGeneratePublicationHtml fail silently?"
+            exit 1
+          fi
+
+          # Bot identity matches the other auto-commit workflows in this repo so
+          # audit logs stay consistent.
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          worktree="$(mktemp -d)"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages --depth 1
+            git worktree add "${worktree}" origin/gh-pages
+            (cd "${worktree}" && git switch -c gh-pages) || true
+          else
+            # First-time publish: create the orphan branch inline.
+            git worktree add --no-checkout "${worktree}" HEAD
+            (cd "${worktree}" && git checkout --orphan gh-pages && git rm -rf --quiet . || true)
+          fi
+
+          # Clean-and-copy the versioned directory so removed symbols disappear
+          # from the reference instead of lingering as stale files.
+          rm -rf "${worktree}/api/${VERSION}"
+          mkdir -p "${worktree}/api/${VERSION}"
+          cp -R "${src}/." "${worktree}/api/${VERSION}/"
+
+          if [[ "${update_latest}" == "true" ]]; then
+            rm -rf "${worktree}/api/latest"
+            mkdir -p "${worktree}/api/latest"
+            cp -R "${src}/." "${worktree}/api/latest/"
+          else
+            echo "Skipping /api/latest/ update (update_latest input disabled)."
+          fi
+
+          # `.nojekyll` keeps GitHub Pages from running the Jekyll pipeline over
+          # Dokka's output — Jekyll eats files prefixed with `_` which Dokka uses
+          # heavily for its own assets.
+          touch "${worktree}/.nojekyll"
+
+          cd "${worktree}"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes in generated docs; nothing to publish."
+            exit 0
+          fi
+          git commit -m "docs(api): publish Dokka for ${VERSION}"
+          git push origin HEAD:gh-pages
