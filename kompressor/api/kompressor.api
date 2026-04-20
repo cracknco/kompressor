@@ -4,6 +4,7 @@ public final class co/crackn/kompressor/AndroidDeviceCapabilitiesKt {
 
 public final class co/crackn/kompressor/AndroidKompressorKt {
 	public static final fun createKompressor ()Lco/crackn/kompressor/Kompressor;
+	public static final fun createKompressor (Lco/crackn/kompressor/logging/KompressorLogger;)Lco/crackn/kompressor/Kompressor;
 }
 
 public abstract interface class co/crackn/kompressor/CodecSupport {
@@ -404,6 +405,31 @@ public final class co/crackn/kompressor/image/ImagePresets {
 	public final fun getHIGH_QUALITY ()Lco/crackn/kompressor/image/ImageCompressionConfig;
 	public final fun getTHUMBNAIL ()Lco/crackn/kompressor/image/ImageCompressionConfig;
 	public final fun getWEB ()Lco/crackn/kompressor/image/ImageCompressionConfig;
+}
+
+public abstract interface class co/crackn/kompressor/logging/KompressorLogger {
+	public abstract fun log (Lco/crackn/kompressor/logging/LogLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+}
+
+public final class co/crackn/kompressor/logging/LogLevel : java/lang/Enum {
+	public static final field DEBUG Lco/crackn/kompressor/logging/LogLevel;
+	public static final field ERROR Lco/crackn/kompressor/logging/LogLevel;
+	public static final field INFO Lco/crackn/kompressor/logging/LogLevel;
+	public static final field VERBOSE Lco/crackn/kompressor/logging/LogLevel;
+	public static final field WARN Lco/crackn/kompressor/logging/LogLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getPriority ()I
+	public static fun valueOf (Ljava/lang/String;)Lco/crackn/kompressor/logging/LogLevel;
+	public static fun values ()[Lco/crackn/kompressor/logging/LogLevel;
+}
+
+public final class co/crackn/kompressor/logging/NoOpLogger : co/crackn/kompressor/logging/KompressorLogger {
+	public static final field INSTANCE Lco/crackn/kompressor/logging/NoOpLogger;
+	public fun log (Lco/crackn/kompressor/logging/LogLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+}
+
+public final class co/crackn/kompressor/logging/PlatformLogger_androidKt {
+	public static final fun PlatformLogger ()Lco/crackn/kompressor/logging/KompressorLogger;
 }
 
 public final class co/crackn/kompressor/video/DynamicRange : java/lang/Enum {

@@ -27,6 +27,10 @@ import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.NoOpLogger
+import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
@@ -50,6 +54,7 @@ import kotlinx.coroutines.withContext
  * case) rather than a generic `ExportException`.
  */
 internal class AndroidVideoCompressor(
+    private val logger: SafeLogger = SafeLogger(NoOpLogger),
     /**
      * Extra audio processors appended to the Effects chain **for testing only** — parallel to
      * the seam on `AndroidAudioCompressor`. Device tests inject a `SlowAudioProcessor` here
@@ -78,18 +83,32 @@ internal class AndroidVideoCompressor(
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val startNanos = System.nanoTime()
-        onProgress(0f)
-        val inputSize = resolveMediaInputSize(inputPath)
+        logger.instrumentCompress(
+            tag = LogTags.VIDEO,
+            startMessage = {
+                "compress() start in=$inputPath out=$outputPath " +
+                    "codec=${config.codec} dynamicRange=${config.dynamicRange} " +
+                    "videoBitrate=${config.videoBitrate} maxRes=${config.maxResolution}"
+            },
+            successMessage = { r ->
+                "compress() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+            },
+            failureMessage = { "compress() failed in=$inputPath" },
+        ) {
+            val startNanos = System.nanoTime()
+            onProgress(0f)
+            val inputSize = resolveMediaInputSize(inputPath)
 
-        deletingOutputOnFailure(outputPath) {
-            runTransformer(inputPath, outputPath, config, onProgress)
+            deletingOutputOnFailure(outputPath) {
+                runTransformer(inputPath, outputPath, config, onProgress)
+            }
+
+            onProgress(1f)
+            val outputSize = File(outputPath).length()
+            val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
+            CompressionResult(inputSize, outputSize, durationMs)
         }
-
-        onProgress(1f)
-        val outputSize = File(outputPath).length()
-        val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
-        CompressionResult(inputSize, outputSize, durationMs)
     }
 
     private suspend fun runTransformer(

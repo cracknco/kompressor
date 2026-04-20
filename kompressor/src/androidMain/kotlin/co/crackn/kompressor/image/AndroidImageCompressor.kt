@@ -14,6 +14,10 @@ import androidx.exifinterface.media.ExifInterface
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.KompressorContext
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.NoOpLogger
+import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -25,21 +29,37 @@ import java.io.InputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
 @OptIn(ExperimentalKompressorApi::class)
-internal class AndroidImageCompressor : ImageCompressor {
+internal class AndroidImageCompressor(
+    private val logger: SafeLogger = SafeLogger(NoOpLogger),
+) : ImageCompressor {
 
     override suspend fun compress(
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        try {
-            doCompress(inputPath, outputPath, config)
-        } catch (e: ImageCompressionError) {
-            throw e
-        } catch (e: IllegalArgumentException) {
-            throw e
-        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-            throw classifyAndroidImageError(inputPath, e)
+        logger.instrumentCompress(
+            tag = LogTags.IMAGE,
+            startMessage = {
+                "compress() start in=$inputPath out=$outputPath " +
+                    "fmt=${config.format} quality=${config.quality} " +
+                    "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
+            },
+            successMessage = { r ->
+                "compress() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+            },
+            failureMessage = { "compress() failed in=$inputPath" },
+        ) {
+            try {
+                doCompress(inputPath, outputPath, config)
+            } catch (e: ImageCompressionError) {
+                throw e
+            } catch (e: IllegalArgumentException) {
+                throw e
+            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+                throw classifyAndroidImageError(inputPath, e)
+            }
         }
     }
 

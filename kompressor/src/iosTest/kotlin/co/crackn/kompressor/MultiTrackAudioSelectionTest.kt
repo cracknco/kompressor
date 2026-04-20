@@ -11,6 +11,7 @@ import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.testutil.MultiTrackAudioFixture
 import kotlin.math.PI
 import kotlin.math.abs
@@ -58,7 +59,7 @@ class MultiTrackAudioSelectionTest {
 
     private lateinit var testDir: String
     private val compressor = IosAudioCompressor()
-    private val kompressor = IosKompressor()
+    private val kompressor = IosKompressor(NoOpLogger)
 
     private companion object {
         const val DURATION_SEC = 2

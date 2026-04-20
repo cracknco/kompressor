@@ -14,20 +14,39 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressor
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressor
+import co.crackn.kompressor.logging.KompressorLogger
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.PlatformLogger
+import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.VideoCompressor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal class AndroidKompressor : Kompressor {
-    override val image: ImageCompressor by lazy { AndroidImageCompressor() }
-    override val video: VideoCompressor by lazy { AndroidVideoCompressor() }
-    override val audio: AudioCompressor by lazy { AndroidAudioCompressor() }
+internal class AndroidKompressor(logger: KompressorLogger) : Kompressor {
+    private val safeLogger = SafeLogger(logger)
+
+    override val image: ImageCompressor by lazy { AndroidImageCompressor(safeLogger) }
+    override val video: VideoCompressor by lazy { AndroidVideoCompressor(safeLogger) }
+    override val audio: AudioCompressor by lazy { AndroidAudioCompressor(safeLogger) }
 
     private val capabilities: DeviceCapabilities by lazy { queryDeviceCapabilities() }
 
     override suspend fun probe(inputPath: String): Result<SourceMediaInfo> = withContext(Dispatchers.IO) {
-        suspendRunCatching { probeAndroidSource(inputPath) }
+        safeLogger.debug(LogTags.PROBE) { "probe() inputPath=$inputPath" }
+        val result = suspendRunCatching { probeAndroidSource(inputPath) }
+        result.fold(
+            onSuccess = { info ->
+                safeLogger.info(LogTags.PROBE) {
+                    "probe() ok — video=${info.videoCodec} ${info.width}x${info.height} " +
+                        "audio=${info.audioCodec} durationMs=${info.durationMs}"
+                }
+            },
+            onFailure = { throwable ->
+                safeLogger.warn(LogTags.PROBE, throwable) { "probe() failed for $inputPath" }
+            },
+        )
+        result
     }
 
     override fun canCompress(info: SourceMediaInfo): Supportability =
@@ -36,11 +55,18 @@ internal class AndroidKompressor : Kompressor {
             capabilities = capabilities,
             requiredOutputVideoMime = MIME_VIDEO_H264,
             requiredOutputAudioMime = MIME_AUDIO_AAC,
-        )
+        ).also { verdict ->
+            safeLogger.debug(LogTags.PROBE) {
+                "canCompress() verdict=${verdict::class.simpleName}"
+            }
+        }
 }
 
 /** Creates an Android [Kompressor] backed by MediaCodec and BitmapFactory. */
-public actual fun createKompressor(): Kompressor = AndroidKompressor()
+public actual fun createKompressor(): Kompressor = AndroidKompressor(PlatformLogger())
+
+/** Creates an Android [Kompressor] that routes diagnostics through [logger]. */
+public actual fun createKompressor(logger: KompressorLogger): Kompressor = AndroidKompressor(logger)
 
 private fun probeAndroidSource(inputPath: String): SourceMediaInfo {
     val mmr = MediaMetadataRetriever()

@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
+import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.testutil.MultiTrackAudioFixture
 import java.io.File
 import java.nio.ByteBuffer
@@ -37,7 +38,7 @@ class MultiTrackAudioSelectionTest {
 
     private lateinit var tempDir: File
     private val compressor = AndroidAudioCompressor()
-    private val kompressor = AndroidKompressor()
+    private val kompressor = AndroidKompressor(NoOpLogger)
 
     private companion object {
         const val DURATION_SEC = 2

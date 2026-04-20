@@ -7,6 +7,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.audio.AudioCompressor
 import co.crackn.kompressor.image.ImageCompressor
+import co.crackn.kompressor.logging.KompressorLogger
+import co.crackn.kompressor.logging.PlatformLogger
 import co.crackn.kompressor.video.VideoCompressor
 
 /**
@@ -57,12 +59,37 @@ public interface Kompressor {
 }
 
 /**
- * Create a platform-specific [Kompressor] instance.
+ * Create a platform-specific [Kompressor] instance using the default [PlatformLogger].
  *
  * On Android the [android.content.Context] is obtained automatically via AndroidX App Startup.
+ *
+ * Equivalent to `createKompressor(logger = PlatformLogger())` — [PlatformLogger] routes WARN /
+ * ERROR to Logcat on Android and the unified log on iOS, keeping silent failures visible to
+ * integrators out-of-the-box. Pass [co.crackn.kompressor.logging.NoOpLogger] explicitly if you
+ * want strict silence in production.
  *
  * **Thread-safety:** safe to call from any thread and from multiple processes concurrently.
  * Returns a fresh instance each call; share the instance within a process to benefit from
  * lazy sub-compressor init.
  */
 public expect fun createKompressor(): Kompressor
+
+/**
+ * Create a platform-specific [Kompressor] instance with a custom [logger].
+ *
+ * Use this overload when your app already standardises on a logging framework (Timber, SwiftLog,
+ * CocoaLumberjack) or when you want to ship library diagnostics into a crash / APM backend
+ * (Sentry, Datadog, Firebase Crashlytics). See `docs/logging.md` for integration recipes.
+ *
+ * Pass [co.crackn.kompressor.logging.NoOpLogger] for full silence.
+ *
+ * On Android the [android.content.Context] is obtained automatically via AndroidX App Startup.
+ *
+ * **Thread-safety:** safe to call from any thread and from multiple processes concurrently.
+ * The [logger] must itself be thread-safe per the [KompressorLogger] contract — it will be
+ * invoked concurrently from background dispatchers and Media3 / AVFoundation internal threads.
+ *
+ * @param logger receives every library-emitted diagnostic. Must satisfy the thread-safety and
+ *   no-throw contract documented on [KompressorLogger].
+ */
+public expect fun createKompressor(logger: KompressorLogger): Kompressor

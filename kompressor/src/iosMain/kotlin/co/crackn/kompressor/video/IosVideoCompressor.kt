@@ -14,6 +14,10 @@ import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.NoOpLogger
+import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -78,47 +82,69 @@ private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/
 
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
-internal class IosVideoCompressor : VideoCompressor {
+internal class IosVideoCompressor(
+    private val logger: SafeLogger = SafeLogger(NoOpLogger),
+) : VideoCompressor {
 
     override val supportedInputFormats: Set<String> = IOS_SUPPORTED_INPUT_MIMES
     override val supportedOutputFormats: Set<String> = IOS_SUPPORTED_OUTPUT_MIMES
 
+    // LongMethod suppressed: see IosImageCompressor — the extra length is from the CRA-47
+    // instrumentCompress wrapping (tag + three message builders + pipeline-selection DEBUG log).
+    @Suppress("LongMethod")
     override suspend fun compress(
         inputPath: String,
         outputPath: String,
         config: VideoCompressionConfig,
         onProgress: suspend (Float) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val startTime = CFAbsoluteTimeGetCurrent()
-        onProgress(0f)
-        val inputSize = sizeOrTypedError(inputPath)
-        // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error so
-        // callers see the same `UnsupportedSourceFormat` subtype as the Android side, rather
-        // than a generic `IllegalArgumentException` from deep in the pipeline.
-        validateHasVideoTrack(inputPath)
-        // Pre-flight HDR10: mirrors Android's `requireHdr10Hevc`. AVFoundation on A9/iOS 15
-        // accepts the settings dictionary but crashes mid-pipeline with an uncatchable
-        // NSException; asking `canApplyOutputSettings` first turns that into a typed
-        // `UnsupportedSourceFormat` before the writer is ever started.
-        if (config.dynamicRange == DynamicRange.HDR10) {
-            requireHdr10HevcCapability(config.codec)
-        }
-        runPipelineWithTypedErrors(outputPath) {
-            val preset = exportSessionPresetOrNull(config)
-            if (preset != null) {
-                IosVideoExportPipeline(inputPath, outputPath, preset).execute(onProgress)
-            } else {
-                IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+        logger.instrumentCompress(
+            tag = LogTags.VIDEO,
+            startMessage = {
+                "compress() start in=$inputPath out=$outputPath " +
+                    "codec=${config.codec} dynamicRange=${config.dynamicRange} " +
+                    "videoBitrate=${config.videoBitrate} maxRes=${config.maxResolution}"
+            },
+            successMessage = { r ->
+                "compress() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+            },
+            failureMessage = { "compress() failed in=$inputPath" },
+        ) {
+            val startTime = CFAbsoluteTimeGetCurrent()
+            onProgress(0f)
+            val inputSize = sizeOrTypedError(inputPath)
+            // Pre-flight: reject inputs with no video track (audio-only MP4s) with a typed error so
+            // callers see the same `UnsupportedSourceFormat` subtype as the Android side, rather
+            // than a generic `IllegalArgumentException` from deep in the pipeline.
+            validateHasVideoTrack(inputPath)
+            // Pre-flight HDR10: mirrors Android's `requireHdr10Hevc`. AVFoundation on A9/iOS 15
+            // accepts the settings dictionary but crashes mid-pipeline with an uncatchable
+            // NSException; asking `canApplyOutputSettings` first turns that into a typed
+            // `UnsupportedSourceFormat` before the writer is ever started.
+            if (config.dynamicRange == DynamicRange.HDR10) {
+                requireHdr10HevcCapability(config.codec)
             }
+            runPipelineWithTypedErrors(outputPath) {
+                val preset = exportSessionPresetOrNull(config)
+                logger.debug(LogTags.VIDEO) {
+                    "Pipeline: ${if (preset != null) "AVAssetExportSession($preset)" else "AVAssetWriter"}"
+                }
+                if (preset != null) {
+                    IosVideoExportPipeline(inputPath, outputPath, preset).execute(onProgress)
+                } else {
+                    IosVideoTranscodePipeline(inputPath, outputPath, config).execute(onProgress)
+                }
+            }
+            onProgress(1f)
+            // Route the output-size read through `sizeOrTypedError` too: a race that loses the
+            // output file between pipeline success and this read would otherwise leak the untyped
+            // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
+            // `Result.failure`, which `suspendRunCatching` passes through unchanged.
+            val outputSize = sizeOrTypedError(outputPath)
+            val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+            CompressionResult(inputSize, outputSize, durationMs)
         }
-        onProgress(1f)
-        // Route the output-size read through `sizeOrTypedError` too: a race that loses the
-        // output file between pipeline success and this read would otherwise leak the untyped
-        // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
-        // `Result.failure`, which `suspendRunCatching` passes through unchanged.
-        val outputSize = sizeOrTypedError(outputPath)
-        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
-        CompressionResult(inputSize, outputSize, durationMs)
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")

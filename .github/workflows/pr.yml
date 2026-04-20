@@ -57,6 +57,21 @@ jobs:
           name: detekt-report
           path: build/reports/detekt/
 
+  # ── Raw-logging gate (CRA-47) ───────────────────────────
+  # Second layer of defence over Detekt's ForbiddenImport (which catches
+  # `android.util.Log` imports at build time). This script additionally flags
+  # `NSLog(` — Kotlin/Native can't import it so Detekt doesn't see it — and
+  # bare `println` / `print`. Runs in < 10 seconds on a checkout-only job,
+  # so it's cheap to make required. See scripts/check-no-raw-logging.sh.
+  # No user-controlled inputs are interpolated into any `run:` block.
+  no-raw-logging:
+    name: No raw logging in library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Scan kompressor/src for raw logging calls
+        run: ./scripts/check-no-raw-logging.sh
+
   # ── Gitleaks ────────────────────────────────────────────
   gitleaks:
     name: Gitleaks

@@ -12,6 +12,10 @@
 package co.crackn.kompressor.image
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.NoOpLogger
+import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.CPointed
@@ -66,30 +70,51 @@ import platform.UIKit.UIImageJPEGRepresentation
 import platform.posix.memcpy
 
 /** iOS image compressor backed by [UIImage] and Core Graphics / ImageIO. */
-internal class IosImageCompressor : ImageCompressor {
+internal class IosImageCompressor(
+    private val logger: SafeLogger = SafeLogger(NoOpLogger),
+) : ImageCompressor {
 
+    // LongMethod suppressed: the body is a single `instrumentCompress` call whose shape (tag +
+    // three message builders) is mandated by CRA-47 observability. Splitting the message
+    // builders out as private helpers only shifts line count around without clarifying intent,
+    // since each one is scoped to compress() and has no other caller.
+    @Suppress("LongMethod")
     override suspend fun compress(
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        try {
-            doCompress(inputPath, outputPath, config)
-        } catch (e: ImageCompressionError) {
-            throw e
-        } catch (e: IllegalArgumentException) {
-            throw e
-        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
-            // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
-            // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
-            // caller subsequently dereferences a member. Classify it as `DecodingFailed` so
-            // callers see the same typed error as the Android side.
-            throw ImageCompressionError.DecodingFailed(
-                "Platform decoder failed (nil image): ${e.message ?: "UIImage(contentsOfFile)"}",
-                e,
-            )
-        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        logger.instrumentCompress(
+            tag = LogTags.IMAGE,
+            startMessage = {
+                "compress() start in=$inputPath out=$outputPath " +
+                    "fmt=${config.format} quality=${config.quality} " +
+                    "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
+            },
+            successMessage = { r ->
+                "compress() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+            },
+            failureMessage = { "compress() failed in=$inputPath" },
+        ) {
+            try {
+                doCompress(inputPath, outputPath, config)
+            } catch (e: ImageCompressionError) {
+                throw e
+            } catch (e: IllegalArgumentException) {
+                throw e
+            } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+                // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
+                // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
+                // caller subsequently dereferences a member. Classify it as `DecodingFailed` so
+                // callers see the same typed error as the Android side.
+                throw ImageCompressionError.DecodingFailed(
+                    "Platform decoder failed (nil image): ${e.message ?: "UIImage(contentsOfFile)"}",
+                    e,
+                )
+            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+                throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+            }
         }
     }
 
