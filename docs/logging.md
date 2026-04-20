@@ -229,10 +229,12 @@ Rationale and the `SafeLogger` design in
 DEBUG). Implementations **must** filter by `LogLevel` as early as possible —
 ideally before any string concatenation or formatting.
 
-The library itself short-circuits the lazy message lambda at DEBUG / VERBOSE
-before invoking the delegate (see `SafeLogger.emitLazy`), but your delegate
-still sees every record at or above the highest level we emit. If you want
-"only WARN and up in production", filter in your implementation:
+The library always materialises the lazy message lambda before dispatching to
+the delegate — level filtering is the delegate's responsibility (ADR-003 § 3).
+The `() -> String` parameter keeps the call site readable but is not a free
+short-circuit. Your delegate sees every record the library emits and must
+filter as early as possible. If you want "only WARN and up in production",
+filter in your implementation:
 
 ```kotlin
 class ProductionLogger(private val delegate: KompressorLogger) : KompressorLogger {

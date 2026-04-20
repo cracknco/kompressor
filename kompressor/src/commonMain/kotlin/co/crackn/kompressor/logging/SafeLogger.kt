@@ -17,9 +17,12 @@ package co.crackn.kompressor.logging
  * logger are caught and dropped on the floor. We never re-emit a swallowed exception via the
  * same logger (that would recurse and compound the damage on a logger that's already broken).
  *
- * Lazy message producers (e.g. [debug] / [verbose]) short-circuit on [LogLevel] before invoking
- * the message lambda. At ERROR / WARN we always materialise the message — that's the hot minority
- * path and the allocation is negligible next to the failing I/O it describes.
+ * Lazy message producers (e.g. [debug] / [verbose]) accept a `() -> String` lambda so the call
+ * site stays readable without forcing allocation at the argument position, but the library always
+ * materialises the message before dispatching to the delegate — level-threshold filtering is the
+ * delegate's responsibility per ADR-003 § 3 ("library does not filter, implementation does"). At
+ * ERROR / WARN we materialise eagerly at the call site; the allocation is negligible next to the
+ * failing I/O it describes.
  */
 internal class SafeLogger(private val delegate: KompressorLogger) {
     // Thread-safety: `delegate` is immutable after construction. Every call reads the same
