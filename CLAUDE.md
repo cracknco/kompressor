@@ -42,6 +42,11 @@ Image, audio, and video compression are all implemented on both platforms:
 ./gradlew koverXmlReport         # Generate coverage report
 ./gradlew koverVerify            # Quality gate — minimum 85% coverage
 
+# API reference (Dokka v2)
+./gradlew :kompressor:dokkaHtml  # Alias for dokkaGeneratePublicationHtml; writes kompressor/build/dokka/html/
+                                 # Also gated on every PR via the `dokka-build` job in pr.yml;
+                                 # published to gh-pages + attached as the -javadoc.jar on every release.
+
 # Publish to Maven Central (requires signing keys)
 ./gradlew publishToMavenCentral
 ```
@@ -144,9 +149,10 @@ The project configures MCP servers in `.mcp.json` for AI-assisted development:
 
 ## CI
 
-PR checks (`.github/workflows/pr.yml`) — 5 jobs, Java 21. Device tests + merged-coverage gates were retired per `docs/adr/002-decline-level-3-supply-chain.md` (see PR #104).
+PR checks (`.github/workflows/pr.yml`) — 6 jobs, Java 21. Device tests + merged-coverage gates were retired per `docs/adr/002-decline-level-3-supply-chain.md` (see PR #104).
 - **Ktlint**, **Detekt**, **Gitleaks** — `ubuntu-latest`.
 - **Tests & coverage (host)** — `ubuntu-latest`. Fetches LFS fixtures, runs `testAndroidHostTest` + `apiCheck` + `koverXmlReport` + `koverVerify` (≥85%). `apiCheck` failures are surfaced as GitHub annotations pointing callers at `./gradlew apiDump`. Fast feedback gate (~3–5 min).
 - **iOS simulator tests** — `macos-latest`. Fetches LFS fixtures, caches `~/.konan`, runs `./gradlew :kompressor:iosSimulatorArm64Test` (~6–10 min).
+- **Dokka build** — `ubuntu-latest`. Runs `./gradlew :kompressor:dokkaGeneratePublicationHtml -Pversion=pr-check` so broken KDoc / dangling `@property` tags / removed opt-in markers surface at PR time instead of waiting for the next release. The "real" Dokka publish still lives in `.github/workflows/publish-dokka.yml` (triggered on `release: published`); this gate is only the compile-like check.
 
 Release pipeline (`.github/workflows/release.yml`): push to `main` → `test-native` (iOS simulator tests on `macos-latest`) → `release` (`semantic-release` cuts a GitHub Release + CHANGELOG bump) → `publish` (`./gradlew publishToMavenCentral --no-configuration-cache` with signing keys from repo secrets). The iOS test gate is duplicated across `pr.yml` and `release.yml` on purpose: PR gate catches regressions before merge, release gate is a safety net before publishing.
