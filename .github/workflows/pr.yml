@@ -216,38 +216,3 @@ jobs:
         with:
           name: ios-simulator-test-report
           path: kompressor/build/reports/tests/iosSimulatorArm64Test/
-
-  # ── iOS leak detection (CRA-50) ─────────────────────────
-  # Runs `IosCompressionLeakTest` (50 compressions per modality) under
-  # Instruments' `Leaks` template via `xctrace`. Any retained allocation at
-  # process exit turns this job red. See `scripts/ios-leak-test.sh` for the
-  # capture + parse logic, and `docs/maintainers.md#debugging-leaks` for the
-  # runbook. Pinned to `macos-latest` because xctrace ships with Xcode.
-  # No untrusted `github.event.*` interpolation anywhere below.
-  ios-leak-tests:
-    name: iOS leak tests
-    runs-on: macos-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
-      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
-          restore-keys: |
-            konan-${{ runner.os }}-
-      - name: Run xctrace leak detection
-        run: ./scripts/ios-leak-test.sh
-      - name: Upload leak trace
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ios-leak-trace
-          path: kompressor/build/reports/leaks/

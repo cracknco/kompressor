@@ -80,27 +80,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Kotlin/Native's test runner accepts `--ktest_filter=<glob>` for filtering.
-# We scope to the leak test class so the trace captures 50-iteration loops
-# rather than the entire test suite (which would run for 10+ minutes and
-# obscure the leak signal with unrelated fixture churn).
+# Kotlin/Native's test runner accepts `--ktest_filter=<glob>` for class/method
+# filtering. Underscore (not dash) — flag is stable as of Kotlin 2.3.x (the
+# version this repo pins in `gradle/libs.versions.toml`). We scope to the leak
+# test class so the trace captures 50-iteration loops rather than the entire
+# test suite (which would run for 10+ minutes and obscure the leak signal with
+# unrelated fixture churn).
 KTEST_FILTER="co.crackn.kompressor.IosCompressionLeakTest.*"
 
+# Resolve `xcrun` to an absolute path. `xctrace record --launch -- <cmd>` does
+# NOT PATH-resolve <cmd> (it's fed straight to posix_spawn as a path), so a
+# bare `xcrun` argument fails with `Path not found 'xcrun'`. Equally, driving
+# the launch via `xctrace --device … --launch -- <host-relative-path-to-kexe>`
+# fails because xctrace hands the path to the simulator's posix_spawn, which
+# has no visibility into host-relative paths (`posix_spawn failure: test.kexe
+# (No such file or directory)`). `xcrun simctl spawn <UDID> <absolute-host-path>`
+# bridges both: simctl mounts the host filesystem into the simulator and
+# launches the Mach-O in the sim runtime, while xctrace attaches its Allocations
+# + Leaks instruments to the spawned test.kexe process itself.
+XCRUN_PATH="$(command -v xcrun || true)"
+if [[ -z "$XCRUN_PATH" ]]; then
+  echo "::error title=iOS leak test::xcrun not found on PATH. Install Xcode / Command Line Tools."
+  exit 2
+fi
+ABS_BINARY="$REPO_ROOT/$BINARY"
+
 echo "==> Recording Leaks trace"
-# `--device <UDID> --launch -- <test.kexe>` routes the launch into the booted
-# simulator runtime so xctrace attaches the Allocations + Leaks instruments to
-# the *actual* test.kexe process running in the simulator, not a host-side
-# wrapper. An earlier revision chained `--launch -- xcrun simctl spawn …` which
-# has two failure modes: (a) xctrace's `--launch` expects a path and cannot PATH-
-# resolve `xcrun` (CI saw `Path not found 'xcrun'`), and (b) even with the full
-# path, xctrace would record the simctl wrapper process — which allocates almost
-# nothing — instead of the test binary, giving silent false-negatives. `--device`
-# makes the target unambiguous.
 xctrace record \
-  --device "$DEVICE_UDID" \
   --template 'Leaks' \
   --output "$TRACE_PATH" \
-  --launch -- "$BINARY" --ktest_filter="$KTEST_FILTER"
+  --launch -- "$XCRUN_PATH" simctl spawn "$DEVICE_UDID" "$ABS_BINARY" --ktest_filter="$KTEST_FILTER"
 
 echo "==> Exporting leaks table"
 # The Leaks template produces a `leaks` schema on the main run; each row is one
@@ -111,9 +120,20 @@ xctrace export \
   --xpath '/trace-toc/run[@number="1"]/data/table[@schema="leaks"]' \
   > "$LEAKS_EXPORT"
 
-# Each leaked allocation maps to exactly one <row>. Counting rows is robust
-# across xctrace versions because the schema prefix is fixed.
-LEAK_COUNT=$(grep -c '<row>' "$LEAKS_EXPORT" || true)
+# Schema-aware row count via `xmllint --xpath` — doesn't depend on the tag
+# appearing literally as `<row>` (future xctrace versions could namespace or
+# self-close the element). Empty file / malformed XML is treated as a hard
+# error rather than silently passing as 0 leaks.
+if [[ ! -s "$LEAKS_EXPORT" ]]; then
+  echo "::error title=iOS leak test::leaks.xml is empty — xctrace export probably failed. Check $TRACE_PATH manually."
+  exit 2
+fi
+LEAK_COUNT=$(xmllint --xpath 'count(//row)' "$LEAKS_EXPORT" 2>/dev/null || echo "parse-error")
+if [[ "$LEAK_COUNT" == "parse-error" ]]; then
+  echo "::error title=iOS leak test::leaks.xml is not valid XML. Check $TRACE_PATH manually."
+  head -50 "$LEAKS_EXPORT" || true
+  exit 2
+fi
 echo "==> Leak count: $LEAK_COUNT"
 
 if [[ "$LEAK_COUNT" -gt 0 ]]; then

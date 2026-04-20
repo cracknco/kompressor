@@ -163,6 +163,12 @@ kotlin {
 val docsDir = rootProject.file("docs").absolutePath
 val regenerateFormatSupportDoc =
     providers.gradleProperty("regenerateFormatSupportDoc").orNull == "true"
+// CRA-44 drift gate (follow-up, PR #132): `ErrorTaxonomyDocUpToDateTest` in `androidHostTest`
+// renders `docs/error-handling.md` from the three `…CompressionError.kt` sealed hierarchies and
+// asserts byte-identity with the committed copy. `-PregenerateErrorTaxonomyDoc=true` flips the
+// test into rewrite mode — driven by `scripts/regenerate-error-taxonomy.sh`.
+val regenerateErrorTaxonomyDoc =
+    providers.gradleProperty("regenerateErrorTaxonomyDoc").orNull == "true"
 // CRA-43 (follow-up to peer review): expose the authoritative build-time platform floors to
 // host tests so `FormatSupportMatrixBuildVersionPinTest` can assert the hand-mirrored
 // `FormatSupportMatrix.ANDROID_MIN_SDK` / `IOS_MIN_VERSION` constants haven't drifted. Any
@@ -178,6 +184,10 @@ tasks.withType<Test>().configureEach {
         systemProperty("kompressor.regenerateFormatSupportDoc", "true")
         // Test outputs are cacheable by default; a cached "verify passed" run skips the
         // file write in regenerate mode. Force re-execution whenever we're rewriting.
+        outputs.upToDateWhen { false }
+    }
+    if (regenerateErrorTaxonomyDoc) {
+        systemProperty("kompressor.regenerateErrorTaxonomyDoc", "true")
         outputs.upToDateWhen { false }
     }
 }

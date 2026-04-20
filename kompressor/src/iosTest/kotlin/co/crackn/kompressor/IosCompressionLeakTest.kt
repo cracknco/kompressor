@@ -66,7 +66,7 @@ class IosCompressionLeakTest {
     }
 
     @Test
-    fun imageCompression_50Iterations_exercisesCoreGraphicsLifecycle() = runTest {
+    fun imageCompression_50Iterations_hasNoLeaks() = runTest {
         val inputPath = createTestImage(testDir, IMAGE_DIM, IMAGE_DIM)
 
         repeat(ITERATIONS) { i ->
@@ -86,7 +86,7 @@ class IosCompressionLeakTest {
     }
 
     @Test
-    fun audioCompression_50Iterations_exercisesAvAssetWriterLifecycle() = runTest {
+    fun audioCompression_50Iterations_hasNoLeaks() = runTest {
         val inputPath = testDir + "audio_input.wav"
         writeBytes(
             inputPath,
@@ -111,7 +111,7 @@ class IosCompressionLeakTest {
     }
 
     @Test
-    fun videoCompression_50Iterations_exercisesAvAssetExportSessionLifecycle() = runTest {
+    fun videoCompression_50Iterations_hasNoLeaks() = runTest {
         val inputPath = Mp4Generator.generateMp4(
             outputPath = testDir + "video_input.mp4",
             width = VIDEO_WIDTH,

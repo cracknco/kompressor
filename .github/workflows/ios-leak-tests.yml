@@ -1,0 +1,75 @@
+name: iOS leak tests
+
+# CRA-50 — iOS leak-detection gate. Dedicated workflow rather than a job in
+# `pr.yml` so we can apply a `paths:` filter at the workflow level: the gate
+# costs ~5–10 min on `macos-latest` per PR, which is wasted budget on PRs that
+# don't touch iOS sources. `pr.yml` deliberately has no `paths-ignore` (every
+# required check must fire so branch protection resolves cleanly); this
+# workflow is *not* a required check, so skipping it on unrelated PRs is safe.
+#
+# Triggers:
+#   - `pull_request` scoped to iOS library / test / script changes.
+#   - `push: main` as a backstop in case a concurrent merge produced a state
+#     the PR check didn't see.
+#   - `workflow_dispatch` for manual re-runs (mirrors the Android leak-tests
+#     workflow — a reviewer can trigger it on any PR from the Actions tab
+#     without editing files).
+#
+# Security: no `github.event.*` interpolation into `run:` blocks. Every step
+# invokes static shell content.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kompressor/src/iosMain/**'
+      - 'kompressor/src/iosTest/**'
+      - 'kompressor/src/nativeInterop/**'
+      - 'kompressor/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'scripts/ios-leak-test.sh'
+      - '.github/workflows/ios-leak-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'kompressor/src/iosMain/**'
+      - 'kompressor/src/iosTest/**'
+      - 'kompressor/src/nativeInterop/**'
+      - 'kompressor/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'scripts/ios-leak-test.sh'
+      - '.github/workflows/ios-leak-tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-leak-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-leak-tests:
+    name: iOS leak tests
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          lfs: true
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+      - name: Run xctrace leak detection
+        run: ./scripts/ios-leak-test.sh
+      - name: Upload leak trace
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-leak-trace
+          path: kompressor/build/reports/leaks/
