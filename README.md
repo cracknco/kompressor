@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://central.sonatype.com/artifact/co.crackn.kompressor/kompressor"><img src="https://img.shields.io/maven-central/v/co.crackn.kompressor/kompressor?color=blue&label=Maven%20Central" /></a>
+  <a href="https://central.sonatype.com/artifact/co.crackn/kompressor"><img src="https://img.shields.io/maven-central/v/co.crackn/kompressor?color=blue&label=Maven%20Central" /></a>
   <a href="https://github.com/cracknco/kompressor/actions/workflows/pr.yml"><img src="https://github.com/cracknco/kompressor/actions/workflows/pr.yml/badge.svg" /></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" /></a>
   <img src="https://img.shields.io/badge/Kotlin-Multiplatform-orange?logo=kotlin" />
@@ -62,7 +62,7 @@ Kompressor provides a **single Kotlin API** that delegates to the native hardwar
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("co.crackn.kompressor:kompressor:0.1.0")
+            implementation("co.crackn:kompressor:0.1.0")
         }
     }
 }

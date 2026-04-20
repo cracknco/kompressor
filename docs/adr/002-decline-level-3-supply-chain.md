@@ -100,7 +100,7 @@ justifies revisiting.
 
 - **No SBOM means a Fortune-500 consumer cannot auto-ingest Kompressor into
   their Dependency-Track without generating the SBOM themselves** (they can
-  still run `syft packages maven-central:co.crackn.kompressor:kompressor:X.Y.Z`
+  still run `syft packages maven-central:co.crackn:kompressor:X.Y.Z`
   locally — it just isn't pre-shipped).
 - **No SLSA provenance means air-gapped / attestation-gated build systems
   cannot verify the chain from source to Maven artifact via GitHub's OIDC.**

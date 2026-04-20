@@ -3,7 +3,7 @@ title: Installation
 description: "Add Kompressor to your Kotlin Multiplatform project via Maven Central."
 ---
 
-Kompressor is published on Maven Central under the coordinate `co.crackn.kompressor:kompressor`.
+Kompressor is published on Maven Central under the coordinate `co.crackn:kompressor`.
 
 <Steps>
   <Step title="Add Maven Central to your repositories">
@@ -30,7 +30,7 @@ Kompressor is published on Maven Central under the coordinate `co.crackn.kompres
     kotlin {
         sourceSets {
             commonMain.dependencies {
-                implementation("co.crackn.kompressor:kompressor:0.1.0")
+                implementation("co.crackn:kompressor:0.1.0")
             }
         }
     }
@@ -38,7 +38,7 @@ Kompressor is published on Maven Central under the coordinate `co.crackn.kompres
 
     ```kotlin Android-only module
     dependencies {
-        implementation("co.crackn.kompressor:kompressor:0.1.0")
+        implementation("co.crackn:kompressor:0.1.0")
     }
     ```
 
@@ -83,7 +83,7 @@ Pre-release snapshots are published to Sonatype's snapshots repository:
 dependencyResolutionManagement {
     repositories {
         maven("https://s01.oss.sonatype.org/content/repositories/snapshots/") {
-            content { includeGroup("co.crackn.kompressor") }
+            content { includeGroup("co.crackn") }
         }
     }
 }

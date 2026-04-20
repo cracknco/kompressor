@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Kompressor** is a Kotlin Multiplatform (KMP) library for compressing images, videos, and audio on Android and iOS using native hardware encoders (zero binary overhead). Published as `co.crackn.kompressor:kompressor` on Maven Central.
+**Kompressor** is a Kotlin Multiplatform (KMP) library for compressing images, videos, and audio on Android and iOS using native hardware encoders (zero binary overhead). Published as `co.crackn:kompressor` on Maven Central (Maven group `co.crackn`; the Kotlin package remains `co.crackn.kompressor.*`).
 
 Image, audio, and video compression are all implemented on both platforms:
 - **Image**: Android `BitmapFactory` / iOS `UIImage` + Core Graphics.

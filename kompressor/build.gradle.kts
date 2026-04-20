@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.binaryCompatibilityValidator)
 }
 
-group = "co.crackn.kompressor"
+group = "co.crackn"
 version = "0.1.0"
 
 kotlin {
@@ -189,7 +189,13 @@ kover {
 }
 
 mavenPublishing {
-    publishToMavenCentral()
+    // `automaticRelease = true` uploads the bundle to Sonatype Central Portal AND auto-promotes it
+    // to Maven Central in one CI pass. The previous plain `publishToMavenCentral()` left every
+    // deployment in `USER_MANAGED` staging waiting for a manual "Publish" click in the Portal UI
+    // — with three consecutive releases (0.1.0 / 0.2.0 / 0.2.1) piling up unpromoted, this was a
+    // silent publish-pipeline failure (BUILD SUCCESSFUL but nothing on repo1.maven.org). Auto-
+    // promote means every tagged release reaches consumers without manual intervention.
+    publishToMavenCentral(automaticRelease = true)
 
     signAllPublications()
 

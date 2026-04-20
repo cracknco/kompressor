@@ -17,7 +17,7 @@ Consumers can safely use **compatible-with** version ranges in `libs.versions.to
 kompressor = "1.2.0"
 
 [libraries]
-kompressor = { module = "co.crackn.kompressor:kompressor", version.ref = "kompressor" }
+kompressor = { module = "co.crackn:kompressor", version.ref = "kompressor" }
 ```
 
 A MINOR or PATCH update will never break your build or change observable behavior in a way that violates the documented contract.
