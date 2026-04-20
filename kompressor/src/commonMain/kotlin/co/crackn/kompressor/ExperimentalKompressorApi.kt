@@ -15,6 +15,12 @@ package co.crackn.kompressor
     level = RequiresOptIn.Level.WARNING,
     message = "This Kompressor API is experimental and may change or be removed without a major version bump.",
 )
+// `@MustBeDocumented` is required for Dokka to render this annotation as a visible badge on every
+// marked symbol in the generated API reference (gh-pages site). Without it, opt-in markers are
+// silently dropped and downstream consumers have no way to tell stable surface from experimental
+// surface when browsing the docs. Matches the pattern used by kotlinx-coroutines'
+// `@ExperimentalCoroutinesApi`. See docs/api-stability.md for the stability contract.
+@MustBeDocumented
 @Retention(AnnotationRetention.BINARY)
 @Target(
     AnnotationTarget.CLASS,

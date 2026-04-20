@@ -33,6 +33,10 @@ gadulka = "1.11.0"
 composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
 mockk = "1.14.9"
+# Dokka Gradle Plugin v2. Version decoupled from Kotlin — picks its own analyzer. Bump
+# carefully together with the Kotlin version and verify `./gradlew :kompressor:dokkaGenerate`
+# still succeeds: Dokka v2.1 is validated against Kotlin 2.3.x.
+dokka = "2.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -77,3 +81,9 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 binaryCompatibilityValidator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binaryCompatibilityValidator" }
+# Dokka generates the HTML API reference (published to gh-pages on every release by
+# `.github/workflows/publish-dokka.yml`). The same HTML bundle is packaged as the
+# `-javadoc.jar` attached to every Maven Central release. The dedicated `dokka-javadoc`
+# plugin is intentionally not applied — it does not yet support KMP (see the comment in
+# `kompressor/build.gradle.kts`).
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }

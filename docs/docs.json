@@ -56,6 +56,10 @@
   "navbar": {
     "links": [
       {
+        "label": "API reference",
+        "href": "https://cracknco.github.io/kompressor/api/latest/"
+      },
+      {
         "label": "GitHub",
         "href": "https://github.com/cracknco/kompressor"
       }
