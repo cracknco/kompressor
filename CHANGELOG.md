@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > publish is cut as **`0.1.0`** from the baseline `v0.0.0` (the repo's initial
 > commit).
 
+> **Version drift reset #2 (2026-04-22)** — the `v0.2.0` / `v0.3.0` / `v0.4.0`
+> / `v0.5.0` / `v0.6.0` GitHub tags auto-created by semantic-release between
+> 2026-04-20 and 2026-04-21 are phantom tags: their corresponding publish jobs
+> all failed on Sonatype with `Component with package url
+> 'pkg:maven/co.crackn/kompressor@0.1.0' already exists`. Root cause: the
+> `kompressor/build.gradle.kts` Kotlin-DSL line `version = "0.1.0"` executed
+> after Gradle had already initialised `project.version` from the
+> `ORG_GRADLE_PROJECT_version` env var supplied by the release workflow, so
+> every publish attempt re-emitted `0.1.0` (the one version that succeeded
+> once on 2026-04-20 and can never be republished). The hardcoded literal is
+> now replaced with a property read that respects the env var and falls back
+> to `0.0.0-SNAPSHOT` for local dev (see `build.gradle.kts` inline rationale).
+> Only `0.1.0` ever made it to Maven Central; after this fix merges,
+> semantic-release will compute the next version from the latest surviving
+> tag and the publish will succeed. If the phantom tags `v0.2.0`…`v0.6.0`
+> are deleted from GitHub prior to the next release (consistent with the
+> 2026-04-19 precedent above), the next publish will be `0.2.0` aggregating
+> every feature commit since `v0.1.0`; otherwise it will be `0.6.1` (a patch
+> bump from the current latest phantom tag).
+
 ## [Unreleased]
 
 ### Added
