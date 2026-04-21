@@ -110,6 +110,14 @@ kotlin {
 
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
+            // okio — powers the public `MediaSource.Local.Stream` / `MediaDestination.Local.Stream`
+            // scaffolding types introduced by CRA-90 (part of the CRA-89 I/O refactor epic).
+            // Deliberately `implementation` (not `api`): consumers that never touch `Stream`
+            // builders (the `FilePath` / `Bytes` / platform-native `Uri` / `NSURL` / `PHAsset`
+            // paths cover most app use-cases) must NOT pay a transitive okio classpath cost.
+            // Stream-using callers already depend on okio themselves; `api` would force the dep
+            // on every consumer. See `tmp/tier1-1-io-model.md` §9.2 (Q1) for the full rationale.
+            implementation(libs.okio)
         }
 
         commonTest.dependencies {

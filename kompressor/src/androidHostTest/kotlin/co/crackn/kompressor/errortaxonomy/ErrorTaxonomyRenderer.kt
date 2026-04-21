@@ -122,6 +122,25 @@ internal object ErrorTaxonomyRenderer {
             retrySafe = "no",
             consumerFix = "Report with `cause` attached \u2014 we failed to classify it.",
         ),
+        "ImageCompressionError.SourceNotFound" to Guidance(
+            retrySafe = "no",
+            consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
+                "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
+        ),
+        "ImageCompressionError.SourceReadFailed" to Guidance(
+            retrySafe = "maybe (transient)",
+            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
+                "otherwise surface the underlying `details` and let the user reacquire the source.",
+        ),
+        "ImageCompressionError.DestinationWriteFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
+                "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
+        ),
+        "ImageCompressionError.TempFileFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
+        ),
 
         // AudioCompressionError
         "AudioCompressionError.UnsupportedSourceFormat" to Guidance(
@@ -155,6 +174,25 @@ internal object ErrorTaxonomyRenderer {
             retrySafe = "no",
             consumerFix = "Report with `cause` attached.",
         ),
+        "AudioCompressionError.SourceNotFound" to Guidance(
+            retrySafe = "no",
+            consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
+                "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
+        ),
+        "AudioCompressionError.SourceReadFailed" to Guidance(
+            retrySafe = "maybe (transient)",
+            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
+                "otherwise surface the underlying `details` and let the user reacquire the source.",
+        ),
+        "AudioCompressionError.DestinationWriteFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
+                "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
+        ),
+        "AudioCompressionError.TempFileFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
+        ),
 
         // VideoCompressionError
         "VideoCompressionError.UnsupportedSourceFormat" to Guidance(
@@ -184,6 +222,25 @@ internal object ErrorTaxonomyRenderer {
         "VideoCompressionError.Unknown" to Guidance(
             retrySafe = "no",
             consumerFix = "Report with `cause` attached.",
+        ),
+        "VideoCompressionError.SourceNotFound" to Guidance(
+            retrySafe = "no",
+            consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
+                "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
+        ),
+        "VideoCompressionError.SourceReadFailed" to Guidance(
+            retrySafe = "maybe (transient)",
+            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
+                "otherwise surface the underlying `details` and let the user reacquire the source.",
+        ),
+        "VideoCompressionError.DestinationWriteFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
+                "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
+        ),
+        "VideoCompressionError.TempFileFailed" to Guidance(
+            retrySafe = "yes (after user fix)",
+            consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
         ),
     )
 

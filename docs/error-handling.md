@@ -49,7 +49,11 @@ ImageCompressionError (sealed)
 ├── DecodingFailed
 ├── EncodingFailed
 ├── IoFailed
-└── Unknown
+├── Unknown
+├── SourceNotFound
+├── SourceReadFailed
+├── DestinationWriteFailed
+└── TempFileFailed
 ```
 
 ### Subtypes
@@ -63,6 +67,10 @@ ImageCompressionError (sealed)
 | `EncodingFailed` | Encoding the output JPEG/PNG failed (OOM, bitmap.compress returned false, etc.) | maybe (OOM path) | Usually device-wide. Free memory and retry once with smaller `maxWidth` / `maxHeight`; else report. |
 | `IoFailed` | I/O failure reading the input or writing the output (missing file, permission denied, disk full, revoked `content://` URI, etc.) | yes (after user fix) | Show storage / permission UI and retry when the user resolves it. |
 | `Unknown` | Fallback for platform errors we couldn't classify | no | Report with `cause` attached — we failed to classify it. |
+| `SourceNotFound` | Source media is inaccessible — invalid content URI, dead content provider, iCloud-offline `PHAsset` with `allowNetworkAccess = false`, or a file deleted between probe and compress | no | Ask the user to re-select the source — the underlying resource is gone (deleted file, revoked URI, offline iCloud asset with network access disabled). |
+| `SourceReadFailed` | The source stream threw on read | maybe (transient) | Retry once if `cause` looks transient (network flake during iCloud download); otherwise surface the underlying `details` and let the user reacquire the source. |
+| `DestinationWriteFailed` | The destination sink threw on write, or the destination file / URI could not be opened for writing (missing `WRITE` permission, disk full before open, MediaStore provider rejected the `INSERT`, SAF document permissions revoked) | yes (after user fix) | Show storage / permission UI — disk full, missing `WRITE` permission, or a revoked SAF / MediaStore grant. Retry after the user resolves it. |
+| `TempFileFailed` | Temp file creation or write failed — disk full, cache directory inaccessible, or `ENOSPC` during chunked materialisation of a `Stream` / `Bytes` source | yes (after user fix) | Free device storage and retry — temp file allocation failed mid-pipeline. |
 
 ## `AudioCompressionError`
 
@@ -78,7 +86,11 @@ AudioCompressionError (sealed)
 ├── IoFailed
 ├── UnsupportedConfiguration
 ├── UnsupportedBitrate *(iOS-only)*
-└── Unknown
+├── Unknown
+├── SourceNotFound
+├── SourceReadFailed
+├── DestinationWriteFailed
+└── TempFileFailed
 ```
 
 ### Subtypes
@@ -92,6 +104,10 @@ AudioCompressionError (sealed)
 | `UnsupportedConfiguration` | The requested [AudioCompressionConfig] is not supported for this input on the current platform — e.g. iOS cannot upmix a mono source to a stereo output, or the input has more channels (5.1 / 7.1) than the compressor's channel mixer can handle | yes (narrower config) | Retry with a config the source supports — typically `channels = AudioChannels.MONO` or drop the upmix ask. |
 | `UnsupportedBitrate` | The requested bitrate falls outside the platform encoder's supported range for the given sample rate and channel count | yes (in-range bitrate) | Read `details`, clamp the requested bitrate to the reported range, retry. |
 | `Unknown` | Fallback for platform errors we couldn't classify | no | Report with `cause` attached. |
+| `SourceNotFound` | Source media is inaccessible — invalid content URI, dead content provider, iCloud-offline `PHAsset` with `allowNetworkAccess = false`, or a file deleted between probe and compress | no | Ask the user to re-select the source — the underlying resource is gone (deleted file, revoked URI, offline iCloud asset with network access disabled). |
+| `SourceReadFailed` | The source stream threw on read | maybe (transient) | Retry once if `cause` looks transient (network flake during iCloud download); otherwise surface the underlying `details` and let the user reacquire the source. |
+| `DestinationWriteFailed` | The destination sink threw on write, or the destination file / URI could not be opened for writing (missing `WRITE` permission, disk full before open, MediaStore provider rejected the `INSERT`, SAF document permissions revoked) | yes (after user fix) | Show storage / permission UI — disk full, missing `WRITE` permission, or a revoked SAF / MediaStore grant. Retry after the user resolves it. |
+| `TempFileFailed` | Temp file creation or write failed — disk full, cache directory inaccessible, or `ENOSPC` during chunked materialisation of a `Stream` / `Bytes` source | yes (after user fix) | Free device storage and retry — temp file allocation failed mid-pipeline. |
 
 ## `VideoCompressionError`
 
@@ -106,7 +122,11 @@ VideoCompressionError (sealed)
 ├── DecodingFailed
 ├── EncodingFailed
 ├── IoFailed
-└── Unknown
+├── Unknown
+├── SourceNotFound
+├── SourceReadFailed
+├── DestinationWriteFailed
+└── TempFileFailed
 ```
 
 ### Subtypes
@@ -119,6 +139,10 @@ VideoCompressionError (sealed)
 | `EncodingFailed` | Encoding the output failed (no H.264 encoder, out of memory, muxer refused a sample, etc.) | maybe | Try once at a lower resolution or bitrate; else report. |
 | `IoFailed` | I/O failure reading the input file or writing the output (permission denied, disk full, network-backed URI failed, etc.) | yes (after user fix) | Show storage / permission UI and retry when resolved. |
 | `Unknown` | Fallback for platform errors we couldn't classify | no | Report with `cause` attached. |
+| `SourceNotFound` | Source media is inaccessible — invalid content URI, dead content provider, iCloud-offline `PHAsset` with `allowNetworkAccess = false`, or a file deleted between probe and compress | no | Ask the user to re-select the source — the underlying resource is gone (deleted file, revoked URI, offline iCloud asset with network access disabled). |
+| `SourceReadFailed` | The source stream threw on read | maybe (transient) | Retry once if `cause` looks transient (network flake during iCloud download); otherwise surface the underlying `details` and let the user reacquire the source. |
+| `DestinationWriteFailed` | The destination sink threw on write, or the destination file / URI could not be opened for writing (missing `WRITE` permission, disk full before open, MediaStore provider rejected the `INSERT`, SAF document permissions revoked) | yes (after user fix) | Show storage / permission UI — disk full, missing `WRITE` permission, or a revoked SAF / MediaStore grant. Retry after the user resolves it. |
+| `TempFileFailed` | Temp file creation or write failed — disk full, cache directory inaccessible, or `ENOSPC` during chunked materialisation of a `Stream` / `Bytes` source | yes (after user fix) | Free device storage and retry — temp file allocation failed mid-pipeline. |
 
 ## Platform divergence
 

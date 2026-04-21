@@ -41,6 +41,11 @@ leakcanary = "2.14"
 # carefully together with the Kotlin version and verify `./gradlew :kompressor:dokkaGenerate`
 # still succeeds: Dokka v2.1 is validated against Kotlin 2.3.x.
 dokka = "2.2.0"
+# okio — common streaming I/O abstraction for the `MediaSource.Local.Stream` /
+# `MediaDestination.Local.Stream` public types (CRA-90 scaffolding for the CRA-89 I/O refactor).
+# Added as `implementation` in `commonMain` only; see the inline comment in
+# `kompressor/build.gradle.kts` for why this is deliberately NOT `api`.
+okio = "3.9.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -76,6 +81,7 @@ mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 # `detectLeaks()` API that fails a JUnit test when retained instances are found. See
 # CompressionLeakTest in androidDeviceTest.
 leakcanary-android-instrumentation = { module = "com.squareup.leakcanary:leakcanary-android-instrumentation", version.ref = "leakcanary" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
