@@ -55,4 +55,95 @@ class VideoCompressionErrorTest {
         checkNotNull(error.message) shouldContain "Pixel 6"
         checkNotNull(error.message) shouldContain "c2.qti.hevc.encoder"
     }
+
+    // ── CRA-90 I/O scaffolding error variants ──────────────────────────────
+    //
+    // Four new `data class` variants added alongside the existing `class` variants. Shape:
+    // `(details: String, override val cause: Throwable? = null)` — the data-class generated
+    // `equals` / `hashCode` is what callers rely on. Each variant has three tests: carries
+    // details+cause, extends the parent sealed class, default cause is null.
+
+    @Test
+    fun sourceNotFoundCarriesDetailsAndCause() {
+        val cause = RuntimeException("boom")
+        val err = VideoCompressionError.SourceNotFound("content://x invalid", cause)
+        err.details shouldBe "content://x invalid"
+        err.cause shouldBe cause
+        err shouldBe VideoCompressionError.SourceNotFound("content://x invalid", cause)
+        checkNotNull(err.message) shouldContain "Source not found"
+    }
+
+    @Test
+    fun sourceNotFoundExtendsVideoCompressionError() {
+        val err: VideoCompressionError = VideoCompressionError.SourceNotFound("x")
+        err.shouldBeInstanceOf<VideoCompressionError>()
+    }
+
+    @Test
+    fun sourceNotFoundCauseDefaultsToNull() {
+        VideoCompressionError.SourceNotFound("x").cause shouldBe null
+    }
+
+    @Test
+    fun sourceReadFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("io")
+        val err = VideoCompressionError.SourceReadFailed("offset 512", cause)
+        err.details shouldBe "offset 512"
+        err.cause shouldBe cause
+        err shouldBe VideoCompressionError.SourceReadFailed("offset 512", cause)
+        checkNotNull(err.message) shouldContain "Source read failed"
+    }
+
+    @Test
+    fun sourceReadFailedExtendsVideoCompressionError() {
+        val err: VideoCompressionError = VideoCompressionError.SourceReadFailed("x")
+        err.shouldBeInstanceOf<VideoCompressionError>()
+    }
+
+    @Test
+    fun sourceReadFailedCauseDefaultsToNull() {
+        VideoCompressionError.SourceReadFailed("x").cause shouldBe null
+    }
+
+    @Test
+    fun destinationWriteFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("ENOSPC")
+        val err = VideoCompressionError.DestinationWriteFailed("disk full", cause)
+        err.details shouldBe "disk full"
+        err.cause shouldBe cause
+        err shouldBe VideoCompressionError.DestinationWriteFailed("disk full", cause)
+        checkNotNull(err.message) shouldContain "Destination write failed"
+    }
+
+    @Test
+    fun destinationWriteFailedExtendsVideoCompressionError() {
+        val err: VideoCompressionError = VideoCompressionError.DestinationWriteFailed("x")
+        err.shouldBeInstanceOf<VideoCompressionError>()
+    }
+
+    @Test
+    fun destinationWriteFailedCauseDefaultsToNull() {
+        VideoCompressionError.DestinationWriteFailed("x").cause shouldBe null
+    }
+
+    @Test
+    fun tempFileFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("cache unavailable")
+        val err = VideoCompressionError.TempFileFailed("/cache/tmp", cause)
+        err.details shouldBe "/cache/tmp"
+        err.cause shouldBe cause
+        err shouldBe VideoCompressionError.TempFileFailed("/cache/tmp", cause)
+        checkNotNull(err.message) shouldContain "Temp file failed"
+    }
+
+    @Test
+    fun tempFileFailedExtendsVideoCompressionError() {
+        val err: VideoCompressionError = VideoCompressionError.TempFileFailed("x")
+        err.shouldBeInstanceOf<VideoCompressionError>()
+    }
+
+    @Test
+    fun tempFileFailedCauseDefaultsToNull() {
+        VideoCompressionError.TempFileFailed("x").cause shouldBe null
+    }
 }

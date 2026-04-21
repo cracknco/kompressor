@@ -76,4 +76,95 @@ class AudioCompressionErrorTest {
         checkNotNull(AudioCompressionError.UnsupportedBitrate("x").message) shouldContain "Unsupported bitrate"
         checkNotNull(AudioCompressionError.Unknown("x").message) shouldContain "Compression failed"
     }
+
+    // ── CRA-90 I/O scaffolding error variants ──────────────────────────────
+    //
+    // Four new `data class` variants added alongside the existing `class` variants. Shape:
+    // `(details: String, override val cause: Throwable? = null)` — the data-class generated
+    // `equals` / `hashCode` is what callers rely on. Each variant has three tests: carries
+    // details+cause, extends the parent sealed class, default cause is null.
+
+    @Test
+    fun sourceNotFoundCarriesDetailsAndCause() {
+        val cause = RuntimeException("boom")
+        val err = AudioCompressionError.SourceNotFound("content://x invalid", cause)
+        err.details shouldBe "content://x invalid"
+        err.cause shouldBe cause
+        err shouldBe AudioCompressionError.SourceNotFound("content://x invalid", cause)
+        checkNotNull(err.message) shouldContain "Source not found"
+    }
+
+    @Test
+    fun sourceNotFoundExtendsAudioCompressionError() {
+        val err: AudioCompressionError = AudioCompressionError.SourceNotFound("x")
+        err.shouldBeInstanceOf<AudioCompressionError>()
+    }
+
+    @Test
+    fun sourceNotFoundCauseDefaultsToNull() {
+        AudioCompressionError.SourceNotFound("x").cause shouldBe null
+    }
+
+    @Test
+    fun sourceReadFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("io")
+        val err = AudioCompressionError.SourceReadFailed("offset 512", cause)
+        err.details shouldBe "offset 512"
+        err.cause shouldBe cause
+        err shouldBe AudioCompressionError.SourceReadFailed("offset 512", cause)
+        checkNotNull(err.message) shouldContain "Source read failed"
+    }
+
+    @Test
+    fun sourceReadFailedExtendsAudioCompressionError() {
+        val err: AudioCompressionError = AudioCompressionError.SourceReadFailed("x")
+        err.shouldBeInstanceOf<AudioCompressionError>()
+    }
+
+    @Test
+    fun sourceReadFailedCauseDefaultsToNull() {
+        AudioCompressionError.SourceReadFailed("x").cause shouldBe null
+    }
+
+    @Test
+    fun destinationWriteFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("ENOSPC")
+        val err = AudioCompressionError.DestinationWriteFailed("disk full", cause)
+        err.details shouldBe "disk full"
+        err.cause shouldBe cause
+        err shouldBe AudioCompressionError.DestinationWriteFailed("disk full", cause)
+        checkNotNull(err.message) shouldContain "Destination write failed"
+    }
+
+    @Test
+    fun destinationWriteFailedExtendsAudioCompressionError() {
+        val err: AudioCompressionError = AudioCompressionError.DestinationWriteFailed("x")
+        err.shouldBeInstanceOf<AudioCompressionError>()
+    }
+
+    @Test
+    fun destinationWriteFailedCauseDefaultsToNull() {
+        AudioCompressionError.DestinationWriteFailed("x").cause shouldBe null
+    }
+
+    @Test
+    fun tempFileFailedCarriesDetailsAndCause() {
+        val cause = RuntimeException("cache unavailable")
+        val err = AudioCompressionError.TempFileFailed("/cache/tmp", cause)
+        err.details shouldBe "/cache/tmp"
+        err.cause shouldBe cause
+        err shouldBe AudioCompressionError.TempFileFailed("/cache/tmp", cause)
+        checkNotNull(err.message) shouldContain "Temp file failed"
+    }
+
+    @Test
+    fun tempFileFailedExtendsAudioCompressionError() {
+        val err: AudioCompressionError = AudioCompressionError.TempFileFailed("x")
+        err.shouldBeInstanceOf<AudioCompressionError>()
+    }
+
+    @Test
+    fun tempFileFailedCauseDefaultsToNull() {
+        AudioCompressionError.TempFileFailed("x").cause shouldBe null
+    }
 }
