@@ -31,15 +31,25 @@ public sealed interface MediaDestination {
          * written to a temp file (Media3 Transformer / AVAssetWriter require file outputs),
          * then the temp file is copied into the sink — double I/O cost.
          *
+         * Declared as a plain `class` rather than `data class` because the underlying
+         * [okio.Sink] is a stateful resource handle: `equals`/`hashCode` by identity (the
+         * default) is the only defensible semantic — two distinct sinks can never be
+         * "equal" even if they currently accept the same bytes, and `copy()` semantics would
+         * silently share a resource between instances. Sibling on
+         * [MediaSource.Local.Stream] [CRA-90 review].
+         *
          * @property sink The okio [Sink] to write to.
          * @property closeOnFinish If `true` (default), Kompressor calls `sink.close()` at the
          *   end of compression (success or failure). Set to `false` when the sink lifecycle
          *   is externally managed.
          */
-        public data class Stream(
+        public class Stream(
             public val sink: Sink,
             public val closeOnFinish: Boolean = true,
-        ) : Local
+        ) : Local {
+            override fun toString(): String =
+                "MediaDestination.Local.Stream(sink=$sink, closeOnFinish=$closeOnFinish)"
+        }
     }
 
     /** Companion namespace reserved for future platform-agnostic factory helpers. */

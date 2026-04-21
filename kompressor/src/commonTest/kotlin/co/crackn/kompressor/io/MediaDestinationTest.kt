@@ -46,6 +46,20 @@ class MediaDestinationTest {
 
     @Test
     fun companionObjectIsAccessible() {
-        MediaDestination shouldNotBe null
+        // Compile-time anchor — see sibling test in `MediaSourceTest` for the rationale
+        // [CRA-90 review].
+        val anchor: MediaDestination.Companion = MediaDestination
+        anchor.toString()
+    }
+
+    @Test
+    fun streamEqualityIsIdentityBased() {
+        // Sibling of MediaSource.Local.Stream identity semantics [CRA-90 review]. Sink
+        // is a stateful resource handle; data-class equality would incorrectly compare
+        // two distinct wrappers as equal whenever they happened to share a sink reference.
+        val a = MediaDestination.Local.Stream(Buffer())
+        val b = MediaDestination.Local.Stream(Buffer())
+        (a == b) shouldBe false
+        (a == a) shouldBe true
     }
 }

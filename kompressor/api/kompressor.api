@@ -243,7 +243,15 @@ public abstract class co/crackn/kompressor/audio/AudioCompressionError : java/la
 public final class co/crackn/kompressor/audio/AudioCompressionError$DecodingFailed : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$DecodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$DecodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$DecodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$DestinationWriteFailed : co/crackn/kompressor/audio/AudioCompressionError {
@@ -263,13 +271,29 @@ public final class co/crackn/kompressor/audio/AudioCompressionError$DestinationW
 public final class co/crackn/kompressor/audio/AudioCompressionError$EncodingFailed : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$EncodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$EncodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$EncodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$IoFailed : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$IoFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$IoFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$IoFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$SourceNotFound : co/crackn/kompressor/audio/AudioCompressionError {
@@ -317,25 +341,57 @@ public final class co/crackn/kompressor/audio/AudioCompressionError$TempFileFail
 public final class co/crackn/kompressor/audio/AudioCompressionError$Unknown : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$Unknown;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$Unknown;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$Unknown;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedBitrate : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedBitrate;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedBitrate;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedBitrate;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedConfiguration : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedConfiguration;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedConfiguration;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/audio/AudioCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedSourceFormat;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedSourceFormat;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/audio/AudioCompressionError$UnsupportedSourceFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class co/crackn/kompressor/audio/AudioCompressor {
@@ -392,7 +448,15 @@ public final class co/crackn/kompressor/image/ImageCompressionError$Companion {
 public final class co/crackn/kompressor/image/ImageCompressionError$DecodingFailed : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$DecodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$DecodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$DecodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$DestinationWriteFailed : co/crackn/kompressor/image/ImageCompressionError {
@@ -412,13 +476,29 @@ public final class co/crackn/kompressor/image/ImageCompressionError$DestinationW
 public final class co/crackn/kompressor/image/ImageCompressionError$EncodingFailed : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$EncodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$EncodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$EncodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$IoFailed : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$IoFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$IoFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$IoFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$SourceNotFound : co/crackn/kompressor/image/ImageCompressionError {
@@ -466,31 +546,67 @@ public final class co/crackn/kompressor/image/ImageCompressionError$TempFileFail
 public final class co/crackn/kompressor/image/ImageCompressionError$Unknown : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$Unknown;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$Unknown;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$Unknown;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedInputFormat : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedInputFormat;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedInputFormat;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedInputFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getFormat ()Ljava/lang/String;
 	public final fun getMinApi ()I
 	public final fun getPlatform ()Ljava/lang/String;
+	public fun hashCode ()I
 	public final fun isNotImplementedOnPlatform ()Z
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedOutputFormat : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedOutputFormat;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedOutputFormat;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedOutputFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getFormat ()Ljava/lang/String;
 	public final fun getMinApi ()I
 	public final fun getPlatform ()Ljava/lang/String;
+	public fun hashCode ()I
 	public final fun isNotImplementedOnPlatform ()Z
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/image/ImageCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/image/ImageCompressionError$UnsupportedSourceFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class co/crackn/kompressor/image/ImageCompressor {
@@ -565,14 +681,8 @@ public final class co/crackn/kompressor/io/MediaDestination$Local$FilePath : co/
 public final class co/crackn/kompressor/io/MediaDestination$Local$Stream : co/crackn/kompressor/io/MediaDestination$Local {
 	public fun <init> (Lokio/Sink;Z)V
 	public synthetic fun <init> (Lokio/Sink;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Lokio/Sink;
-	public final fun component2 ()Z
-	public final fun copy (Lokio/Sink;Z)Lco/crackn/kompressor/io/MediaDestination$Local$Stream;
-	public static synthetic fun copy$default (Lco/crackn/kompressor/io/MediaDestination$Local$Stream;Lokio/Sink;ZILjava/lang/Object;)Lco/crackn/kompressor/io/MediaDestination$Local$Stream;
-	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCloseOnFinish ()Z
 	public final fun getSink ()Lokio/Sink;
-	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -611,16 +721,9 @@ public final class co/crackn/kompressor/io/MediaSource$Local$FilePath : co/crack
 public final class co/crackn/kompressor/io/MediaSource$Local$Stream : co/crackn/kompressor/io/MediaSource$Local {
 	public fun <init> (Lokio/Source;Ljava/lang/Long;Z)V
 	public synthetic fun <init> (Lokio/Source;Ljava/lang/Long;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Lokio/Source;
-	public final fun component2 ()Ljava/lang/Long;
-	public final fun component3 ()Z
-	public final fun copy (Lokio/Source;Ljava/lang/Long;Z)Lco/crackn/kompressor/io/MediaSource$Local$Stream;
-	public static synthetic fun copy$default (Lco/crackn/kompressor/io/MediaSource$Local$Stream;Lokio/Source;Ljava/lang/Long;ZILjava/lang/Object;)Lco/crackn/kompressor/io/MediaSource$Local$Stream;
-	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCloseOnFinish ()Z
 	public final fun getSizeHint ()Ljava/lang/Long;
 	public final fun getSource ()Lokio/Source;
-	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -732,7 +835,15 @@ public abstract class co/crackn/kompressor/video/VideoCompressionError : java/la
 public final class co/crackn/kompressor/video/VideoCompressionError$DecodingFailed : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$DecodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$DecodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$DecodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressionError$DestinationWriteFailed : co/crackn/kompressor/video/VideoCompressionError {
@@ -752,21 +863,47 @@ public final class co/crackn/kompressor/video/VideoCompressionError$DestinationW
 public final class co/crackn/kompressor/video/VideoCompressionError$EncodingFailed : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$EncodingFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$EncodingFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$EncodingFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressionError$Hdr10NotSupported : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$Hdr10NotSupported;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$Hdr10NotSupported;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$Hdr10NotSupported;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getCodec ()Ljava/lang/String;
 	public final fun getDevice ()Ljava/lang/String;
 	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressionError$IoFailed : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$IoFailed;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$IoFailed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$IoFailed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressionError$SourceNotFound : co/crackn/kompressor/video/VideoCompressionError {
@@ -814,13 +951,29 @@ public final class co/crackn/kompressor/video/VideoCompressionError$TempFileFail
 public final class co/crackn/kompressor/video/VideoCompressionError$Unknown : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$Unknown;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$Unknown;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$Unknown;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressionError$UnsupportedSourceFormat : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$UnsupportedSourceFormat;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$UnsupportedSourceFormat;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$UnsupportedSourceFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
 	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class co/crackn/kompressor/video/VideoCompressor {

@@ -13,11 +13,21 @@ package co.crackn.kompressor.io
  *   phase transition. For a global "how far am I through the overall compression" estimate,
  *   callers should map phases to their own weighting scheme (e.g. materialization ≈ 10%,
  *   compression ≈ 85%, finalization ≈ 5% for typical stream-backed sources).
+ *
+ * @throws IllegalArgumentException if [fraction] is not in `[0.0, 1.0]` or is `NaN`. The
+ *   invariant is enforced at construction time so invalid emissions fail fast at the producer
+ *   rather than producing incoherent UI progress indicators downstream [CRA-90 review].
  */
 public data class CompressionProgress(
     public val phase: Phase,
     public val fraction: Float,
 ) {
+    init {
+        require(!fraction.isNaN() && fraction in 0f..1f) {
+            "fraction must be in [0.0, 1.0], was $fraction"
+        }
+    }
+
     /**
      * Compression pipeline phase.
      *

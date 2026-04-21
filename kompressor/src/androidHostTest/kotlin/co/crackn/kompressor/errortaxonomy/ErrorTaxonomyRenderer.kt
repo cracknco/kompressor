@@ -88,157 +88,191 @@ internal object ErrorTaxonomyRenderer {
     // Keyed by "HierarchyName.SubtypeName". Adding or renaming a sealed subtype requires a
     // matching entry here — the test calling [render] fails fast otherwise.
 
-    internal val GUIDANCE: Map<String, Guidance> = mapOf(
+    internal val GUIDANCE: Map<String, Guidance> = buildMap {
         // ImageCompressionError
-        "ImageCompressionError.UnsupportedSourceFormat" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Offer a \"convert first\" flow. The bytes can't be decoded by the current platform decoder.",
-        ),
-        "ImageCompressionError.UnsupportedInputFormat" to Guidance(
-            retrySafe = "depends",
-            consumerFix = "Show a localised \"requires \$platform \$minApi+\" hint when " +
-                "`isNotImplementedOnPlatform == false`; otherwise reject (this platform never decodes " +
-                "the format). Never retry the same config on this device.",
-        ),
-        "ImageCompressionError.UnsupportedOutputFormat" to Guidance(
-            retrySafe = "yes (fallback format)",
-            consumerFix = "Retry with a widely-supported format \u2014 JPEG everywhere, WEBP on Android, " +
-                "HEIC on iOS 15+.",
-        ),
-        "ImageCompressionError.DecodingFailed" to Guidance(
-            retrySafe = "no",
-            consumerFix = "File-specific \u2014 ask the user to re-export or reacquire the source.",
-        ),
-        "ImageCompressionError.EncodingFailed" to Guidance(
-            retrySafe = "maybe (OOM path)",
-            consumerFix = "Usually device-wide. Free memory and retry once with smaller " +
-                "`maxWidth` / `maxHeight`; else report.",
-        ),
-        "ImageCompressionError.IoFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Show storage / permission UI and retry when the user resolves it.",
-        ),
-        "ImageCompressionError.Unknown" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Report with `cause` attached \u2014 we failed to classify it.",
-        ),
-        "ImageCompressionError.SourceNotFound" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
-                "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
-        ),
-        "ImageCompressionError.SourceReadFailed" to Guidance(
-            retrySafe = "maybe (transient)",
-            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
-                "otherwise surface the underlying `details` and let the user reacquire the source.",
-        ),
-        "ImageCompressionError.DestinationWriteFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
-                "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
-        ),
-        "ImageCompressionError.TempFileFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
-        ),
+        put(
+            "ImageCompressionError.UnsupportedSourceFormat",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Offer a \"convert first\" flow. The bytes can't be decoded by the current " +
+                    "platform decoder.",
+            ),
+        )
+        put(
+            "ImageCompressionError.UnsupportedInputFormat",
+            Guidance(
+                retrySafe = "depends",
+                consumerFix = "Show a localised \"requires \$platform \$minApi+\" hint when " +
+                    "`isNotImplementedOnPlatform == false`; otherwise reject (this platform never decodes " +
+                    "the format). Never retry the same config on this device.",
+            ),
+        )
+        put(
+            "ImageCompressionError.UnsupportedOutputFormat",
+            Guidance(
+                retrySafe = "yes (fallback format)",
+                consumerFix = "Retry with a widely-supported format \u2014 JPEG everywhere, WEBP on " +
+                    "Android, HEIC on iOS 15+.",
+            ),
+        )
+        put(
+            "ImageCompressionError.DecodingFailed",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "File-specific \u2014 ask the user to re-export or reacquire the source.",
+            ),
+        )
+        put(
+            "ImageCompressionError.EncodingFailed",
+            Guidance(
+                retrySafe = "maybe (OOM path)",
+                consumerFix = "Usually device-wide. Free memory and retry once with smaller " +
+                    "`maxWidth` / `maxHeight`; else report.",
+            ),
+        )
+        put(
+            "ImageCompressionError.IoFailed",
+            Guidance(
+                retrySafe = "yes (after user fix)",
+                consumerFix = "Show storage / permission UI and retry when the user resolves it.",
+            ),
+        )
+        put(
+            "ImageCompressionError.Unknown",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Report with `cause` attached \u2014 we failed to classify it.",
+            ),
+        )
+        putAll(ioGuidance("ImageCompressionError"))
 
         // AudioCompressionError
-        "AudioCompressionError.UnsupportedSourceFormat" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Offer a \"convert first\" flow (AAC / MP3 / WAV). iOS additionally rejects " +
-                "MP3 / FLAC / OGG inputs \u2014 see `docs/format-support.md`.",
-        ),
-        "AudioCompressionError.DecodingFailed" to Guidance(
-            retrySafe = "no",
-            consumerFix = "File-specific \u2014 don't retry the same bytes.",
-        ),
-        "AudioCompressionError.EncodingFailed" to Guidance(
-            retrySafe = "maybe",
-            consumerFix = "Usually device-wide. Try a different bitrate / sample rate once; else report.",
-        ),
-        "AudioCompressionError.IoFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Show storage / permission UI and retry when resolved.",
-        ),
-        "AudioCompressionError.UnsupportedConfiguration" to Guidance(
-            retrySafe = "yes (narrower config)",
-            consumerFix = "Retry with a config the source supports \u2014 typically " +
-                "`channels = AudioChannels.MONO` or drop the upmix ask.",
-        ),
-        "AudioCompressionError.UnsupportedBitrate" to Guidance(
-            retrySafe = "yes (in-range bitrate)",
-            consumerFix = "Read `details`, clamp the requested bitrate to the reported range, retry.",
-            availability = Availability.IosOnly,
-        ),
-        "AudioCompressionError.Unknown" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Report with `cause` attached.",
-        ),
-        "AudioCompressionError.SourceNotFound" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
-                "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
-        ),
-        "AudioCompressionError.SourceReadFailed" to Guidance(
-            retrySafe = "maybe (transient)",
-            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
-                "otherwise surface the underlying `details` and let the user reacquire the source.",
-        ),
-        "AudioCompressionError.DestinationWriteFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
-                "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
-        ),
-        "AudioCompressionError.TempFileFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
-        ),
+        put(
+            "AudioCompressionError.UnsupportedSourceFormat",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Offer a \"convert first\" flow (AAC / MP3 / WAV). iOS additionally rejects " +
+                    "MP3 / FLAC / OGG inputs \u2014 see `docs/format-support.md`.",
+            ),
+        )
+        put(
+            "AudioCompressionError.DecodingFailed",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "File-specific \u2014 don't retry the same bytes.",
+            ),
+        )
+        put(
+            "AudioCompressionError.EncodingFailed",
+            Guidance(
+                retrySafe = "maybe",
+                consumerFix = "Usually device-wide. Try a different bitrate / sample rate once; else report.",
+            ),
+        )
+        put(
+            "AudioCompressionError.IoFailed",
+            Guidance(
+                retrySafe = "yes (after user fix)",
+                consumerFix = "Show storage / permission UI and retry when resolved.",
+            ),
+        )
+        put(
+            "AudioCompressionError.UnsupportedConfiguration",
+            Guidance(
+                retrySafe = "yes (narrower config)",
+                consumerFix = "Retry with a config the source supports \u2014 typically " +
+                    "`channels = AudioChannels.MONO` or drop the upmix ask.",
+            ),
+        )
+        put(
+            "AudioCompressionError.UnsupportedBitrate",
+            Guidance(
+                retrySafe = "yes (in-range bitrate)",
+                consumerFix = "Read `details`, clamp the requested bitrate to the reported range, retry.",
+                availability = Availability.IosOnly,
+            ),
+        )
+        put(
+            "AudioCompressionError.Unknown",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Report with `cause` attached.",
+            ),
+        )
+        putAll(ioGuidance("AudioCompressionError"))
 
         // VideoCompressionError
-        "VideoCompressionError.UnsupportedSourceFormat" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Offer a \"convert first\" flow \u2014 the codec / profile / level isn't " +
-                "decodable on this device.",
-        ),
-        "VideoCompressionError.Hdr10NotSupported" to Guidance(
-            retrySafe = "yes (SDR fallback)",
-            consumerFix = "Retry with `DynamicRange.SDR`, or surface \"HDR10 requires a newer device\". " +
-                "`device` / `codec` / `reason` are the bug-report payload. We deliberately don't " +
-                "auto-downgrade \u2014 that would be silent data loss.",
-            availability = Availability.AndroidOnly,
-        ),
-        "VideoCompressionError.DecodingFailed" to Guidance(
-            retrySafe = "no",
-            consumerFix = "File-specific \u2014 ask the user to re-export the source.",
-        ),
-        "VideoCompressionError.EncodingFailed" to Guidance(
-            retrySafe = "maybe",
-            consumerFix = "Try once at a lower resolution or bitrate; else report.",
-        ),
-        "VideoCompressionError.IoFailed" to Guidance(
-            retrySafe = "yes (after user fix)",
-            consumerFix = "Show storage / permission UI and retry when resolved.",
-        ),
-        "VideoCompressionError.Unknown" to Guidance(
-            retrySafe = "no",
-            consumerFix = "Report with `cause` attached.",
-        ),
-        "VideoCompressionError.SourceNotFound" to Guidance(
+        put(
+            "VideoCompressionError.UnsupportedSourceFormat",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Offer a \"convert first\" flow \u2014 the codec / profile / level isn't " +
+                    "decodable on this device.",
+            ),
+        )
+        put(
+            "VideoCompressionError.Hdr10NotSupported",
+            Guidance(
+                retrySafe = "yes (SDR fallback)",
+                consumerFix = "Retry with `DynamicRange.SDR`, or surface \"HDR10 requires a newer device\". " +
+                    "`device` / `codec` / `reason` are the bug-report payload. We deliberately don't " +
+                    "auto-downgrade \u2014 that would be silent data loss.",
+                availability = Availability.AndroidOnly,
+            ),
+        )
+        put(
+            "VideoCompressionError.DecodingFailed",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "File-specific \u2014 ask the user to re-export the source.",
+            ),
+        )
+        put(
+            "VideoCompressionError.EncodingFailed",
+            Guidance(
+                retrySafe = "maybe",
+                consumerFix = "Try once at a lower resolution or bitrate; else report.",
+            ),
+        )
+        put(
+            "VideoCompressionError.IoFailed",
+            Guidance(
+                retrySafe = "yes (after user fix)",
+                consumerFix = "Show storage / permission UI and retry when resolved.",
+            ),
+        )
+        put(
+            "VideoCompressionError.Unknown",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Report with `cause` attached.",
+            ),
+        )
+        putAll(ioGuidance("VideoCompressionError"))
+    }
+
+    /**
+     * The four I/O error variants (`SourceNotFound`, `SourceReadFailed`, `DestinationWriteFailed`,
+     * `TempFileFailed`) share identical guidance across image / audio / video. Factored out so a
+     * future editorial correction lands in one place [CRA-90 review].
+     */
+    private fun ioGuidance(hierarchy: String): List<Pair<String, Guidance>> = listOf(
+        "$hierarchy.SourceNotFound" to Guidance(
             retrySafe = "no",
             consumerFix = "Ask the user to re-select the source \u2014 the underlying resource is gone " +
                 "(deleted file, revoked URI, offline iCloud asset with network access disabled).",
         ),
-        "VideoCompressionError.SourceReadFailed" to Guidance(
+        "$hierarchy.SourceReadFailed" to Guidance(
             retrySafe = "maybe (transient)",
             consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
                 "otherwise surface the underlying `details` and let the user reacquire the source.",
         ),
-        "VideoCompressionError.DestinationWriteFailed" to Guidance(
+        "$hierarchy.DestinationWriteFailed" to Guidance(
             retrySafe = "yes (after user fix)",
             consumerFix = "Show storage / permission UI \u2014 disk full, missing `WRITE` permission, or " +
                 "a revoked SAF / MediaStore grant. Retry after the user resolves it.",
         ),
-        "VideoCompressionError.TempFileFailed" to Guidance(
+        "$hierarchy.TempFileFailed" to Guidance(
             retrySafe = "yes (after user fix)",
             consumerFix = "Free device storage and retry \u2014 temp file allocation failed mid-pipeline.",
         ),
@@ -466,8 +500,19 @@ kompressor.video.compress(inputPath, outputPath, config)
                 // Android-only. Retry with SDR; never silently downgrade.
                 retry(config.copy(dynamicRange = DynamicRange.SDR))
 
-            is VideoCompressionError.IoFailed ->
-                showStorageErrorDialog(err.details)
+            is VideoCompressionError.IoFailed,
+            is VideoCompressionError.DestinationWriteFailed,
+            is VideoCompressionError.TempFileFailed ->
+                // Storage / permission surface — disk full, revoked write grant, cache miss.
+                showStorageErrorDialog(err.message.orEmpty())
+
+            is VideoCompressionError.SourceNotFound ->
+                // Resource is gone (deleted file, revoked URI, offline iCloud asset).
+                promptReselectSource(err.details)
+
+            is VideoCompressionError.SourceReadFailed ->
+                // Transient read failure — one retry is safe, then fall back to the user.
+                retryOnceThenReport(err)
 
             is VideoCompressionError.DecodingFailed ->
                 // File-specific — ask for a re-export.

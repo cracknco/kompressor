@@ -171,8 +171,19 @@ kompressor.video.compress(inputPath, outputPath, config)
                 // Android-only. Retry with SDR; never silently downgrade.
                 retry(config.copy(dynamicRange = DynamicRange.SDR))
 
-            is VideoCompressionError.IoFailed ->
-                showStorageErrorDialog(err.details)
+            is VideoCompressionError.IoFailed,
+            is VideoCompressionError.DestinationWriteFailed,
+            is VideoCompressionError.TempFileFailed ->
+                // Storage / permission surface — disk full, revoked write grant, cache miss.
+                showStorageErrorDialog(err.message.orEmpty())
+
+            is VideoCompressionError.SourceNotFound ->
+                // Resource is gone (deleted file, revoked URI, offline iCloud asset).
+                promptReselectSource(err.details)
+
+            is VideoCompressionError.SourceReadFailed ->
+                // Transient read failure — one retry is safe, then fall back to the user.
+                retryOnceThenReport(err)
 
             is VideoCompressionError.DecodingFailed ->
                 // File-specific — ask for a re-export.

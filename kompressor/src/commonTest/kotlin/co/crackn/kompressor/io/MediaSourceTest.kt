@@ -5,6 +5,7 @@
 
 package co.crackn.kompressor.io
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -75,9 +76,42 @@ class MediaSourceTest {
 
     @Test
     fun companionObjectIsAccessible() {
-        // Anchor — guards that the public `companion object` lives on `MediaSource` so future
-        // factory helpers (e.g. `MediaSource.fromUri(...)`) can be declared as extensions
-        // without breaking callers.
-        MediaSource shouldNotBe null
+        // Compile-time anchor — future factory helpers (e.g. `MediaSource.fromUri(...)`)
+        // declared as extensions on `MediaSource.Companion` require this companion to stay
+        // public. A typed reference fails to compile if the companion is removed, which is
+        // what we actually want to catch (the runtime `shouldNotBe null` variant is a
+        // tautology because companions are singletons that cannot be null) [CRA-90 review].
+        val anchor: MediaSource.Companion = MediaSource
+        anchor.toString() // suppress unused-local warning
+    }
+
+    // ── CRA-90 review: Stream-as-`class` semantics ─────────────────────────────
+    // Stream is a plain `class` (not `data class`) — the underlying `okio.Source` is a
+    // stateful resource handle where identity-based equality is the only defensible
+    // semantic. The tests below pin this so a future change back to `data class` regresses.
+
+    @Test
+    fun streamEqualityIsIdentityBased() {
+        val a = MediaSource.Local.Stream(Buffer())
+        val b = MediaSource.Local.Stream(Buffer())
+        (a == b) shouldBe false // two distinct wrappers — not equal even if contents match
+        (a == a) shouldBe true // identity
+    }
+
+    @Test
+    fun streamRejectsNegativeSizeHint() {
+        shouldThrow<IllegalArgumentException> {
+            MediaSource.Local.Stream(Buffer(), sizeHint = -1L)
+        }
+    }
+
+    @Test
+    fun streamAcceptsZeroSizeHint() {
+        MediaSource.Local.Stream(Buffer(), sizeHint = 0L).sizeHint shouldBe 0L
+    }
+
+    @Test
+    fun bytesToStringSummarizesSizeWithoutContent() {
+        MediaSource.Local.Bytes(ByteArray(42)).toString() shouldBe "MediaSource.Local.Bytes(size=42)"
     }
 }

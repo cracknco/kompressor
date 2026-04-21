@@ -37,19 +37,37 @@ public sealed interface MediaSource {
          * (Media3 Transformer / AVFoundation require seekable file inputs). Images short-circuit
          * to direct decode without temp file.
          *
+         * Declared as a plain `class` rather than `data class` because the underlying
+         * [okio.Source] is a stateful resource handle: `equals`/`hashCode` by identity (the
+         * default) is the only defensible semantic — two distinct sources can never be
+         * "equal" even if they currently hold the same bytes, and `copy()` semantics would
+         * silently share a consumed resource between instances. Sibling on
+         * [MediaDestination.Local.Stream] [CRA-90 review].
+         *
          * @property source The okio [Source] to read from.
          * @property sizeHint Optional total byte count for progress estimation during
          *   materialization. Pass `null` when unknown; progress fraction will stay at 0 during
-         *   the materialization phase.
+         *   the materialization phase. Negative values are rejected at construction time.
          * @property closeOnFinish If `true` (default), Kompressor calls `source.close()` at the
          *   end of compression (success or failure). Set to `false` when the stream lifecycle
          *   is externally managed (e.g. shared with an uploader running in parallel).
+         *
+         * @throws IllegalArgumentException if [sizeHint] is negative.
          */
-        public data class Stream(
+        public class Stream(
             public val source: Source,
             public val sizeHint: Long? = null,
             public val closeOnFinish: Boolean = true,
-        ) : Local
+        ) : Local {
+            init {
+                require(sizeHint == null || sizeHint >= 0) {
+                    "sizeHint must be >= 0 when provided, was $sizeHint"
+                }
+            }
+
+            override fun toString(): String =
+                "MediaSource.Local.Stream(source=$source, sizeHint=$sizeHint, closeOnFinish=$closeOnFinish)"
+        }
 
         /**
          * In-memory byte buffer. Safe for images up to ~50 MB.
@@ -76,6 +94,14 @@ public sealed interface MediaSource {
             }
 
             override fun hashCode(): Int = bytes.contentHashCode()
+
+            /**
+             * Stable, content-free summary — the data-class default prints the raw
+             * `ByteArray` identity string (`[B@abcdef12`) which is useless for debug and
+             * inconsistent with the content-based [equals]. Does not include contents to
+             * avoid leaking PII in logs [CRA-90 review].
+             */
+            override fun toString(): String = "MediaSource.Local.Bytes(size=${bytes.size})"
         }
     }
 

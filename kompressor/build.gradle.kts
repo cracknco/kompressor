@@ -110,14 +110,18 @@ kotlin {
 
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
-            // okio — powers the public `MediaSource.Local.Stream` / `MediaDestination.Local.Stream`
-            // scaffolding types introduced by CRA-90 (part of the CRA-89 I/O refactor epic).
-            // Deliberately `implementation` (not `api`): consumers that never touch `Stream`
-            // builders (the `FilePath` / `Bytes` / platform-native `Uri` / `NSURL` / `PHAsset`
-            // paths cover most app use-cases) must NOT pay a transitive okio classpath cost.
-            // Stream-using callers already depend on okio themselves; `api` would force the dep
-            // on every consumer. See `tmp/tier1-1-io-model.md` §9.2 (Q1) for the full rationale.
-            implementation(libs.okio)
+            // okio — leaked in the public API surface via `MediaSource.Local.Stream.source`
+            // (okio.Source) and `MediaDestination.Local.Stream.sink` (okio.Sink). Declared as
+            // `api` so consumers constructing `Stream` variants get the symbols on their
+            // classpath without manually re-declaring the dependency — otherwise a caller
+            // discovering `Stream` via IDE autocomplete hits a surprising
+            // `unresolved reference: okio.Source`. The original plan (`tmp/tier1-1-io-model.md`
+            // §9.2 / Q1) leaned toward `implementation` to avoid forcing okio on `FilePath`-only
+            // callers, but the UX cost of broken autocomplete outweighs a ~320 KB transitive
+            // dependency [CRA-90 review]. If the transitive cost ever becomes a real concern,
+            // the proper fix is to hide okio behind an internal adapter rather than leak it via
+            // `implementation`.
+            api(libs.okio)
         }
 
         commonTest.dependencies {

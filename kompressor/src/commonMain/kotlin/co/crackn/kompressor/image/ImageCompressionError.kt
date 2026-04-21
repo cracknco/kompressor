@@ -36,10 +36,10 @@ public sealed class ImageCompressionError(
      * The source file's container / codec is not recognised by the platform image decoder
      * (e.g. a random-bytes file passed through an image compressor). Irrecoverable on-device.
      */
-    public class UnsupportedSourceFormat(
+    public data class UnsupportedSourceFormat(
         /** Free-form diagnostic — source path / format detail when known. */
         public val details: String,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError("Unsupported source format: $details", cause)
 
     /**
@@ -55,11 +55,11 @@ public sealed class ImageCompressionError(
      *   the API level (e.g. `30`); for iOS this is the major iOS version (e.g. `16`). Equal to
      *   [NOT_IMPLEMENTED] when the format is never decodable on [platform] in this release.
      */
-    public class UnsupportedInputFormat(
+    public data class UnsupportedInputFormat(
         public val format: String,
         public val platform: String,
         public val minApi: Int,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError(
         buildVersionGatedMessage(kind = "input", format = format, platform = platform, minApi = minApi),
         cause,
@@ -81,11 +81,11 @@ public sealed class ImageCompressionError(
      *   [UnsupportedInputFormat.minApi] for the meaning per platform. Equal to [NOT_IMPLEMENTED]
      *   when the format is never encodable on [platform] in this release.
      */
-    public class UnsupportedOutputFormat(
+    public data class UnsupportedOutputFormat(
         public val format: String,
         public val platform: String,
         public val minApi: Int,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError(
         buildVersionGatedMessage(kind = "output", format = format, platform = platform, minApi = minApi),
         cause,
@@ -99,34 +99,34 @@ public sealed class ImageCompressionError(
      * The platform decoder was invoked but failed to produce a bitmap (truncated JPEG, corrupt
      * PNG, unsupported bit depth / color space for this OEM, etc.).
      */
-    public class DecodingFailed(
+    public data class DecodingFailed(
         /** Free-form diagnostic — decoder error detail when available. */
         public val details: String,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError("Decoding failed: $details", cause)
 
     /** Encoding the output JPEG/PNG failed (OOM, bitmap.compress returned false, etc.). */
-    public class EncodingFailed(
+    public data class EncodingFailed(
         /** Free-form diagnostic. */
         public val details: String,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError("Encoding failed: $details", cause)
 
     /**
      * I/O failure reading the input or writing the output (missing file, permission denied,
      * disk full, revoked `content://` URI, etc.).
      */
-    public class IoFailed(
+    public data class IoFailed(
         /** Free-form diagnostic. */
         public val details: String,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError("IO failed: $details", cause)
 
     /** Fallback for platform errors we couldn't classify. */
-    public class Unknown(
+    public data class Unknown(
         /** Free-form diagnostic — usually the original platform error message. */
         public val details: String,
-        cause: Throwable? = null,
+        override val cause: Throwable? = null,
     ) : ImageCompressionError("Image compression failed: $details", cause)
 
     /**

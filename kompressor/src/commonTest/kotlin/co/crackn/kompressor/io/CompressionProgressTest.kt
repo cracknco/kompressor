@@ -5,6 +5,7 @@
 
 package co.crackn.kompressor.io
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlin.test.Test
@@ -45,5 +46,42 @@ class CompressionProgressTest {
         val copy = p.copy(fraction = 0.5f)
         copy.phase shouldBe CompressionProgress.Phase.MATERIALIZING_INPUT
         copy.fraction shouldBe 0.5f
+    }
+
+    // ── CRA-90 review: fraction invariant ──────────────────────────────────────
+    // The KDoc promises fraction ∈ [0.0, 1.0] and not NaN. The `init` block enforces it so
+    // producers fail fast rather than emitting incoherent progress to UI consumers.
+
+    @Test
+    fun rejectsFractionBelowZero() {
+        shouldThrow<IllegalArgumentException> {
+            CompressionProgress(CompressionProgress.Phase.COMPRESSING, -0.01f)
+        }
+    }
+
+    @Test
+    fun rejectsFractionAboveOne() {
+        shouldThrow<IllegalArgumentException> {
+            CompressionProgress(CompressionProgress.Phase.COMPRESSING, 1.01f)
+        }
+    }
+
+    @Test
+    fun rejectsNaNFraction() {
+        shouldThrow<IllegalArgumentException> {
+            CompressionProgress(CompressionProgress.Phase.COMPRESSING, Float.NaN)
+        }
+    }
+
+    @Test
+    fun acceptsBoundaryZeroAndOne() {
+        CompressionProgress(CompressionProgress.Phase.COMPRESSING, 0f).fraction shouldBe 0f
+        CompressionProgress(CompressionProgress.Phase.COMPRESSING, 1f).fraction shouldBe 1f
+    }
+
+    @Test
+    fun copyEnforcesSameInvariant() {
+        val p = CompressionProgress(CompressionProgress.Phase.COMPRESSING, 0.5f)
+        shouldThrow<IllegalArgumentException> { p.copy(fraction = 2f) }
     }
 }
