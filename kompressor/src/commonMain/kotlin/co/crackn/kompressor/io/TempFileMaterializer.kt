@@ -105,10 +105,10 @@ internal suspend fun Source.materializeToTempFile(
         copyChunksTo(fileSystem, tempFile, sizeHint, onProgress)
         return tempFile
     } catch (cancel: CancellationException) {
-        fileSystem.delete(tempFile, mustExist = false)
+        runCatching { fileSystem.delete(tempFile, mustExist = false) }
         throw cancel
     } catch (t: Throwable) {
-        fileSystem.delete(tempFile, mustExist = false)
+        runCatching { fileSystem.delete(tempFile, mustExist = false) }
         throw t
     }
 }
@@ -121,6 +121,11 @@ internal suspend fun Source.materializeToTempFile(
  * The receiver [Source] is read directly (no `.buffer()` wrapper) because buffering +
  * `.use { }` would close the source on exit, violating the "caller owns source lifecycle"
  * contract documented on [materializeToTempFile].
+ *
+ * Uses [okio.BufferedSink.emitCompleteSegments] rather than [okio.BufferedSink.emit] per
+ * chunk so writes are coalesced to okio's 8 KB segment boundaries — ~8× fewer `write()`
+ * syscalls than `emit()` on a 1 MB stream. The final partial segment is flushed by
+ * `use { }` closing the sink at loop exit.
  */
 private suspend fun Source.copyChunksTo(
     fileSystem: FileSystem,
@@ -135,7 +140,7 @@ private suspend fun Source.copyChunksTo(
             currentCoroutineContext().ensureActive()
             val read = this.read(readBuffer, BUFFER_SIZE)
             if (read == -1L) break
-            sink.emit()
+            sink.emitCompleteSegments()
             bytesWritten += read
             onProgress(computeFraction(bytesWritten, sizeHint))
         }

@@ -157,11 +157,18 @@ class TempFileMaterializerTest {
         // the next iteration's `ensureActive()` trips and the catch-rethrow path runs.
         val source = Buffer().apply { write(ByteArray(1024 * 1024)) } // 16 chunks of 64 KB
         val reachedFirstChunk = CompletableDeferred<Unit>()
+        var filesDuringCopy = 0
 
         assertFailsWith<CancellationException> {
             coroutineScope {
                 val job = async {
                     source.materializeToTempFile(fs, tempDir, sizeHint = source.size) {
+                        // Snapshot the directory *while the sink is open* — proves the
+                        // cleanup path (below) actually exercised a delete, not just
+                        // `residual == 0` by virtue of the file never being created.
+                        if (filesDuringCopy == 0 && fs.exists(tempDir)) {
+                            filesDuringCopy = fs.list(tempDir).count { it.name.startsWith("kmp_io_") }
+                        }
                         reachedFirstChunk.complete(Unit)
                         // Yield so the outer scope gets a chance to fire `cancel`.
                         yield()
@@ -173,6 +180,9 @@ class TempFileMaterializerTest {
             }
         }
 
+        // Before cancellation fired, the sink had already created the temp file — so the
+        // post-cancel assertion below is proving a *delete*, not a *no-op*.
+        filesDuringCopy shouldBe 1
         // No temp file should be left behind. The materializer creates files under
         // `tempDir` with the `kmp_io_*.bin` pattern — assert the directory either does
         // not exist or contains no such file.

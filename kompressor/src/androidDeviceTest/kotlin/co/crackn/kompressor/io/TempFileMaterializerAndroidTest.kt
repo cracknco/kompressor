@@ -5,7 +5,6 @@
 
 package co.crackn.kompressor.io
 
-import android.os.Debug
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.KompressorContext
 import java.io.File
@@ -78,19 +77,24 @@ class TempFileMaterializerAndroidTest {
         val payload = ByteArray(LARGE_STREAM_BYTES) { (it % BYTE_MOD).toByte() }
         val source = Buffer().apply { write(payload) }
 
-        // Give the JVM a clean baseline, then sample allocation delta across the copy.
+        // Give the JVM a clean baseline, then sample JVM-heap delta across the copy.
+        // `Runtime.totalMemory() - freeMemory()` measures the managed (JVM) heap — the
+        // exact surface a regression would hit if the implementation accidentally
+        // accumulated the whole stream in a `ByteArray` or `Buffer`. `Debug.getNativeHeapAllocatedSize()`
+        // would miss that; okio's `Buffer` segments are Kotlin/Java byte arrays on the JVM.
+        val runtime = Runtime.getRuntime()
         System.gc()
-        val before = Debug.getNativeHeapAllocatedSize()
+        val before = runtime.totalMemory() - runtime.freeMemory()
         val path = source.materializeToTempFile(kompressorTempDir(), sizeHint = payload.size.toLong())
-        val after = Debug.getNativeHeapAllocatedSize()
+        val after = runtime.totalMemory() - runtime.freeMemory()
 
         try {
             val delta = after - before
-            // Native-heap delta can be noisy (JIT codegen, thread stacks). The contract is
+            // JVM-heap delta can be noisy (JIT, class loading). The contract is
             // "O(buffer) allocation, not O(stream)" — well below the payload size.
             assertTrue(
                 delta < HEAP_DELTA_BUDGET_BYTES,
-                "native heap delta $delta exceeded budget $HEAP_DELTA_BUDGET_BYTES for $LARGE_STREAM_BYTES-byte payload",
+                "JVM heap delta $delta exceeded budget $HEAP_DELTA_BUDGET_BYTES for $LARGE_STREAM_BYTES-byte payload",
             )
             assertTrue(FileSystem.SYSTEM.exists(path), "expected temp file to exist at $path")
         } finally {
@@ -108,7 +112,7 @@ class TempFileMaterializerAndroidTest {
         const val BYTE_MOD = 256
         const val HALF_MIB_BYTES = 512 * 1024
         const val LARGE_STREAM_BYTES = 50 * 1024 * 1024
-        // 10 MB native-heap delta budget — leaves ample headroom above the 64 KB chunk
+        // 10 MB JVM-heap delta budget — leaves ample headroom above the 64 KB chunk
         // while still flagging a regression that would materialise the whole stream.
         const val HEAP_DELTA_BUDGET_BYTES = 10L * 1024 * 1024
     }
