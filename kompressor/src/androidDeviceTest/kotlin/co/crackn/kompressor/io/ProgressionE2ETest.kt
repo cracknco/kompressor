@@ -5,11 +5,13 @@
 
 package co.crackn.kompressor.io
 
+import android.os.ParcelFileDescriptor
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.io.CompressionProgress.Phase.COMPRESSING
 import co.crackn.kompressor.io.CompressionProgress.Phase.FINALIZING_OUTPUT
+import co.crackn.kompressor.io.CompressionProgress.Phase.MATERIALIZING_INPUT
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
@@ -167,6 +169,52 @@ class ProgressionE2ETest {
         assertProgression(events, expectMaterializing = true)
     }
 
+    // ── PFD (CRA-99) ──────────────────────────────────────────────────────────
+    //
+    // PFD inputs used to emit zero MATERIALIZING_INPUT events because the legacy
+    // materializePfdHandle did a raw `FileInputStream.copyTo` — no chunk boundaries were
+    // observable. CRA-99 routes the copy through the shared TempFileMaterializer + probe-seeded
+    // sizeHint, so large PFDs now emit monotone fraction-accurate ticks just like the
+    // Stream/Bytes paths. Tests assert the full MATERIALIZING_INPUT → COMPRESSING → FINALIZING
+    // sequence AND that more than one MATERIALIZING_INPUT fraction is observed (a fraction count
+    // proportional to the 64 KB chunk boundary, per the CRA-99 DoD).
+
+    @Test
+    fun audio_pfdInput_progressionIsMonotone() = runTest {
+        val input = writeWav()
+        val out = File(tempDir, "out.m4a")
+        val events = mutableListOf<CompressionProgress>()
+        val pfd: ParcelFileDescriptor = ParcelFileDescriptor.open(input, ParcelFileDescriptor.MODE_READ_ONLY)
+
+        val result = audio.compress(
+            input = MediaSource.of(pfd),
+            output = MediaDestination.Local.FilePath(out.absolutePath),
+            config = AudioCompressionConfig(),
+        ) { events += it }
+
+        withClue("compress: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        assertProgression(events, expectMaterializing = true)
+        assertPfdMaterializationTicks(events, inputLength = input.length())
+    }
+
+    @Test
+    fun video_pfdInput_progressionIsMonotone() = runTest {
+        val input = writeMp4()
+        val out = File(tempDir, "out.mp4")
+        val events = mutableListOf<CompressionProgress>()
+        val pfd: ParcelFileDescriptor = ParcelFileDescriptor.open(input, ParcelFileDescriptor.MODE_READ_ONLY)
+
+        val result = video.compress(
+            input = MediaSource.of(pfd),
+            output = MediaDestination.Local.FilePath(out.absolutePath),
+            config = VideoCompressionConfig(),
+        ) { events += it }
+
+        withClue("compress: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        assertProgression(events, expectMaterializing = true)
+        assertPfdMaterializationTicks(events, inputLength = input.length())
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun assertProgression(
@@ -189,11 +237,40 @@ class ProgressionE2ETest {
         }
     }
 
+    /**
+     * CRA-99 invariant for PFD inputs — assert that the probe-seeded `materializePfdHandle`
+     * emits more than one `MATERIALIZING_INPUT` tick when the input is larger than a single
+     * 64 KB chunk, and that the fractions are actually computed against the input length
+     * (at least one non-zero fraction < 1 appears mid-copy). A raw `copyTo` without probe
+     * wiring would only emit the `FINALIZING_OUTPUT(1f)` terminal — no materialization ticks
+     * at all.
+     */
+    private fun assertPfdMaterializationTicks(
+        events: List<CompressionProgress>,
+        inputLength: Long,
+    ) {
+        val materializingFractions = events.filter { it.phase == MATERIALIZING_INPUT }.map { it.fraction }
+        withClue("materializingFractions=$materializingFractions inputLength=$inputLength") {
+            // The 64 KB chunk boundary is an internal TempFileMaterializer constant; we assert
+            // the observable consequence — a multi-chunk input emits more than one tick.
+            (inputLength > CHUNK_SIZE_BYTES) shouldBe true
+            (materializingFractions.size >= 2) shouldBe true
+            // At least one fraction is a real computed value in (0, 1] — rules out the degraded
+            // "probe returned null → flat-0 heartbeat" path which would push every tick to 0f.
+            materializingFractions.any { it > 0f } shouldBe true
+        }
+    }
+
     private fun writeWav(): File = File(tempDir, "in_${System.nanoTime()}.wav").apply {
         writeBytes(WavGenerator.generateWavBytes(1, SAMPLE_RATE_44K, STEREO))
     }
 
     private fun writeMp4(): File = File(tempDir, "in_${System.nanoTime()}.mp4").also {
         AudioInputFixtures.createMp4WithVideoAndAudio(it, durationSeconds = 1)
+    }
+
+    private companion object {
+        /** Mirrors `TempFileMaterializer.BUFFER_SIZE` — kept in sync by doc convention. */
+        private const val CHUNK_SIZE_BYTES: Long = 64L * 1024L
     }
 }

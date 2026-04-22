@@ -12,6 +12,8 @@ import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okio.Path
+import okio.source
 
 /**
  * Android-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
@@ -83,8 +85,10 @@ internal class AndroidOutputHandle(
  *  - [AndroidUriMediaSource] → `uri.toString()` passed through; the private `compressFilePath`
  *    helpers accept `content://` URIs via their internal
  *    [android.content.ContentResolver] plumbing.
- *  - [AndroidPfdMediaSource] → materialized to a private temp file under the app cache dir;
- *    PFD is closed on cleanup.
+ *  - [AndroidPfdMediaSource] → materialized to a private temp file under the app cache dir via
+ *    [materializeToTempFile], seeded with [estimateSourceSize] so the caller's [onProgress] gets
+ *    fraction-accurate `MATERIALIZING_INPUT` ticks on seekable FDs (falls back to a flat-0
+ *    heartbeat when `statSize` is `-1` for pipe/socket-backed PFDs). PFD is closed on cleanup.
  *  - [MediaSource.Local.Stream] / [MediaSource.Local.Bytes] → materialized via
  *    [resolveStreamOrBytesToTempFile]. The resolver emits a WARN via [logger] when Bytes is
  *    used for a non-image [mediaType] and exceeds [BYTES_WARN_THRESHOLD]. The temp file is
@@ -98,7 +102,7 @@ internal suspend fun MediaSource.toAndroidInputPath(
 ): AndroidInputHandle = when (this) {
     is MediaSource.Local.FilePath -> AndroidInputHandle(path, cleanupFn = {})
     is AndroidUriMediaSource -> AndroidInputHandle(uri.toString(), cleanupFn = {})
-    is AndroidPfdMediaSource -> materializePfdHandle(pfd)
+    is AndroidPfdMediaSource -> materializePfdHandle(this, onProgress)
     // Split into two `is` arms rather than `is A, is B` so the smart-cast narrows to the
     // specific subtype at each call site — the `MediaSource.Local` parameter on
     // [materializeStreamOrBytes] accepts either without a cast.
@@ -146,33 +150,59 @@ private suspend fun materializeStreamOrBytes(
     return AndroidInputHandle(path = resolved.path, cleanupFn = resolved.cleanup)
 }
 
-private fun materializePfdHandle(pfd: ParcelFileDescriptor): AndroidInputHandle {
-    val tempDir = androidKompressorTempDir().apply { mkdirs() }
-    val tempFile = File(tempDir, "kmp_pfd_${UUID.randomUUID()}.bin")
-    // ParcelFileDescriptor.AutoCloseInputStream closes the PFD when the stream closes;
-    // we want the opposite — materialize then keep the PFD alive for explicit close on
-    // cleanup — so use the non-auto-close FileInputStream variant.
-    //
-    // Broadened to `Throwable` (from IOException) so OOM / VirtualMachineError on a large PFD
-    // still release the tempFile + PFD before propagating — previously the narrower catch
-    // leaked both handles on non-IOException failures. Rethrow to preserve the original error
-    // type for the caller (PR #141 review, finding #4).
-    @Suppress("TooGenericExceptionCaught")
-    try {
-        java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-            java.io.FileOutputStream(tempFile).use { out ->
-                input.copyTo(out)
-            }
+/**
+ * Materialize a [ParcelFileDescriptor] to a private temp file via the shared
+ * [materializeToTempFile] primitive (CRA-99).
+ *
+ * **Why not a raw `copyTo`?** The previous implementation used `FileInputStream(pfd.fileDescriptor)
+ * .copyTo(FileOutputStream(...))`. That path worked but reported zero `MATERIALIZING_INPUT`
+ * progress — a large PFD copy (multi-MB gallery video opened via
+ * `ContentResolver.openFileDescriptor`) appeared frozen to consumers. Routing through
+ * [materializeToTempFile] buys us per-64 KB-chunk fraction ticks, cancellation-safe partial-file
+ * cleanup, and heap-bounded copying for free — the same contract [MediaSource.Local.Stream] and
+ * [MediaSource.Local.Bytes] already enjoy.
+ *
+ * **Probe-seeded sizeHint.** [estimateSourceSize] reads [ParcelFileDescriptor.getStatSize] via
+ * the [AndroidPfdMediaSource] branch. Regular file-backed FDs return their byte count; pipe /
+ * socket-backed FDs return `-1` which the probe floor-clamps to `null`, degrading [onProgress]
+ * to a flat-0 heartbeat without crashing the copy.
+ *
+ * **PFD lifetime.** The PFD stays alive until [AndroidInputHandle.cleanup] fires:
+ *  - We wrap `FileInputStream(pfd.fileDescriptor)` in a `.use { }` block. Closing the inner
+ *    stream closes the backing FD, but the surrounding PFD wrapper's own `close()` on the
+ *    cleanup path is a [runCatching] that tolerates double-close.
+ *  - On any failure (I/O, OOM, cancellation) [materializeToTempFile] deletes the partial temp
+ *    file itself; we close the PFD in the outer `catch(Throwable)` and rethrow so the caller
+ *    sees the original failure type.
+ */
+@Suppress("TooGenericExceptionCaught")
+private suspend fun materializePfdHandle(
+    input: AndroidPfdMediaSource,
+    onProgress: suspend (Float) -> Unit,
+): AndroidInputHandle {
+    val pfd = input.pfd
+    val tempDir = kompressorTempDir()
+    val sizeHint = estimateSourceSize(input)
+    val tempFile: Path = try {
+        java.io.FileInputStream(pfd.fileDescriptor).source().use { source ->
+            source.materializeToTempFile(
+                fileSystem = kompressorFileSystem,
+                tempDir = tempDir,
+                sizeHint = sizeHint,
+                onProgress = onProgress,
+            )
         }
     } catch (t: Throwable) {
-        runCatching { tempFile.delete() }
+        // [materializeToTempFile] already best-effort deletes the partial tempFile on any
+        // throw; we only need to release the PFD before rethrowing so a large-PFD OOM or
+        // mid-copy cancellation doesn't leak the FD.
         runCatching { pfd.close() }
         throw t
     }
     return AndroidInputHandle(
-        path = tempFile.absolutePath,
+        path = tempFile.toString(),
         cleanupFn = {
-            runCatching { tempFile.delete() }
+            runCatching { kompressorFileSystem.delete(tempFile, mustExist = false) }
             runCatching { pfd.close() }
         },
     )
