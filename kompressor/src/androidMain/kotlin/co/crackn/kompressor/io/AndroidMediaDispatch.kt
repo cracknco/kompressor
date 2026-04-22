@@ -7,6 +7,7 @@ package co.crackn.kompressor.io
 
 import android.os.ParcelFileDescriptor
 import co.crackn.kompressor.KompressorContext
+import co.crackn.kompressor.logging.SafeLogger
 import java.io.File
 import java.util.UUID
 
@@ -14,19 +15,19 @@ import java.util.UUID
  * Android-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
  * filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads can consume.
  *
- * Why a separate helper rather than extending the common
- * [co.crackn.kompressor.io.requireFilePathOrThrow] in `commonMain`? Because the common helper
- * cannot reference [AndroidUriMediaSource] / [AndroidPfdMediaSource] /
- * [AndroidUriMediaDestination] — those live in `androidMain` as platform extensions. The
- * Android compressors' `compress(MediaSource, MediaDestination, ...)` overloads call the
- * Android-specific helpers here; `commonMain` variants they cannot resolve fall through to the
- * common [co.crackn.kompressor.io.requireFilePathOrThrow] which raises the canonical
- * "CRA-95" `UnsupportedOperationException`.
+ * Why a platform-specific helper rather than a single `commonMain` dispatcher? Because
+ * [AndroidUriMediaSource] / [AndroidPfdMediaSource] / [AndroidUriMediaDestination] live in
+ * `androidMain` as platform extensions and can't be referenced from `commonMain`.
  *
- * Resolution results come back wrapped in [AndroidInputHandle] / [AndroidOutputHandle] so the
- * compressor's `finally` block can run the correct cleanup — temp file deletion, PFD close,
- * post-compression URI commit with `IS_PENDING` release — without the compressor body having to
- * re-branch on the input / output type.
+ * [toAndroidInputPath] is `suspend` — [MediaSource.Local.Stream] and [MediaSource.Local.Bytes]
+ * inputs are materialized to a temp file via [resolveStreamOrBytesToTempFile] (CRA-95). The
+ * [mediaType] parameter drives the OOM-warning path in that resolver ([MediaType.IMAGE] skips
+ * the warn because the image compressors short-circuit Stream/Bytes before calling dispatch
+ * — the branch here is reachable only when the compressor did not intercept the input).
+ *
+ * [toAndroidOutputHandle] stays synchronous. Stream outputs allocate a temp path and defer the
+ * actual temp→sink copy to the commit step, which is suspending so progress ticks reach the
+ * caller during [CompressionProgress.Phase.FINALIZING_OUTPUT].
  */
 
 /** Result of resolving a [MediaSource] to an Android filesystem / URI string. */
@@ -35,7 +36,7 @@ internal class AndroidInputHandle(
     val path: String,
     private val cleanupFn: () -> Unit,
 ) {
-    /** Release temp resources (materialized temp file, owned PFD). Idempotent. */
+    /** Release temp resources (materialized temp file, owned PFD, closed Source). Idempotent. */
     fun cleanup() {
         cleanupFn()
     }
@@ -44,24 +45,29 @@ internal class AndroidInputHandle(
 /**
  * Result of resolving a [MediaDestination] to an Android filesystem path.
  *
- * For `FilePath` destinations the compressor writes directly to [tempPath] (which IS the caller's
- * requested path) and both [commit] and [cleanup] are no-ops. For `AndroidUriMediaDestination` the
- * compressor writes to a throwaway [tempPath], then [commit] copies the bytes into the URI via
- * `ContentResolver.openOutputStream(...)` (through [MediaStoreOutputStrategy] when the authority
- * is `"media"`), and [cleanup] deletes the temp file whether commit succeeded or not.
+ * For `FilePath` destinations the compressor writes directly to [tempPath] and both [commit]
+ * and [cleanup] are no-ops. For `AndroidUriMediaDestination` the compressor writes to a
+ * throwaway [tempPath] and [commit] copies bytes into the URI. For
+ * [MediaDestination.Local.Stream] [commit] streams the temp file into the consumer sink,
+ * emitting progress ticks as it goes.
  */
 internal class AndroidOutputHandle(
     /** Path the legacy compress(String, String, ...) overload writes to. */
     val tempPath: String,
-    private val commitFn: () -> Unit,
+    private val commitFn: suspend (suspend (Float) -> Unit) -> Unit,
     private val cleanupFn: () -> Unit,
 ) {
-    /** Publish the compressed bytes from [tempPath] to the caller's destination. No-op for FilePath. */
-    fun commit() {
-        commitFn()
+    /**
+     * Publish the compressed bytes from [tempPath] to the caller's destination. No-op for
+     * FilePath. For URI destinations the copy is unbuffered (fast path, no progress). For
+     * Stream destinations the copy is chunked and [onProgress] is invoked with a fraction
+     * in `[0.0, 1.0]` per 64 KB chunk.
+     */
+    suspend fun commit(onProgress: suspend (Float) -> Unit = {}) {
+        commitFn(onProgress)
     }
 
-    /** Release temp resources (temp file). Idempotent. */
+    /** Release temp resources (temp file, buffered sink). Idempotent. */
     fun cleanup() {
         cleanupFn()
     }
@@ -70,25 +76,31 @@ internal class AndroidOutputHandle(
 /**
  * Resolve a [MediaSource] to an Android input path.
  *
- *  - [MediaSource.Local.FilePath] → direct path, no temp file, no cleanup.
- *  - [AndroidUriMediaSource] → `uri.toString()` passed through. The legacy compressors already
- *    handle `content://` / `file://` URIs via their internal sealed `ImageSource` /
- *    `toMediaItemUri` / `resolveMediaInputSize` plumbing, so no materialization is needed.
- *  - [AndroidPfdMediaSource] → materialized to a private temp file under the app cache dir.
- *    The PFD is closed on [AndroidInputHandle.cleanup] per the builder's `closeOnFinish = true`
- *    contract.
- *  - [MediaSource.Local.Stream] / [MediaSource.Local.Bytes] → throws `UnsupportedOperationException`
- *    pointing at CRA-95 (the ticket that will wire Stream/Bytes through [TempFileMaterializer]).
+ *  - [MediaSource.Local.FilePath] → direct path, no temp, no cleanup.
+ *  - [AndroidUriMediaSource] → `uri.toString()` passed through; the legacy compressors accept
+ *    `content://` URIs via their internal [android.content.ContentResolver] plumbing.
+ *  - [AndroidPfdMediaSource] → materialized to a private temp file under the app cache dir;
+ *    PFD is closed on cleanup.
+ *  - [MediaSource.Local.Stream] / [MediaSource.Local.Bytes] → materialized via
+ *    [resolveStreamOrBytesToTempFile]. The resolver emits a WARN via [logger] when Bytes is
+ *    used for a non-image [mediaType] and exceeds [BYTES_WARN_THRESHOLD]. The temp file is
+ *    deleted — and the Stream source is closed when `closeOnFinish = true` — on cleanup.
+ *  - Everything else (cross-platform wrapper slipped in) → fail loudly.
  */
-internal fun MediaSource.toAndroidInputPath(): AndroidInputHandle = when (this) {
+internal suspend fun MediaSource.toAndroidInputPath(
+    mediaType: MediaType,
+    logger: SafeLogger,
+    onProgress: suspend (Float) -> Unit = {},
+): AndroidInputHandle = when (this) {
     is MediaSource.Local.FilePath -> AndroidInputHandle(path, cleanupFn = {})
     is AndroidUriMediaSource -> AndroidInputHandle(uri.toString(), cleanupFn = {})
     is AndroidPfdMediaSource -> materializePfdHandle(pfd)
-    is MediaSource.Local.Stream -> throw UnsupportedOperationException(STREAM_INPUT_MSG)
-    is MediaSource.Local.Bytes -> throw UnsupportedOperationException(BYTES_INPUT_MSG)
-    // [MediaSource.Local] is not sealed — a future iOS-specific wrapper (e.g. `IosPHAssetMediaSource`,
-    // T5) would land here if misused on Android. Fail loudly with the wrapper class name so the
-    // caller sees which builder was cross-wired.
+    is MediaSource.Local.Stream, is MediaSource.Local.Bytes -> materializeStreamOrBytes(
+        input = this,
+        mediaType = mediaType,
+        logger = logger,
+        onProgress = onProgress,
+    )
     else -> throw UnsupportedOperationException(
         "Unsupported MediaSource subtype on Android: ${this::class.simpleName}",
     )
@@ -98,23 +110,39 @@ internal fun MediaSource.toAndroidInputPath(): AndroidInputHandle = when (this) 
  * Resolve a [MediaDestination] to an Android output path.
  *
  *  - [MediaDestination.Local.FilePath] → direct path, no temp, no commit.
- *  - [AndroidUriMediaDestination] → write to a private temp file, then on commit copy the bytes
- *    into the URI. MediaStore URIs go through [MediaStoreOutputStrategy] (which handles the
- *    `IS_PENDING` flag and gracefully degrades on custom providers); everything else uses
- *    `ContentResolver.openOutputStream(uri)` directly.
- *  - [MediaDestination.Local.Stream] → throws `UnsupportedOperationException` pointing at CRA-95.
+ *  - [AndroidUriMediaDestination] → write to private temp, commit copies bytes into the URI.
+ *  - [MediaDestination.Local.Stream] → write to private temp, commit streams temp → sink in
+ *    64 KB chunks and emits `FINALIZING_OUTPUT` progress through the caller's [onProgress].
  */
 internal fun MediaDestination.toAndroidOutputHandle(): AndroidOutputHandle = when (this) {
     is MediaDestination.Local.FilePath -> AndroidOutputHandle(
         tempPath = path,
-        commitFn = {},
+        commitFn = { _ -> },
         cleanupFn = {},
     )
     is AndroidUriMediaDestination -> androidUriOutputHandle(this)
-    is MediaDestination.Local.Stream -> throw UnsupportedOperationException(STREAM_OUTPUT_MSG)
+    is MediaDestination.Local.Stream -> streamOutputHandle(this)
     else -> throw UnsupportedOperationException(
         "Unsupported MediaDestination subtype on Android: ${this::class.simpleName}",
     )
+}
+
+private suspend fun materializeStreamOrBytes(
+    input: MediaSource,
+    mediaType: MediaType,
+    logger: SafeLogger,
+    onProgress: suspend (Float) -> Unit,
+): AndroidInputHandle {
+    // Cast is safe — callers only reach this branch through the Stream/Bytes `is` checks
+    // above. The resolver itself rejects anything else with an IllegalStateException.
+    val resolved = resolveStreamOrBytesToTempFile(
+        input = input as MediaSource.Local,
+        tempDir = kompressorTempDir(),
+        mediaType = mediaType,
+        logger = logger,
+        onProgress = onProgress,
+    )
+    return AndroidInputHandle(path = resolved.path, cleanupFn = resolved.cleanup)
 }
 
 private fun materializePfdHandle(pfd: ParcelFileDescriptor): AndroidInputHandle {
@@ -154,8 +182,20 @@ private fun androidUriOutputHandle(dest: AndroidUriMediaDestination): AndroidOut
     val tempFile = File(tempDir, "kmp_uri_out_${UUID.randomUUID()}.bin")
     return AndroidOutputHandle(
         tempPath = tempFile.absolutePath,
-        commitFn = { copyTempToUri(tempFile, dest) },
+        // URI commit is a synchronous `ContentResolver.openOutputStream` copy. No progress
+        // ticks — the caller's `FINALIZING_OUTPUT, 1f` canonical terminal still fires from
+        // the compressor body once `commit` returns.
+        commitFn = { _ -> copyTempToUri(tempFile, dest) },
         cleanupFn = { runCatching { tempFile.delete() } },
+    )
+}
+
+private fun streamOutputHandle(dest: MediaDestination.Local.Stream): AndroidOutputHandle {
+    val outSink = createStreamOutputSink(dest, kompressorTempDir())
+    return AndroidOutputHandle(
+        tempPath = outSink.tempPath,
+        commitFn = { onProgress -> outSink.publish(onProgress) },
+        cleanupFn = { outSink.cleanup() },
     )
 }
 
@@ -190,16 +230,3 @@ private fun copyTempToUri(tempFile: File, dest: AndroidUriMediaDestination) {
  */
 private fun androidKompressorTempDir(): File =
     File(KompressorContext.appContext.cacheDir, "kompressor-io")
-
-// --- Error messages mirror commonMain/FilePathDispatch.kt so the legacy and Android-aware ---
-// paths throw byte-identical strings. Keep these in sync if commonMain's messages change.
-
-private const val STREAM_INPUT_MSG: String =
-    "MediaSource.Local.Stream input will be supported in CRA-95. " +
-        "For now, use MediaSource.Local.FilePath."
-private const val BYTES_INPUT_MSG: String =
-    "MediaSource.Local.Bytes input will be supported in CRA-95. " +
-        "For now, use MediaSource.Local.FilePath."
-private const val STREAM_OUTPUT_MSG: String =
-    "MediaDestination.Local.Stream output will be supported in CRA-95. " +
-        "For now, use MediaDestination.Local.FilePath."

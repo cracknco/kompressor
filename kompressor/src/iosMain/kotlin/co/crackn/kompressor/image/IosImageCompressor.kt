@@ -8,6 +8,11 @@
     kotlinx.cinterop.ExperimentalForeignApi::class,
     kotlinx.cinterop.BetaInteropApi::class,
 )
+// TooManyFunctions suppressed: CRA-95 added `compress(MediaSource, MediaDestination, ...)`
+// plus the `shortCircuitBytesInput` / `shortCircuitStreamInput` / `shortCircuitNsDataInput`
+// helpers that route through `UIImage(data:)` / `CGImageSource` without a temp-file hop.
+// Splitting out would fragment the decode → transform → encode pipeline private to this file.
+@file:Suppress("TooManyFunctions")
 
 package co.crackn.kompressor.image
 
@@ -16,6 +21,7 @@ import co.crackn.kompressor.io.IosDataMediaSource
 import co.crackn.kompressor.io.IosPHAssetMediaSource
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.MediaType
 import co.crackn.kompressor.io.PHAssetIcloudOnlyException
 import co.crackn.kompressor.io.PHAssetResolutionException
 import co.crackn.kompressor.io.resolveImageToData
@@ -63,8 +69,10 @@ import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
+import platform.Foundation.create
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.writeToURL
+import okio.buffer
 import platform.Photos.PHAssetMediaTypeImage
 import platform.ImageIO.CGImageDestinationAddImage
 import platform.ImageIO.CGImageDestinationCreateWithURL
@@ -145,27 +153,38 @@ internal class IosImageCompressor(
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
         try {
+            // CRA-95: Stream / Bytes short-circuit — read the full payload into NSData and
+            // route through the zero-copy NSData fast path. No temp file on the input side;
+            // image payloads are bounded (~50 MB typical) so holding in RAM is safe and spares
+            // the materialization round-trip that audio / video must pay.
+            val streamOrBytesData: platform.Foundation.NSData? = when (input) {
+                is MediaSource.Local.Bytes -> nsDataFromBytes(input.bytes)
+                is MediaSource.Local.Stream -> nsDataFromStream(input)
+                else -> null
+            }
+
             // PHAsset-image fast path: resolve PhotoKit's NSData directly, skip temp-file
             // materialisation, and route through the zero-copy UIImage(data:) decode. Video /
             // audio PHAsset inputs still resolve via the URL path below — only image benefits
             // from the NSData shortcut [PR #142 review, finding #3].
-            val effectiveInput: MediaSource = if (
-                input is IosPHAssetMediaSource && input.asset.mediaType == PHAssetMediaTypeImage
-            ) {
-                IosDataMediaSource(input.asset.resolveImageToData(input.allowNetworkAccess))
-            } else {
-                input
+            val effectiveInput: MediaSource = when {
+                streamOrBytesData != null -> IosDataMediaSource(streamOrBytesData)
+                input is IosPHAssetMediaSource && input.asset.mediaType == PHAssetMediaTypeImage ->
+                    IosDataMediaSource(input.asset.resolveImageToData(input.allowNetworkAccess))
+                else -> input
             }
 
             // NSData path short-circuits through UIImage(data:) — no temp file. UIImage's data
             // initialiser internally uses CGImageSourceCreateWithData, so the decode is
             // zero-copy when the NSData is mmap-backed (the typical case for PhotoKit /
-            // `Data(contentsOf:)` inputs). Video / audio NSData is rejected by the dispatch
-            // helper further down with a CRA-95-labelled error.
+            // `Data(contentsOf:)` inputs). For Stream / Bytes inputs we first copied into
+            // NSData above; the decode itself is still no-temp-file.
             if (effectiveInput is IosDataMediaSource) {
                 val outHandle = output.toIosOutputHandle()
                 return@suspendRunCatching try {
                     val result = instrumentCompressFromData(effectiveInput.data, outHandle.tempPath, config)
+                    // commit() copies temp → consumer sink for Stream destinations (no-op for
+                    // FilePath / NSURL). Image has no progress callback, so pass the default.
                     outHandle.commit()
                     result
                 } finally {
@@ -174,10 +193,10 @@ internal class IosImageCompressor(
             }
 
             // Nested try/finally so `inHandle.cleanup()` runs even when `toIosOutputHandle()`
-            // throws (e.g. MediaDestination.Local.Stream → CRA-95 UnsupportedOperationException).
-            // A previous flat pattern leaked the PHAsset image temp file in that case — mirrors
-            // the Android sibling's lifecycle structure [PR #142 review, finding #1].
-            val inHandle = effectiveInput.toIosInputPath()
+            // throws. Mirrors the Android sibling's lifecycle structure [PR #142 review,
+            // finding #1]. `MediaType.IMAGE` skips the Bytes OOM warn in the resolver — the
+            // short-circuit above ensures Bytes inputs never reach this dispatch branch anyway.
+            val inHandle = effectiveInput.toIosInputPath(mediaType = MediaType.IMAGE, logger = logger)
             try {
                 val outHandle = output.toIosOutputHandle()
                 try {
@@ -544,3 +563,42 @@ private fun minVersionForUti(uti: String): Int = when (uti) {
 }
 
 private const val IOS_MAX_QUALITY = 100.0
+
+/**
+ * Wrap a Kotlin [ByteArray] in an [NSData] that owns a freshly copied buffer. Required by the
+ * CRA-95 Stream / Bytes → NSData short-circuit in the image compressor: `UIImage(data:)` only
+ * accepts NSData, so the ByteArray (from okio / [MediaSource.Local.Bytes]) must hop through
+ * `NSData.dataWithBytes:length:` (which copies on construction — the pinned pointer is safe to
+ * release after [NSData.create] returns).
+ */
+@OptIn(kotlinx.cinterop.BetaInteropApi::class)
+private fun nsDataFromBytes(bytes: ByteArray): NSData =
+    if (bytes.isEmpty()) {
+        // `usePinned { addressOf(0) }` throws on a zero-length array; go through the nullable
+        // bytes factory instead. `UIImage(data: zeroLengthData)` then surfaces the expected
+        // DecodingFailed downstream.
+        NSData.create(bytes = null, length = 0uL)
+    } else {
+        bytes.usePinned { pinned ->
+            NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+        }
+    }
+
+/**
+ * Read a [MediaSource.Local.Stream] fully into an [NSData], honouring
+ * [MediaSource.Local.Stream.closeOnFinish]. Used by the CRA-95 Stream short-circuit in the
+ * image compressor — images are bounded so the full-buffer read is the intended "no temp file"
+ * path, and the resulting NSData hops straight into `UIImage(data:)`.
+ */
+private fun nsDataFromStream(stream: MediaSource.Local.Stream): NSData {
+    val bufferedSource = stream.source.buffer()
+    val bytes = try {
+        bufferedSource.readByteArray()
+    } finally {
+        if (stream.closeOnFinish) {
+            // Closing the buffered wrapper closes the delegate source too.
+            runCatching { bufferedSource.close() }
+        }
+    }
+    return nsDataFromBytes(bytes)
+}

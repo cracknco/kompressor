@@ -16,6 +16,7 @@ import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.MediaType
 import co.crackn.kompressor.io.PHAssetIcloudOnlyException
 import co.crackn.kompressor.io.PHAssetResolutionException
 import co.crackn.kompressor.io.toIosInputPath
@@ -161,15 +162,25 @@ internal class IosAudioCompressor(
         onProgress: suspend (CompressionProgress) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
         val inHandle = try {
-            input.toIosInputPath()
+            input.toIosInputPath(
+                mediaType = MediaType.AUDIO,
+                logger = logger,
+                onProgress = { fraction ->
+                    onProgress(
+                        CompressionProgress(
+                            CompressionProgress.Phase.MATERIALIZING_INPUT,
+                            fraction.coerceIn(0f, 1f),
+                        ),
+                    )
+                },
+            )
         } catch (e: PHAssetIcloudOnlyException) {
             throw AudioCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
         } catch (e: PHAssetResolutionException) {
             throw AudioCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
         }
-        // Nested try/finally so `inHandle.cleanup()` fires even when `toIosOutputHandle()` throws
-        // (e.g. MediaDestination.Local.Stream → CRA-95 UnsupportedOperationException). Mirrors
-        // the Android sibling [PR #142 review, finding #1].
+        // Nested try/finally so `inHandle.cleanup()` fires even when `toIosOutputHandle()` throws.
+        // Mirrors the Android sibling [PR #142 review, finding #1].
         try {
             val outHandle = output.toIosOutputHandle()
             try {
@@ -185,7 +196,16 @@ internal class IosAudioCompressor(
                         )
                     }
                 }.getOrThrow()
-                outHandle.commit()
+                outHandle.commit { fraction ->
+                    if (fraction < 1f) {
+                        onProgress(
+                            CompressionProgress(
+                                CompressionProgress.Phase.FINALIZING_OUTPUT,
+                                fraction.coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }
                 onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
                 result
             } finally {

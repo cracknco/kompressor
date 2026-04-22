@@ -28,8 +28,8 @@ public sealed interface MediaSource {
      * native input handles (`content://` URIs, `ParcelFileDescriptor`, `NSURL`, `PHAsset`, …).
      * Kotlin's sealed-hierarchy-per-module rule prohibits cross-module extension, so the base is
      * left open; `commonMain` callers that exhaustive-match on `Local` must include an `else`
-     * branch to handle the platform wrappers — see [requireFilePathOrThrow] for the canonical
-     * pattern.
+     * branch to handle the platform wrappers — see `AndroidMediaDispatch.toAndroidInputPath`
+     * / `IosMediaDispatch.toIosInputPath` for the canonical pattern.
      */
     public interface Local : MediaSource {
 

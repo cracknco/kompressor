@@ -16,6 +16,7 @@ import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.MediaType
 import co.crackn.kompressor.io.toAndroidInputPath
 import co.crackn.kompressor.io.toAndroidOutputHandle
 import co.crackn.kompressor.logging.LogTags
@@ -25,13 +26,22 @@ import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import okio.buffer
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
+// TooManyFunctions suppressed: CRA-95 added the `compress(MediaSource, MediaDestination, ...)`
+// overload + its short-circuit helpers (`shortCircuitBytesInput`, `shortCircuitStreamInput`)
+// that decode directly via `BitmapFactory.decodeByteArray` / `decodeStream` without the temp-
+// file hop. Splitting into a helper class would force the short-circuit helpers to re-export
+// the compressor's private encode pipeline — not worth the structural churn.
+@Suppress("TooManyFunctions")
 @OptIn(ExperimentalKompressorApi::class)
 internal class AndroidImageCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
@@ -72,18 +82,80 @@ internal class AndroidImageCompressor(
         output: MediaDestination,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputHandle = input.toAndroidInputPath()
-        try {
+        // Short-circuit: Stream/Bytes inputs decode directly from memory, no temp file. Image
+        // payloads are bounded (~50 MB typical), so holding the bytes in RAM is safe and spares
+        // the cost of a temp-file round trip the audio / video paths must pay.
+        val memoryBytes: ByteArray? = when (input) {
+            is MediaSource.Local.Bytes -> input.bytes
+            is MediaSource.Local.Stream -> readStreamAsBytes(input)
+            else -> null
+        }
+        if (memoryBytes != null) {
+            compressFromBytes(memoryBytes, output, config)
+        } else {
+            compressFromPath(input, output, config)
+        }
+    }
+
+    /**
+     * Stream/Bytes input path — [memoryBytes] already fully in RAM, no temp file. Dispatches
+     * on the destination side separately so Stream destinations also avoid the temp-file hop.
+     */
+    private suspend fun compressFromBytes(
+        memoryBytes: ByteArray,
+        output: MediaDestination,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
+        val source = ByteArrayImageSource(memoryBytes)
+        return if (output is MediaDestination.Local.Stream) {
+            doCompressDirect(source, config) { bitmap, cfg ->
+                writeBitmapToSink(bitmap, output, cfg)
+            }
+        } else {
             val outputHandle = output.toAndroidOutputHandle()
             try {
-                val result = compress(inputHandle.path, outputHandle.tempPath, config).getOrThrow()
-                // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
-                // temp file we just wrote; the commit step only moves bytes, it does not mutate
-                // the size reported to the caller.
+                val result = doCompressDirect(source, config) { bitmap, cfg ->
+                    writeBitmapToPath(bitmap, outputHandle.tempPath, cfg)
+                    File(outputHandle.tempPath).length()
+                }
                 outputHandle.commit()
                 result
             } finally {
                 outputHandle.cleanup()
+            }
+        }
+    }
+
+    /**
+     * FilePath / Uri / PFD input path — re-uses the legacy [compress] entry point when the
+     * destination is also file-backed (fastest path, matches pre-CRA-95 behaviour byte-for-byte).
+     * When the destination is a [MediaDestination.Local.Stream], decode via [ImageSource.of] and
+     * write directly into the consumer [okio.Sink] — still no temp file on the output side.
+     */
+    private suspend fun compressFromPath(
+        input: MediaSource,
+        output: MediaDestination,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
+        val inputHandle = input.toAndroidInputPath(mediaType = MediaType.IMAGE, logger = logger)
+        try {
+            return if (output is MediaDestination.Local.Stream) {
+                val source = ImageSource.of(inputHandle.path)
+                doCompressDirect(source, config) { bitmap, cfg ->
+                    writeBitmapToSink(bitmap, output, cfg)
+                }
+            } else {
+                val outputHandle = output.toAndroidOutputHandle()
+                try {
+                    val result = compress(inputHandle.path, outputHandle.tempPath, config).getOrThrow()
+                    // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
+                    // temp file we just wrote; the commit step only moves bytes, it does not
+                    // mutate the size reported to the caller.
+                    outputHandle.commit()
+                    result
+                } finally {
+                    outputHandle.cleanup()
+                }
             }
         } finally {
             inputHandle.cleanup()
@@ -95,13 +167,31 @@ internal class AndroidImageCompressor(
         outputPath: String,
         config: ImageCompressionConfig,
     ): CompressionResult {
+        val source = ImageSource.of(inputPath)
+        return doCompressDirect(source, config) { bitmap, cfg ->
+            writeBitmapToPath(bitmap, outputPath, cfg)
+            File(outputPath).length()
+        }
+    }
+
+    /**
+     * Shared decode + resize + encode pipeline. The [writer] is the only per-destination
+     * variation: it receives the final resized [Bitmap] and returns the number of bytes it
+     * wrote (so [CompressionResult.outputSize] is accurate whether the destination was a file
+     * or a stream). Errors are surfaced through [classifyAndroidImageError] at the outer
+     * `instrumentCompress` catch-sites.
+     */
+    private suspend fun doCompressDirect(
+        source: ImageSource,
+        config: ImageCompressionConfig,
+        writer: (Bitmap, ImageCompressionConfig) -> Long,
+    ): CompressionResult {
         androidOutputGate(config.format, Build.VERSION.SDK_INT)?.let { throw it }
 
         val startNanos = System.nanoTime()
 
-        val source = ImageSource.of(inputPath)
         val inputSize = source.size()
-        val detectedFormat = detectInputImageFormat(source.readHeader(), fileExtension(inputPath))
+        val detectedFormat = detectInputImageFormat(source.readHeader(), source.extension())
         androidInputGate(detectedFormat, Build.VERSION.SDK_INT)?.let { throw it }
 
         val exifRotation = source.readExifRotation()
@@ -114,14 +204,13 @@ internal class AndroidImageCompressor(
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
         val bitmap = source.decodeSampledBitmap(rawDims, target, exifRotation)
-        try {
+        val outputSize = try {
             currentCoroutineContext().ensureActive()
-            resizeAndWrite(bitmap, target, outputPath, config)
+            resizeAndWrite(bitmap, target, writer, config)
         } finally {
             bitmap.recycle()
         }
 
-        val outputSize = File(outputPath).length()
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
         return CompressionResult(inputSize, outputSize, durationMs)
     }
@@ -132,12 +221,12 @@ internal class AndroidImageCompressor(
     private fun resizeAndWrite(
         bitmap: Bitmap,
         target: ImageDimensions,
-        outputPath: String,
+        writer: (Bitmap, ImageCompressionConfig) -> Long,
         config: ImageCompressionConfig,
-    ) {
+    ): Long {
         val scaled = resizeBitmapIfNeeded(bitmap, target)
-        try {
-            writeBitmap(scaled, outputPath, config)
+        return try {
+            writer(scaled, config)
         } finally {
             if (scaled !== bitmap) scaled.recycle()
         }
@@ -148,7 +237,7 @@ internal class AndroidImageCompressor(
         return Bitmap.createScaledBitmap(bitmap, target.width, target.height, true)
     }
 
-    private fun writeBitmap(bitmap: Bitmap, outputPath: String, config: ImageCompressionConfig) {
+    private fun writeBitmapToPath(bitmap: Bitmap, outputPath: String, config: ImageCompressionConfig) {
         val compressFormat = androidCompressFormat(config.format)
         // Capture the compress result inside `use { }` so the stream is closed before we throw.
         // Returning the boolean and then throwing after close moves the error path to a point
@@ -164,9 +253,83 @@ internal class AndroidImageCompressor(
         }
     }
 
+    /**
+     * Encode [bitmap] directly into the consumer [MediaDestination.Local.Stream] — no temp
+     * file. A [CountingOutputStream] wraps the buffered okio sink so the returned length is
+     * the number of bytes actually written, matching [writeBitmapToPath]'s `File.length()`.
+     *
+     * The buffered sink is `flush()`ed — never `close()`d here — because ownership is governed
+     * by [MediaDestination.Local.Stream.closeOnFinish]. Closing would silently break the
+     * "shared sink" contract (e.g. compressor output piped into an uploader still writing to
+     * the same sink after this call returns).
+     */
+    private fun writeBitmapToSink(
+        bitmap: Bitmap,
+        dest: MediaDestination.Local.Stream,
+        config: ImageCompressionConfig,
+    ): Long {
+        val compressFormat = androidCompressFormat(config.format)
+        val bufferedSink = dest.sink.buffer()
+        val counter = CountingOutputStream(bufferedSink.outputStream())
+        val success = try {
+            bitmap.compress(compressFormat, config.quality, counter)
+        } finally {
+            runCatching { counter.flush() }
+            runCatching { bufferedSink.flush() }
+            if (dest.closeOnFinish) runCatching { bufferedSink.close() }
+        }
+        if (!success) {
+            throw ImageCompressionError.EncodingFailed(
+                "Bitmap.compress(${config.format}, quality=${config.quality}) returned false " +
+                    "while writing to MediaDestination.Local.Stream",
+            )
+        }
+        return counter.bytesWritten
+    }
+
+    /**
+     * Read a [MediaSource.Local.Stream] into memory, honouring [MediaSource.Local.Stream.closeOnFinish].
+     * Images are bounded so holding the payload in RAM is the intended "no temp file" path per
+     * CRA-95 — the okio [buffer] accumulates segments in 8 KB chunks, peak heap is the image size.
+     */
+    private fun readStreamAsBytes(stream: MediaSource.Local.Stream): ByteArray {
+        val bufferedSource = stream.source.buffer()
+        return try {
+            bufferedSource.readByteArray()
+        } finally {
+            if (stream.closeOnFinish) {
+                // Closing the buffered wrapper closes the delegate source too — matching
+                // `closeOnFinish = true`.
+                runCatching { bufferedSource.close() }
+            }
+        }
+    }
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
     }
+}
+
+/**
+ * OutputStream wrapper that counts bytes written without buffering them. Used to compute
+ * [CompressionResult.outputSize] for Stream destinations where we cannot `File(...).length()`.
+ */
+private class CountingOutputStream(private val delegate: OutputStream) : OutputStream() {
+    var bytesWritten: Long = 0L
+        private set
+
+    override fun write(b: Int) {
+        delegate.write(b)
+        bytesWritten += 1
+    }
+
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        delegate.write(b, off, len)
+        bytesWritten += len.toLong()
+    }
+
+    override fun flush() = delegate.flush()
+    override fun close() = delegate.close()
 }
 
 /**
@@ -213,16 +376,17 @@ private data class ExifRotation(
 }
 
 /**
- * Abstracts the two input-path forms the compressor accepts — filesystem paths (`/sdcard/…`,
- * `file://…`) and `content://` URIs delivered by share sheets / the photo picker / SAF. Both
- * code paths need the same five operations (`size()`, `readHeader()`, `readExifRotation()`,
- * `decodeRawDimensions()`, `decodeSampledBitmap(...)`); dispatching through a sealed interface
- * keeps the compressor body linear while the two file-access layers (java.io.File vs
- * ContentResolver) stay isolated.
+ * Abstracts the three input-path forms the compressor accepts — filesystem paths (`/sdcard/…`,
+ * `file://…`), `content://` URIs (share sheets / SAF / photo picker), and in-memory byte arrays
+ * (CRA-95 Stream/Bytes short-circuit). All three need the same five operations
+ * (`size()`, `readHeader()`, `readExifRotation()`, `decodeRawDimensions()`, `decodeSampledBitmap(...)`);
+ * dispatching through a sealed interface keeps the compressor body linear while the three
+ * file-access layers stay isolated.
  */
 private sealed interface ImageSource {
 
     fun size(): Long
+    fun extension(): String
     fun readHeader(): ByteArray
     fun readExifRotation(): ExifRotation
     fun decodeRawDimensions(): ImageDimensions
@@ -243,6 +407,8 @@ private sealed interface ImageSource {
 private class FilePathSource(private val path: String) : ImageSource {
 
     override fun size(): Long = File(path).length()
+
+    override fun extension(): String = fileExtension(path)
 
     override fun readHeader(): ByteArray = try {
         File(path).inputStream().use { it.readFirstBytes(IMAGE_SNIFF_BYTES) }
@@ -290,6 +456,8 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         pfd.statSize.coerceAtLeast(0L)
     } ?: 0L
 
+    override fun extension(): String = fileExtension(uri.toString())
+
     override fun readHeader(): ByteArray = openStream().use { it.readFirstBytes(IMAGE_SNIFF_BYTES) }
 
     override fun readExifRotation(): ExifRotation = openStream().use { stream ->
@@ -323,6 +491,50 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
     private fun openStream(): InputStream =
         resolver.openInputStream(uri)
             ?: throw ImageCompressionError.IoFailed("ContentResolver returned null input stream for $uri")
+}
+
+/**
+ * In-memory `ByteArray` source — backs the CRA-95 Stream/Bytes short-circuit. Every read
+ * operation opens a fresh [ByteArrayInputStream] against the same backing array so the five
+ * [ImageSource] calls (header sniff, EXIF, bounds, decode) don't interfere with each other.
+ *
+ * No [fileExtension] is available — pass `""` to [detectInputImageFormat]; the magic-byte
+ * sniffer picks up every format we support from the first 32 bytes, so the empty fallback
+ * only affects DNG which has no magic bytes anyway (and isn't a realistic Stream input).
+ */
+private class ByteArrayImageSource(private val bytes: ByteArray) : ImageSource {
+
+    override fun size(): Long = bytes.size.toLong()
+
+    override fun extension(): String = ""
+
+    override fun readHeader(): ByteArray {
+        val take = minOf(IMAGE_SNIFF_BYTES, bytes.size)
+        return bytes.copyOf(take)
+    }
+
+    override fun readExifRotation(): ExifRotation =
+        ByteArrayInputStream(bytes).use { decodeExifOrientation(ExifInterface(it)) }
+
+    override fun decodeRawDimensions(): ImageDimensions {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            throw ImageCompressionError.DecodingFailed("Cannot decode image dimensions from in-memory bytes")
+        }
+        return ImageDimensions(options.outWidth, options.outHeight)
+    }
+
+    override fun decodeSampledBitmap(
+        rawDims: ImageDimensions,
+        target: ImageDimensions,
+        exifRotation: ExifRotation,
+    ): Bitmap {
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            ?: throw ImageCompressionError.DecodingFailed("Failed to decode image from in-memory bytes")
+        return rotateOrRecycle(decoded, exifRotation)
+    }
 }
 
 private fun InputStream.readFirstBytes(count: Int): ByteArray {
