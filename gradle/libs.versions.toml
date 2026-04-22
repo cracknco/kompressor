@@ -82,6 +82,10 @@ mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 # CompressionLeakTest in androidDeviceTest.
 leakcanary-android-instrumentation = { module = "com.squareup.leakcanary:leakcanary-android-instrumentation", version.ref = "leakcanary" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+# `okio-fakefilesystem` — in-memory `FileSystem` used by commonTest to exercise the
+# `TempFileMaterializer` copy loop without touching real disk (CRA-91). Scoped to the
+# test classpath only; never ships in the published artifact.
+okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }

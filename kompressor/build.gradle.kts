@@ -141,6 +141,10 @@ kotlin {
             implementation(libs.kotest.assertions.core)
             implementation(libs.kotest.property)
             implementation(libs.turbine)
+            // okio-fakefilesystem — in-memory FileSystem for `TempFileMaterializer`
+            // commonTest coverage (CRA-91). Tests the chunked copy + cancellation cleanup
+            // without touching real disk and without needing platform-specific temp dirs.
+            implementation(libs.okio.fakefilesystem)
         }
 
         androidMain.dependencies {
