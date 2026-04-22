@@ -233,9 +233,56 @@ class MediaSourceResolverTest {
         resolved.cleanup()
 
         fs.exists(path) shouldBe false
-        tracking.closedCount shouldBe 3 // cleanup is idempotent on FS, but source.close() is
-        // intentionally best-effort; repeated calls reach the Source's own close() — recording
-        // the exact count pins the observable behaviour so future refactors surface regressions.
+        // cleanup() is idempotent end-to-end: only the first invocation reaches Source.close().
+        // Some okio.Source impls (e.g. FileInputStream-backed) throw or have side-effects on
+        // double-close, so the closure short-circuits via a `closed` flag. Pinning the exact
+        // count guards against future refactors silently restoring multi-close behaviour.
+        tracking.closedCount shouldBe 1
+    }
+
+    @Test
+    fun streamCloseOnFinishTrueClosesSourceWhenMaterializationFails() = runTest {
+        // `closeOnFinish` is a caller contract: if the caller said "close the source when
+        // you're done with it", that must hold regardless of whether we finished successfully.
+        // A throwing source simulates I/O failure mid-copy — `materializeToTempFile` rethrows,
+        // and the resolver must eagerly close the caller-owned source before the throwable
+        // escapes (no cleanup closure is ever handed out on the failure path).
+        val fs = FakeFileSystem()
+        val logger = SafeLogger(RecordingLogger())
+        val tracking = ThrowingSource()
+        val input = MediaSource.Local.Stream(tracking, closeOnFinish = true)
+
+        assertFailsWith<okio.IOException> {
+            resolveStreamOrBytesToTempFile(
+                input = input,
+                fileSystem = fs,
+                tempDir = tempDir,
+                mediaType = MediaType.VIDEO,
+                logger = logger,
+            )
+        }
+        tracking.closedCount shouldBe 1
+    }
+
+    @Test
+    fun streamCloseOnFinishFalseDoesNotCloseSourceOnFailure() = runTest {
+        // Mirror of the above with `closeOnFinish = false`: the caller retains ownership, so
+        // even on the failure path the resolver must not call close().
+        val fs = FakeFileSystem()
+        val logger = SafeLogger(RecordingLogger())
+        val tracking = ThrowingSource()
+        val input = MediaSource.Local.Stream(tracking, closeOnFinish = false)
+
+        assertFailsWith<okio.IOException> {
+            resolveStreamOrBytesToTempFile(
+                input = input,
+                fileSystem = fs,
+                tempDir = tempDir,
+                mediaType = MediaType.VIDEO,
+                logger = logger,
+            )
+        }
+        tracking.closedCount shouldBe 0
     }
 
     @Test
@@ -279,6 +326,21 @@ class MediaSourceResolverTest {
             private set
 
         override fun read(sink: Buffer, byteCount: Long): Long = buffer.read(sink, byteCount)
+        override fun timeout(): Timeout = Timeout.NONE
+        override fun close() {
+            closedCount++
+        }
+    }
+
+    /** Source that throws on first read to simulate an I/O failure mid-materialisation. */
+    private class ThrowingSource : Source {
+        var closedCount: Int = 0
+            private set
+
+        override fun read(sink: Buffer, byteCount: Long): Long {
+            throw okio.IOException("simulated read failure")
+        }
+
         override fun timeout(): Timeout = Timeout.NONE
         override fun close() {
             closedCount++

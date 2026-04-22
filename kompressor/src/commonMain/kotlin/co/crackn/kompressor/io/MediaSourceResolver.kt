@@ -114,12 +114,35 @@ private suspend fun materializeStream(
     tempDir: Path,
     onProgress: suspend (Float) -> Unit,
 ): ResolvedInput {
-    val tempFile = input.source.materializeToTempFile(fileSystem, tempDir, input.sizeHint, onProgress)
+    // If `materializeToTempFile` throws (I/O, disk-full, cancellation), we must still honour
+    // `closeOnFinish` on the caller-owned source — otherwise the descriptor leaks. The success
+    // path defers the close to the returned cleanup closure so the caller controls lifetime;
+    // the failure path closes eagerly and rethrows, because no cleanup closure was ever handed
+    // out. This preserves the PR's symmetric-on-failure promise for both Stream and Bytes.
+    // TooGenericExceptionCaught suppressed: we intentionally close the caller-owned Source for
+    // ANY failure mode before rethrowing — `materializeToTempFile` can throw `IOException`,
+    // `CancellationException`, or a user-supplied `onProgress` callback can throw arbitrarily.
+    // The contract is "`closeOnFinish = true` closes on every exit path", narrower filters would
+    // leak the descriptor on whichever mode we didn't enumerate.
+    @Suppress("TooGenericExceptionCaught")
+    val tempFile = try {
+        input.source.materializeToTempFile(fileSystem, tempDir, input.sizeHint, onProgress)
+    } catch (t: Throwable) {
+        if (input.closeOnFinish) runCatching { input.source.close() }
+        throw t
+    }
+    // `closed` flag makes the cleanup closure idempotent: callers sometimes invoke cleanup in a
+    // nested `finally` (e.g. in image-compressor double-finally ladders) and some `okio.Source`
+    // implementations (`FileInputStream.source()`) throw or have side-effects on double-close.
+    var closed = false
     return ResolvedInput(
         path = tempFile.toString(),
         cleanup = {
             runCatching { fileSystem.delete(tempFile, mustExist = false) }
-            if (input.closeOnFinish) runCatching { input.source.close() }
+            if (input.closeOnFinish && !closed) {
+                closed = true
+                runCatching { input.source.close() }
+            }
         },
     )
 }

@@ -21,8 +21,9 @@ import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
+import io.kotest.assertions.withClue
+import io.kotest.matchers.shouldBe
 import java.io.File
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import okio.source
@@ -84,12 +85,11 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess, "legacy: ${legacy.exceptionOrNull()}")
-        assertTrue(novel.isSuccess, "novel: ${novel.exceptionOrNull()}")
-        assertTrue(
-            novelOut.readBytes().contentEquals(legacyOut.readBytes()),
-            "Stream input must produce byte-identical output to legacy FilePath",
-        )
+        withClue("legacy: ${legacy.exceptionOrNull()}") { legacy.isSuccess shouldBe true }
+        withClue("novel: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        withClue("Stream input must produce byte-identical output to legacy FilePath") {
+            novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -111,9 +111,9 @@ class StreamAndBytesEndToEndTest {
             config = AudioCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess, "legacy: ${legacy.exceptionOrNull()}")
-        assertTrue(novel.isSuccess, "novel: ${novel.exceptionOrNull()}")
-        assertTrue(novelOut.readBytes().contentEquals(legacyOut.readBytes()))
+        withClue("legacy: ${legacy.exceptionOrNull()}") { legacy.isSuccess shouldBe true }
+        withClue("novel: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -135,9 +135,9 @@ class StreamAndBytesEndToEndTest {
             config = VideoCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess, "legacy: ${legacy.exceptionOrNull()}")
-        assertTrue(novel.isSuccess, "novel: ${novel.exceptionOrNull()}")
-        assertTrue(novelOut.readBytes().contentEquals(legacyOut.readBytes()))
+        withClue("legacy: ${legacy.exceptionOrNull()}") { legacy.isSuccess shouldBe true }
+        withClue("novel: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -152,8 +152,10 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(tracking.closed, "Stream.closeOnFinish=true must close the source at end of compress")
+        result.isSuccess shouldBe true
+        withClue("Stream.closeOnFinish=true must close the source at end of compress") {
+            tracking.closed shouldBe true
+        }
     }
 
     @Test
@@ -168,8 +170,10 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(!tracking.closed, "Stream.closeOnFinish=false must NOT close the caller-owned source")
+        result.isSuccess shouldBe true
+        withClue("Stream.closeOnFinish=false must NOT close the caller-owned source") {
+            tracking.closed shouldBe false
+        }
     }
 
     // --- Bytes input ----------------------------------------------------------
@@ -192,12 +196,11 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess)
-        assertTrue(novel.isSuccess)
-        assertTrue(
-            novelOut.readBytes().contentEquals(legacyOut.readBytes()),
-            "Bytes input must produce byte-identical output to legacy FilePath",
-        )
+        legacy.isSuccess shouldBe true
+        novel.isSuccess shouldBe true
+        withClue("Bytes input must produce byte-identical output to legacy FilePath") {
+            novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -220,9 +223,9 @@ class StreamAndBytesEndToEndTest {
             config = AudioCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess)
-        assertTrue(novel.isSuccess)
-        assertTrue(novelOut.readBytes().contentEquals(legacyOut.readBytes()))
+        legacy.isSuccess shouldBe true
+        novel.isSuccess shouldBe true
+        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -241,11 +244,13 @@ class StreamAndBytesEndToEndTest {
             config = AudioCompressionConfig(),
         )
 
-        assertTrue(result.isSuccess, "compress failed: ${result.exceptionOrNull()}")
+        withClue("compress failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         val warns = recording.records.filter {
             it.level == LogLevel.WARN && it.message.contains("MediaSource.Local.Bytes")
         }
-        assertTrue(warns.isNotEmpty(), "Expected WARN for >10MB Bytes audio input, got records=${recording.records}")
+        withClue("Expected WARN for >10MB Bytes audio input, got records=${recording.records}") {
+            warns.isNotEmpty() shouldBe true
+        }
     }
 
     @Test
@@ -269,7 +274,7 @@ class StreamAndBytesEndToEndTest {
         val warns = recording.records.filter {
             it.level == LogLevel.WARN && it.message.contains("MediaSource.Local.Bytes")
         }
-        assertTrue(warns.isEmpty(), "Image Bytes must not emit OOM WARN, got: $warns")
+        withClue("Image Bytes must not emit OOM WARN, got: $warns") { warns.isEmpty() shouldBe true }
     }
 
     // --- Stream output --------------------------------------------------------
@@ -291,9 +296,9 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess)
-        assertTrue(novel.isSuccess, "stream output: ${novel.exceptionOrNull()}")
-        assertTrue(consumer.readByteArray().contentEquals(legacyOut.readBytes()))
+        legacy.isSuccess shouldBe true
+        withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -315,9 +320,9 @@ class StreamAndBytesEndToEndTest {
             config = AudioCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess)
-        assertTrue(novel.isSuccess, "stream output: ${novel.exceptionOrNull()}")
-        assertTrue(consumer.readByteArray().contentEquals(legacyOut.readBytes()))
+        legacy.isSuccess shouldBe true
+        withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -339,9 +344,9 @@ class StreamAndBytesEndToEndTest {
             config = VideoCompressionConfig(),
         )
 
-        assertTrue(legacy.isSuccess)
-        assertTrue(novel.isSuccess, "stream output: ${novel.exceptionOrNull()}")
-        assertTrue(consumer.readByteArray().contentEquals(legacyOut.readBytes()))
+        legacy.isSuccess shouldBe true
+        withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
+        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
     }
 
     @Test
@@ -355,8 +360,10 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(tracking.closed, "Stream destination with closeOnFinish=true must close the sink")
+        result.isSuccess shouldBe true
+        withClue("Stream destination with closeOnFinish=true must close the sink") {
+            tracking.closed shouldBe true
+        }
     }
 
     @Test
@@ -370,8 +377,10 @@ class StreamAndBytesEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(!tracking.closed, "Stream destination with closeOnFinish=false must leave the sink open")
+        result.isSuccess shouldBe true
+        withClue("Stream destination with closeOnFinish=false must leave the sink open") {
+            tracking.closed shouldBe false
+        }
     }
 
     // --- helpers --------------------------------------------------------------

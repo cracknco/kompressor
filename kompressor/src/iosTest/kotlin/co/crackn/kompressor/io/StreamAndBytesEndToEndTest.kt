@@ -21,12 +21,12 @@ import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
+import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
 import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import okio.Timeout
@@ -158,7 +158,7 @@ class StreamAndBytesEndToEndTest {
         )
 
         result.isSuccess shouldBe true
-        assertTrue(tracking.closed, "closeOnFinish=true must close the caller-supplied Source")
+        withClue("closeOnFinish=true must close the caller-supplied Source") { tracking.closed shouldBe true }
     }
 
     @Test
@@ -174,7 +174,7 @@ class StreamAndBytesEndToEndTest {
         )
 
         result.isSuccess shouldBe true
-        assertTrue(!tracking.closed, "closeOnFinish=false must leave the caller-owned Source open")
+        withClue("closeOnFinish=false must leave the caller-owned Source open") { tracking.closed shouldBe false }
     }
 
     // --- Bytes input ----------------------------------------------------------
@@ -238,7 +238,9 @@ class StreamAndBytesEndToEndTest {
         val warns = recording.records.filter {
             it.level == LogLevel.WARN && it.message.contains("MediaSource.Local.Bytes")
         }
-        assertTrue(warns.isNotEmpty(), "Expected WARN for >10MB Bytes audio input, got records=${recording.records}")
+        withClue("Expected WARN for >10MB Bytes audio input, got records=${recording.records}") {
+            warns.isNotEmpty() shouldBe true
+        }
     }
 
     @Test
@@ -259,7 +261,7 @@ class StreamAndBytesEndToEndTest {
         val warns = recording.records.filter {
             it.level == LogLevel.WARN && it.message.contains("MediaSource.Local.Bytes")
         }
-        assertTrue(warns.isEmpty(), "Image Bytes must not emit OOM WARN, got: $warns")
+        withClue("Image Bytes must not emit OOM WARN, got: $warns") { warns.isEmpty() shouldBe true }
     }
 
     // --- Stream output --------------------------------------------------------
@@ -330,7 +332,7 @@ class StreamAndBytesEndToEndTest {
         )
 
         result.isSuccess shouldBe true
-        assertTrue(tracking.closed, "closeOnFinish=true must close the caller-supplied Sink")
+        withClue("closeOnFinish=true must close the caller-supplied Sink") { tracking.closed shouldBe true }
     }
 
     @Test
@@ -345,7 +347,7 @@ class StreamAndBytesEndToEndTest {
         )
 
         result.isSuccess shouldBe true
-        assertTrue(!tracking.closed, "closeOnFinish=false must leave the caller-owned Sink open")
+        withClue("closeOnFinish=false must leave the caller-owned Sink open") { tracking.closed shouldBe false }
     }
 
     // --- helpers --------------------------------------------------------------
@@ -364,11 +366,12 @@ class StreamAndBytesEndToEndTest {
 
     private fun assertSizeMatchesWithinTolerance(novelSize: Long, legacySize: Long) {
         val delta = abs(novelSize - legacySize)
-        assertTrue(
-            novelSize > 0 && legacySize > 0 && delta <= AV_SIZE_TOLERANCE_BYTES,
+        withClue(
             "Expected novel/legacy output sizes within $AV_SIZE_TOLERANCE_BYTES bytes — " +
                 "novel=$novelSize legacy=$legacySize delta=$delta",
-        )
+        ) {
+            (novelSize > 0 && legacySize > 0 && delta <= AV_SIZE_TOLERANCE_BYTES) shouldBe true
+        }
     }
 
     private fun createTestWav(): String {

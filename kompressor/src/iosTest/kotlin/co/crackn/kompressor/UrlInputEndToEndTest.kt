@@ -23,10 +23,11 @@ import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
 import io.kotest.matchers.shouldBe
 import kotlin.math.abs
+import io.kotest.assertions.withClue
+import io.kotest.matchers.shouldBe
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertTrue
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.test.runTest
@@ -159,11 +160,12 @@ class UrlInputEndToEndTest {
         val novel = readBytes(novelPath).size.toLong()
         val legacy = readBytes(legacyPath).size.toLong()
         val delta = abs(novel - legacy)
-        assertTrue(
-            novel > 0 && legacy > 0 && delta <= AV_SIZE_TOLERANCE_BYTES,
+        withClue(
             "Expected novel/legacy output sizes within $AV_SIZE_TOLERANCE_BYTES bytes — " +
                 "novel=$novel legacy=$legacy delta=$delta",
-        )
+        ) {
+            (novel > 0 && legacy > 0 && delta <= AV_SIZE_TOLERANCE_BYTES) shouldBe true
+        }
     }
 
     private fun createTestWav(): String {

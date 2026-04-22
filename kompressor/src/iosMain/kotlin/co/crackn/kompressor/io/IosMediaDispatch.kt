@@ -225,6 +225,14 @@ private fun renameToAvRecognizableExtension(
     val extension = detectInputExtension(resolved.path, mediaType)
     val originalPath = resolved.path.toPath()
     val renamedPath = originalPath.parent!! / "${originalPath.name.substringBeforeLast('.')}.$extension"
+    // Defensive guard: `MediaType.IMAGE` falls through to `DEFAULT_IMAGE_EXTENSION = "bin"`,
+    // which equals the materialiser's own suffix and would collapse `originalPath` ==
+    // `renamedPath`. AVFoundation never sees image inputs on this path (image compressors
+    // short-circuit Bytes/Stream before dispatch), but a future refactor could expose it —
+    // `atomicMove` semantics for self-moves are filesystem-dependent, so avoid the call.
+    if (originalPath == renamedPath) {
+        return IosInputHandle(path = resolved.path, cleanupFn = resolved.cleanup)
+    }
     return runCatching {
         kompressorFileSystem.atomicMove(originalPath, renamedPath)
         IosInputHandle(
