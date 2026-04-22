@@ -114,6 +114,19 @@ private suspend fun materializeStream(
     tempDir: Path,
     onProgress: suspend (Float) -> Unit,
 ): ResolvedInput {
+    // CURRENTLY a passthrough on this call path: `input` is typed `MediaSource.Local.Stream`
+    // and [estimateSourceSize]'s Stream branch echoes `input.sizeHint` back unchanged, so
+    // the effective expression reduces to `input.sizeHint ?: input.sizeHint`. The probe's
+    // real value lives in its Uri / PFD / NSURL / PHAsset / NSData branches — those get
+    // activated in CRA-99 when `materializePfdHandle` (Android) and `materializeNsData`
+    // (iOS) migrate to the probe-seeded `TempFileMaterializer` path so pre-materialisation
+    // `MATERIALIZING_INPUT` fractions become accurate for native-handle inputs too. Kept in
+    // place here so the wiring stays visible + the commonMain Stream callsite picks up the
+    // CRA-99 upgrade for free once the probe's Stream branch learns to introspect the
+    // source (e.g. via a `MediaSource.Local.Stream.source` cast to `FileSource`).
+    // Probe is nullable-returning and never throws, per its contract.
+    val effectiveSizeHint: Long? = input.sizeHint ?: estimateSourceSize(input)
+
     // If `materializeToTempFile` throws (I/O, disk-full, cancellation), we must still honour
     // `closeOnFinish` on the caller-owned source — otherwise the descriptor leaks. The success
     // path defers the close to the returned cleanup closure so the caller controls lifetime;
@@ -126,7 +139,7 @@ private suspend fun materializeStream(
     // leak the descriptor on whichever mode we didn't enumerate.
     @Suppress("TooGenericExceptionCaught")
     val tempFile = try {
-        input.source.materializeToTempFile(fileSystem, tempDir, input.sizeHint, onProgress)
+        input.source.materializeToTempFile(fileSystem, tempDir, effectiveSizeHint, onProgress)
     } catch (t: Throwable) {
         if (input.closeOnFinish) runCatching { input.source.close() }
         throw t
