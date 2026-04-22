@@ -124,20 +124,21 @@ private fun materializePfdHandle(pfd: ParcelFileDescriptor): AndroidInputHandle 
     // we want the opposite — materialize then keep the PFD alive for explicit close on
     // cleanup — so use the non-auto-close FileInputStream variant.
     //
-    // Narrowed to IOException (what copyTo / stream I/O actually raise) so unexpected Errors
-    // — OOM, VirtualMachineError — propagate uncaught instead of leaving dangling file handles
-    // while still being demoted into an IOException. Detekt's TooGenericExceptionCaught blocks
-    // the broader `catch (t: Throwable)` that used to sit here.
+    // Broadened to `Throwable` (from IOException) so OOM / VirtualMachineError on a large PFD
+    // still release the tempFile + PFD before propagating — previously the narrower catch
+    // leaked both handles on non-IOException failures. Rethrow to preserve the original error
+    // type for the caller (PR #141 review, finding #4).
+    @Suppress("TooGenericExceptionCaught")
     try {
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             java.io.FileOutputStream(tempFile).use { out ->
                 input.copyTo(out)
             }
         }
-    } catch (e: java.io.IOException) {
+    } catch (t: Throwable) {
         runCatching { tempFile.delete() }
         runCatching { pfd.close() }
-        throw e
+        throw t
     }
     return AndroidInputHandle(
         path = tempFile.absolutePath,
@@ -160,17 +161,24 @@ private fun androidUriOutputHandle(dest: AndroidUriMediaDestination): AndroidOut
 
 private fun copyTempToUri(tempFile: File, dest: AndroidUriMediaDestination) {
     val resolver = KompressorContext.appContext.contentResolver
-    val output = if (dest.isMediaStoreUri) {
-        MediaStoreOutputStrategy.openForWrite(resolver, dest.uri)
+    if (dest.isMediaStoreUri) {
+        // IS_PENDING stays at 1 if the copy throws mid-stream — the half-written file never
+        // becomes gallery-visible. Only a clean `copyTo` + flush + close clears it to 0. See
+        // [MediaStoreOutputStrategy.withWriteStream] KDoc for the rollback contract.
+        MediaStoreOutputStrategy.withWriteStream(resolver, dest.uri) { sink ->
+            java.io.FileInputStream(tempFile).use { src ->
+                src.copyTo(sink)
+            }
+        }
     } else {
         // `error()` is the detekt-approved way to raise IllegalStateException (see
         // config/detekt/detekt.yml UseCheckOrError).
-        resolver.openOutputStream(dest.uri)
+        val output = resolver.openOutputStream(dest.uri)
             ?: error("ContentResolver returned null OutputStream for ${dest.uri}")
-    }
-    output.use { sink ->
-        java.io.FileInputStream(tempFile).use { src ->
-            src.copyTo(sink)
+        output.use { sink ->
+            java.io.FileInputStream(tempFile).use { src ->
+                src.copyTo(sink)
+            }
         }
     }
 }

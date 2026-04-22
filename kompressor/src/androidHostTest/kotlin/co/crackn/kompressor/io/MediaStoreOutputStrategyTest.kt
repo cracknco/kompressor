@@ -24,6 +24,7 @@ import io.mockk.unmockkConstructor
 import io.mockk.verify
 import io.mockk.verifyOrder
 import java.io.ByteArrayOutputStream
+import java.io.FileNotFoundException
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -43,12 +44,10 @@ import kotlin.test.Test
  * than `android.util.Log`, so no static-log mocking is needed — the "was a WARN emitted?"
  * invariant is verified by passing a [RecordingLogger] instance and asserting on its capture.
  *
- * Content assertions on the `ContentValues` objects themselves are intentionally absent: the
- * value-setting logic lives entirely inside the SUT (literal `put(IS_PENDING, 1)` / `put(..., 0)`
- * calls) and is obvious on inspection. Runtime content verification would require stubbing
- * `ContentValues.get(...)` to return what was `put(...)` — non-trivial given each mocked
- * constructor returns a distinct instance — and would not catch any realistic regression.
- * Ordering and call count are the meaningful invariants and are verified below.
+ * The lambda-based [MediaStoreOutputStrategy.withWriteStream] API replaces the earlier
+ * `openForWrite` + auto-commit-on-close pattern per PR #141 review: clearing `IS_PENDING=0`
+ * only after the block returns normally keeps half-written files out of the gallery on failure
+ * paths.
  *
  * End-to-end round-trip (real `contentResolver.insert(...)` + IS_PENDING byte-level verification)
  * lives in `MediaStoreOutputEndToEndTest` in `androidDeviceTest`.
@@ -89,10 +88,10 @@ class MediaStoreOutputStrategyTest {
     }
 
     @Test
-    fun openForWriteSetsIsPendingBeforeOpeningStream() {
+    fun withWriteStreamSetsIsPendingBeforeOpeningStream() {
         every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
 
-        MediaStoreOutputStrategy.openForWrite(resolver, uri)
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri) { /* no-op */ }
 
         // Ordering invariant: IS_PENDING=1 must land before `openOutputStream(uri)` returns —
         // inverting this would let the file become gallery-visible while still being written.
@@ -103,13 +102,13 @@ class MediaStoreOutputStrategyTest {
     }
 
     @Test
-    fun closedStreamClearsIsPending() {
+    fun successfulBlockClearsIsPending() {
         val captured = ByteArrayOutputStream()
         every { resolver.openOutputStream(uri) } returns captured
 
-        val stream = MediaStoreOutputStrategy.openForWrite(resolver, uri)
-        stream.write(byteArrayOf(1, 2, 3))
-        stream.close()
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri) { sink ->
+            sink.write(byteArrayOf(1, 2, 3))
+        }
 
         // Two `update` calls on the happy path: mark pending + clear pending.
         verify(exactly = 2) { resolver.update(uri, any<ContentValues>(), null, null) }
@@ -117,30 +116,58 @@ class MediaStoreOutputStrategyTest {
     }
 
     @Test
-    fun doubleCloseClearsIsPendingExactlyOnce() {
+    fun throwingBlockDoesNotClearIsPending() {
+        // PR #141 review, finding #1: a failure mid-copy must NOT flip IS_PENDING to 0.
+        // Otherwise a half-written file becomes gallery-visible with a broken thumbnail.
         every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
 
-        val stream = MediaStoreOutputStrategy.openForWrite(resolver, uri)
-        stream.close()
-        stream.close()
+        shouldThrow<IllegalStateException> {
+            MediaStoreOutputStrategy.withWriteStream(resolver, uri) { sink ->
+                sink.write(byteArrayOf(1, 2))
+                error("simulated mid-copy failure")
+            }
+        }
 
-        // Idempotence guard: try-with-resources wrappers can call `close()` twice; the
-        // IS_PENDING release is a mutation that must not re-run — it would hit a row the
-        // caller may have already `contentResolver.delete(...)`ed.
-        verify(exactly = 2) { resolver.update(uri, any<ContentValues>(), null, null) }
+        // Exactly ONE update — the markPending(IS_PENDING=1) call. The clearPending(IS_PENDING=0)
+        // update is NOT run because the block threw. The row stays invisible until the caller
+        // either retries or issues contentResolver.delete(uri).
+        verify(exactly = 1) { resolver.update(uri, any<ContentValues>(), null, null) }
     }
 
     @Test
-    fun openForWriteThrowsIllegalStateWhenResolverReturnsNull() {
+    fun openOutputStreamThrowingRollsBackViaDelete() {
+        // PR #141 review, finding #2: if openOutputStream throws AFTER markPending wrote
+        // IS_PENDING=1, the row would otherwise be orphaned forever — invisible to the
+        // gallery with no caller reference to clean it up. Rollback issues a best-effort delete.
+        every { resolver.openOutputStream(uri) } throws FileNotFoundException("provider revoked access")
+
+        shouldThrow<FileNotFoundException> {
+            MediaStoreOutputStrategy.withWriteStream(resolver, uri) { /* never runs */ }
+        }
+
+        // markPending ran, then openOutputStream threw, then rollback delete(uri) ran.
+        verifyOrder {
+            resolver.update(uri, any<ContentValues>(), null, null)
+            resolver.openOutputStream(uri)
+            resolver.delete(uri, null, null)
+        }
+    }
+
+    @Test
+    fun withWriteStreamThrowsIllegalStateWhenResolverReturnsNull() {
         every { resolver.openOutputStream(uri) } returns null
 
-        val e = shouldThrow<IllegalStateException> { MediaStoreOutputStrategy.openForWrite(resolver, uri) }
+        val e = shouldThrow<IllegalStateException> {
+            MediaStoreOutputStrategy.withWriteStream(resolver, uri) { /* never runs */ }
+        }
 
         e.message shouldBe "ContentResolver returned null OutputStream for ${uri}"
+        // Null return still triggers orphan rollback — caller has no stream reference either.
+        verify(exactly = 1) { resolver.delete(uri, null, null) }
     }
 
     @Test
-    fun openForWriteSwallowsSqliteExceptionOnMarkPending() {
+    fun withWriteStreamSwallowsSqliteExceptionOnMarkPending() {
         every {
             resolver.update(uri, any<ContentValues>(), null, null)
         } throws SQLiteException("IS_PENDING column missing")
@@ -150,7 +177,9 @@ class MediaStoreOutputStrategyTest {
         // Graceful fallback: a custom provider aliasing MediaStore.AUTHORITY that doesn't
         // implement IS_PENDING must not block the write — and must leave a WARN trail so the
         // consumer's logger sees what was swallowed.
-        MediaStoreOutputStrategy.openForWrite(resolver, uri, SafeLogger(recorder))
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri, SafeLogger(recorder)) {
+            /* empty block — exercise the fallback path only */
+        }
 
         verify(exactly = 1) { resolver.openOutputStream(uri) }
         val warns = recorder.records.filter { it.level == LogLevel.WARN }
@@ -159,44 +188,43 @@ class MediaStoreOutputStrategyTest {
     }
 
     @Test
-    fun openForWriteSwallowsIllegalArgumentExceptionOnMarkPending() {
+    fun withWriteStreamSwallowsIllegalArgumentExceptionOnMarkPending() {
         every {
             resolver.update(uri, any<ContentValues>(), null, null)
         } throws IllegalArgumentException("unknown column")
         every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
 
-        MediaStoreOutputStrategy.openForWrite(resolver, uri)
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri) { /* no-op */ }
 
         verify(exactly = 1) { resolver.openOutputStream(uri) }
     }
 
     @Test
-    fun openForWriteSwallowsSecurityExceptionOnMarkPending() {
+    fun withWriteStreamSwallowsSecurityExceptionOnMarkPending() {
         every {
             resolver.update(uri, any<ContentValues>(), null, null)
         } throws SecurityException("no write permission")
         every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
 
-        MediaStoreOutputStrategy.openForWrite(resolver, uri)
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri) { /* no-op */ }
 
         verify(exactly = 1) { resolver.openOutputStream(uri) }
     }
 
     @Test
-    fun closeSwallowsFailuresOnClearPending() {
+    fun swallowsFailuresOnClearPending() {
         // mark-pending succeeds but clear-pending fails — the compressed bytes are already on
-        // disk by the time close() runs, so we log a WARN and let the caller proceed.
+        // disk by the time the success path reaches clearPending, so we log a WARN and let the
+        // caller proceed. The block's return value is preserved.
         val callCount = intArrayOf(0)
         every { resolver.update(uri, any<ContentValues>(), null, null) } answers {
             if (callCount[0]++ == 0) 1 else throw SQLiteException("row gone")
         }
         every { resolver.openOutputStream(uri) } returns ByteArrayOutputStream()
 
-        val stream = MediaStoreOutputStrategy.openForWrite(resolver, uri)
+        val result = MediaStoreOutputStrategy.withWriteStream(resolver, uri) { "ok" }
 
-        // Must not throw — bytes are already durable, swallowing a failed clear keeps the
-        // caller's `Result.success` intact.
-        stream.close()
+        result shouldBe "ok"
     }
 
     @Test
@@ -204,7 +232,7 @@ class MediaStoreOutputStrategyTest {
         val sink = ByteArrayOutputStream()
         every { resolver.openOutputStream(uri) } returns sink
 
-        MediaStoreOutputStrategy.openForWrite(resolver, uri).use { out ->
+        MediaStoreOutputStrategy.withWriteStream(resolver, uri) { out ->
             out.write(42) // single-byte overload
             out.write(byteArrayOf(1, 2, 3))
             out.write(byteArrayOf(4, 5, 6, 7, 8), 1, 3) // offset+length overload

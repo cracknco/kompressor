@@ -86,7 +86,8 @@ class AndroidMediaDestinationsTest {
 
         val e = shouldThrow<IllegalArgumentException> { MediaDestination.of(uri) }
 
-        // iOS T5 sibling must emit this exact string — keep in sync with `REMOTE_URL_OUTPUT_REJECTION`.
+        // iOS T5 sibling must emit this exact string — shared `commonMain` source of truth
+        // is `MediaSourceRejections.REMOTE_URL_OUTPUT`.
         e.message shouldBe "Remote URLs not supported. Write locally first then upload."
     }
 
@@ -139,7 +140,9 @@ class AndroidMediaDestinationsTest {
 
     @Test
     fun remoteUrlOutputRejectionConstantMatchesCrossPlatformSpec() {
-        REMOTE_URL_OUTPUT_REJECTION shouldBe "Remote URLs not supported. Write locally first then upload."
+        // Pinned in commonMain now — both Android + (future) iOS import the same literal.
+        MediaSourceRejections.REMOTE_URL_OUTPUT shouldBe
+            "Remote URLs not supported. Write locally first then upload."
     }
 
     @Test

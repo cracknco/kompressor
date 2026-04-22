@@ -59,7 +59,7 @@ class AndroidMediaSourcesTest {
         val e = shouldThrow<IllegalArgumentException> { MediaSource.of(uri) }
 
         // Cross-platform invariant — the iOS `MediaSource.of(NSURL)` sibling (T5) MUST emit the
-        // exact same string. See `AndroidMediaSources.REMOTE_URL_INPUT_REJECTION`.
+        // exact same string. See `MediaSourceRejections.REMOTE_URL_INPUT` (commonMain).
         e.message shouldBe "Remote URLs not supported. Download the content locally first."
     }
 
@@ -126,7 +126,10 @@ class AndroidMediaSourcesTest {
     fun remoteUrlInputRejectionConstantMatchesCrossPlatformSpec() {
         // Pin the literal string — iOS T5 sibling must emit this exact message. A typo-level
         // change here would be an API break even if the tests still pass on a single platform.
-        REMOTE_URL_INPUT_REJECTION shouldBe "Remote URLs not supported. Download the content locally first."
+        // The constant now lives in commonMain (`MediaSourceRejections`) so both platforms
+        // import the same source of truth — no drift possible.
+        MediaSourceRejections.REMOTE_URL_INPUT shouldBe
+            "Remote URLs not supported. Download the content locally first."
     }
 
     @Test

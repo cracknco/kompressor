@@ -42,7 +42,7 @@ public fun MediaSource.Companion.of(uri: Uri): MediaSource.Local =
         // the expression-bodied `when` at `Any` and break the `MediaSource.Local` return type.
         // The rejection message string is the cross-platform invariant consumed by the iOS
         // sibling (T5) — keep byte-identical.
-        "http", "https" -> rejectScheme(REMOTE_URL_INPUT_REJECTION)
+        "http", "https" -> rejectScheme(MediaSourceRejections.REMOTE_URL_INPUT)
         else -> rejectScheme(
             "Unsupported URI scheme: ${uri.scheme ?: "<null>"}. Expected 'file' or 'content'.",
         )
@@ -93,15 +93,6 @@ public fun MediaSource.Companion.of(
     closeOnFinish: Boolean = true,
 ): MediaSource.Local =
     MediaSource.Local.Stream(stream.source(), closeOnFinish = closeOnFinish)
-
-/**
- * Canonical rejection message for remote input URIs. Pinned as a cross-platform invariant:
- * the iOS `MediaSource.of(NSURL)` builder sibling (T5) MUST use the exact same string so that
- * consumer code switching platforms sees identical error text. See
- * [tier1-1-io-model.md §14 R2].
- */
-internal const val REMOTE_URL_INPUT_REJECTION: String =
-    "Remote URLs not supported. Download the content locally first."
 
 /**
  * Internal marker wrapper for `content://` / `file://` URI inputs. The public builder

@@ -43,7 +43,7 @@ public fun MediaDestination.Companion.of(uri: Uri): MediaDestination.Local =
         // See [MediaSource.Companion.of(Uri)] for the `rejectScheme` helper rationale — same
         // Nothing-returning pattern so the expression-bodied `when` unifies at
         // `MediaDestination.Local` instead of `Any`.
-        "http", "https" -> rejectScheme(REMOTE_URL_OUTPUT_REJECTION)
+        "http", "https" -> rejectScheme(MediaSourceRejections.REMOTE_URL_OUTPUT)
         else -> rejectScheme(
             "Unsupported URI scheme: ${uri.scheme ?: "<null>"}. Expected 'file' or 'content'.",
         )
@@ -67,14 +67,6 @@ public fun MediaDestination.Companion.of(
     closeOnFinish: Boolean = true,
 ): MediaDestination.Local =
     MediaDestination.Local.Stream(stream.sink(), closeOnFinish = closeOnFinish)
-
-/**
- * Canonical rejection message for remote output URIs. Pinned as a cross-platform invariant:
- * the iOS `MediaDestination.of(NSURL)` builder sibling (T5) MUST use the exact same string.
- * See [tier1-1-io-model.md §14 R2].
- */
-internal const val REMOTE_URL_OUTPUT_REJECTION: String =
-    "Remote URLs not supported. Write locally first then upload."
 
 /** Sibling of [AndroidMediaSources]' private `rejectScheme`; see that file for rationale. */
 @Suppress("TooGenericExceptionThrown")
