@@ -133,8 +133,10 @@ internal object ErrorTaxonomyRenderer {
         put(
             "ImageCompressionError.IoFailed",
             Guidance(
-                retrySafe = "yes (after user fix)",
-                consumerFix = "Show storage / permission UI and retry when the user resolves it.",
+                retrySafe = "yes (after user fix or transient retry)",
+                consumerFix = "For storage / permission causes, show storage / permission UI and retry when " +
+                    "resolved. For PhotoKit resolution failures, retry once \u2014 iCloud download hiccups " +
+                    "are frequently transient.",
             ),
         )
         put(
@@ -172,8 +174,10 @@ internal object ErrorTaxonomyRenderer {
         put(
             "AudioCompressionError.IoFailed",
             Guidance(
-                retrySafe = "yes (after user fix)",
-                consumerFix = "Show storage / permission UI and retry when resolved.",
+                retrySafe = "yes (after user fix or transient retry)",
+                consumerFix = "For storage / permission causes, show storage / permission UI and retry when " +
+                    "resolved. For PhotoKit resolution failures, retry once \u2014 iCloud download hiccups " +
+                    "are frequently transient.",
             ),
         )
         put(
@@ -237,8 +241,10 @@ internal object ErrorTaxonomyRenderer {
         put(
             "VideoCompressionError.IoFailed",
             Guidance(
-                retrySafe = "yes (after user fix)",
-                consumerFix = "Show storage / permission UI and retry when resolved.",
+                retrySafe = "yes (after user fix or transient retry)",
+                consumerFix = "For storage / permission causes, show storage / permission UI and retry when " +
+                    "resolved. For PhotoKit resolution failures, retry once \u2014 iCloud download hiccups " +
+                    "are frequently transient.",
             ),
         )
         put(
@@ -264,8 +270,9 @@ internal object ErrorTaxonomyRenderer {
         ),
         "$hierarchy.SourceReadFailed" to Guidance(
             retrySafe = "maybe (transient)",
-            consumerFix = "Retry once if `cause` looks transient (network flake during iCloud download); " +
-                "otherwise surface the underlying `details` and let the user reacquire the source.",
+            consumerFix = "Retry once if `cause` looks transient (e.g. a content-provider hiccup); " +
+                "otherwise surface the underlying `details` and let the user reacquire the source. " +
+                "PhotoKit resolution failures surface as `IoFailed` \u2014 see its row.",
         ),
         "$hierarchy.DestinationWriteFailed" to Guidance(
             retrySafe = "yes (after user fix)",

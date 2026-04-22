@@ -271,11 +271,11 @@ The default is `true` because the common case is "open the stream, hand it to co
 
 Both `MediaSource.of(...)` and `MediaDestination.of(...)` builders reject `http` and `https` schemes with a typed `IllegalArgumentException`:
 
-```
+```text
 Remote URLs not supported. Download the content locally first.
 ```
 
-```
+```text
 Remote URLs not supported. Write locally first then upload.
 ```
 

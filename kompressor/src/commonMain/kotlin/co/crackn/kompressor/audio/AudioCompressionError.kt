@@ -53,8 +53,10 @@ public sealed class AudioCompressionError(
     ) : AudioCompressionError("Encoding failed: $details", cause)
 
     /**
-     * I/O failure reading the input file or writing the output (permission denied, disk full,
-     * `content://` URI backed by a revoked provider, etc.).
+     * I/O failure reading the input file or writing the output — permission denied, disk full,
+     * `content://` URI backed by a revoked provider, or a PhotoKit `PHAsset` that could not be
+     * resolved to an `AVAsset` (transient iCloud download error, cancelled
+     * `requestAVAssetForVideo`, etc.).
      */
     public data class IoFailed(
         /** Free-form diagnostic from the platform I/O layer. */
@@ -113,8 +115,11 @@ public sealed class AudioCompressionError(
 
     /**
      * The source stream threw on read. Includes `IOException` during okio [okio.Source]
-     * consumption, `RemoteException` from a content provider, or network failure during
-     * iCloud download of a `PHAsset`.
+     * consumption or `RemoteException` from a content provider.
+     *
+     * PhotoKit asset-resolution failures (iCloud download error, PHAsset corruption, etc.)
+     * surface as [IoFailed], not this subtype — they happen during resolution, before any
+     * stream is opened for reading.
      *
      * @property details Free-form diagnostic — the source identifier and the failing read offset
      *   or platform error message when known.
