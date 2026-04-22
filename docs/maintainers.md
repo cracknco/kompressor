@@ -7,10 +7,12 @@ docs (`docs/guides/`, `docs/reference/`) and the architectural docs
 ## Debugging leaks
 
 CRA-50 ships two leak-detection gates: **LeakCanary** on Android
-(`androidDeviceTest`) and **xctrace Leaks** on iOS (PR CI). A red leak
-gate means a retained native resource in the `MediaCodec` / Media3
-`Transformer` / `AVAssetWriter` / `AVAssetExportSession` path — the
-exact class of bug that produces consumer OOMs after N compressions.
+(`androidDeviceTest`) and an **in-process `WeakReference` + `GC.collect`
+checker** on iOS (`iosSimulatorArm64Test`, part of the `iOS simulator
+tests` job on every PR). A red leak gate means a retained native
+resource in the `MediaCodec` / Media3 `Transformer` / `AVAssetWriter` /
+`AVAssetExportSession` path — the exact class of bug that produces
+consumer OOMs after N compressions.
 
 Cross-ref: the lifecycle contract for every native handle lives in
 [`docs/threading-model.md`](threading-model.md). If a leak is real (not
@@ -67,76 +69,96 @@ pipeline.
   indicates we leaked a launched child without cancelling it. See
   `docs/threading-model.md § Cancellation`.
 
-### iOS — xctrace Leaks
+### iOS — in-process leak checker (`WeakReference` + `GC.collect`)
 
 **Local reproduction** (macOS with Xcode installed):
 
 ```bash
-./scripts/ios-leak-test.sh
+./gradlew :kompressor:iosSimulatorArm64Test --tests '*IosCompressionLeakTest*'
 ```
 
-The script builds `test.kexe`, boots (or reuses) an iPhone simulator,
-runs the test binary scoped to `co.crackn.kompressor.IosCompressionLeakTest.*`
-under `xctrace record --template Leaks`, exports the `leaks` table to
-XML, and counts the rows. Non-zero = exit 1. Artefacts land under
-`kompressor/build/reports/leaks/`:
+The three tests run 50 compression iterations each (image / audio /
+video) inside the normal `iosSimulatorArm64Test` binary. Every
+compressor instance is wrapped in a `kotlin.native.ref.WeakReference`
+before use; once the iteration's stack frame pops, two
+`kotlin.native.runtime.GC.collect()` passes force the mark-and-sweep
+and clear any ref whose target is unreachable. Any non-null ref after
+those two passes fails the test with the leaked instance count and
+index — that's the "CI red" signal.
 
-- `IosCompressionLeakTest.trace` — open in Instruments.app for the
-  interactive allocation graph.
-- `leaks.xml` — textual row-by-row leak listing. Start here to get a
-  count + leaked-object class names.
+This is the iOS sibling of Android's `CompressionLeakTest`, which uses
+LeakCanary's `AppWatcher.expectWeaklyReachable` + `assertNoLeaks` —
+same logical contract (retention zeroed after 50 iterations), same
+catch surface (retained compressor → dangling Media3 / AVFoundation
+native handle → consumer OOM after N compressions).
 
-**CI**: runs on every PR as the `iOS leak tests` job in
-`.github/workflows/pr.yml`. The trace artefact is uploaded even on
-green runs so a reviewer can inspect the allocation baseline.
+**CI**: runs on every PR as part of the `iOS simulator tests` job in
+`.github/workflows/pr.yml` (same gradle task that runs every other
+`iosTest/`). No dedicated workflow, no script, no external tool —
+the check is just one more `@Test` among the rest.
 
-**Interpreting a trace**
+**Why not `xctrace record --template Leaks`?** — That was the previous
+approach (up to commit `a7dc45c`). It depended on Instruments'
+memory-recording services (`VMUTaskMemoryScanner`, `libmalloc`,
+`vmmap`) which are initialised asynchronously after `xcrun simctl
+boot`. On `macos-15-arm64` GitHub runners the init race produced
+recurrent `"Allocations: This device is lacking a required recording
+service"` flakes (see CRA-91 review thread on PR #136). Replacing
+xctrace with an in-process check removes the service dependency, and
+the flake class, entirely.
 
-1. Open `IosCompressionLeakTest.trace` in Instruments. The top pane is
-   the per-second leak-count timeline — look for a monotonically rising
-   line, which signals a per-iteration leak (vs. a one-shot leak at
-   init).
-2. Select a leak row. The **Responsible Library** column tells you
-   whether the leak is ours (`Kompressor.framework` / the test binary)
-   or an OS framework (`AVFoundation.framework` — usually not our bug
-   unless we misuse the API).
-3. Use **Call Tree → Invert Call Tree** to surface the allocation
-   backtrace. Our frames are namespaced with `co.crackn.kompressor`.
-4. Cross-check with
-   [`docs/threading-model.md § iOS`](threading-model.md): every
-   `AVAssetWriter` / `AVAssetReader` / `AVAssetExportSession` needs its
-   teardown call in a `finally` / `defer` path.
+**Interpreting a failure**
+
+The test throws with a message like:
+
+```
+Leaked 1/50 IosImageCompressor instances after 2 GC passes.
+First leaked indices: #42.
+```
+
+There is no automatic retention-chain capture (Kotlin/Native's runtime
+doesn't ship a Shark-equivalent). To debug:
+
+1. Re-run the failing test locally with the simulator attached to
+   Xcode. Instruments.app → "Leaks" template → attach to the test
+   binary → reproduce the leak. The Responsible Library + Invert Call
+   Tree flow is identical to the xctrace workflow it replaced.
+2. Cross-check with [`docs/threading-model.md § iOS`](threading-model.md):
+   every `AVAssetWriter` / `AVAssetReader` / `AVAssetExportSession`
+   needs its teardown call in a `finally` path, and every K/N closure
+   capturing the compressor needs to exit scope before the 50-loop
+   ends.
 
 **Common false-positive sources**:
 
-- First-launch AVFoundation initialisation allocates a handful of one-
-  shot singletons (codec tables, track readers). These appear as
-  leaks on the first iteration only and do not grow — Instruments'
-  baseline delta mode hides them. If the count is stable across all
-  50 iterations, the gate is green.
-- CoreFoundation object-graph retain cycles from `block`-captured
-  `self` references in Obj-C callbacks. Our iOS code is pure
-  Kotlin/Native, so this shouldn't happen — but if it does, the
-  retain chain in Instruments will name the offending block.
+- A lambda captured inside `AVFoundation` completion handler holding
+  an implicit `this` reference — K/N closures promote captured locals
+  to heap cells, which the GC won't collect while the completion
+  handler registration lives on in CF/ObjC internals. Fix is to null
+  out the closure reference inside the completion handler before
+  returning.
+- Singleton test fixtures that lazily retain the compressor via
+  callback registration. Rare, but the symptom is "all 50 iterations
+  leak" (a constant, not accumulating). Audit `TestConstants` /
+  `testutil/` for global state holding compressor-typed slots.
 
 ### When the gate is flaky
 
-A leak that appears once and disappears on retry is rarely a true
-flake — it is almost always a GC / finaliser timing artefact where the
-test asserts *before* the JVM or ObjC runtime has collected a
-still-reachable-but-about-to-be-collected reference. LeakCanary
-already runs multiple GC passes before failing, and xctrace triggers
-its leak pass at process exit (when no runtime references remain).
-If you see a flake:
+An in-process leak checker cannot flake by design — no external
+services, no IPC, no timing race with a runner image. If this test
+fails, it is catching a real retention. Do NOT re-run blindly.
 
-1. Re-run **once**. A genuinely flaky leak (timing-dependent) will
-   reproduce at >50 % rate on a loop.
-2. If it doesn't reproduce, capture the trace / LeakCanary log and
-   file a `test-flake` Linear issue — do **not** disable or relax the
-   assertion.
-3. If it reproduces intermittently, treat it as a real leak and
-   investigate. Intermittent native leaks are the hardest consumer-
-   visible bugs to diagnose.
+1. Reproduce locally on any macOS with Xcode installed:
+   `./gradlew :kompressor:iosSimulatorArm64Test --tests '*IosCompressionLeakTest*'`.
+2. If it reproduces locally → real leak, investigate the compressor
+   you're touching. The message names the modality + iteration index
+   that retained.
+3. If it does NOT reproduce locally (suggesting runner-specific state) →
+   capture the full Gradle test report (`kompressor/build/reports/tests/iosSimulatorArm64Test/`)
+   and file a `test-flake` Linear issue with the runner image version
+   (`macos-*-arm64/<build>`). Still do NOT disable the test.
+
+The Android side via LeakCanary follows the same no-retry policy.
 
 ## Other runbooks
 
