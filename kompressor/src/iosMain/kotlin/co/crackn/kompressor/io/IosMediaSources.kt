@@ -127,8 +127,8 @@ private fun rejectScheme(message: String): Nothing = throw IllegalArgumentExcept
 
 /**
  * Internal marker wrapper for `file://` NSURL inputs. The dispatch in [toIosInputPath] unwraps
- * it back to a filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads
- * already know how to handle.
+ * it back to a filesystem path the iOS compressors' private
+ * `compressFilePath(inputPath, outputPath, ...)` helpers already know how to handle.
  */
 internal class IosUrlMediaSource(val url: NSURL) : MediaSource.Local {
     override fun equals(other: Any?): Boolean = other is IosUrlMediaSource && other.url == url

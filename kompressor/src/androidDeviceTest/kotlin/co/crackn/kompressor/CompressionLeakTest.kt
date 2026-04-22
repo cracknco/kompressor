@@ -10,6 +10,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.createTestImage
@@ -72,8 +74,8 @@ class CompressionLeakTest {
             )
             val output = File(tempDir, "img_$i.jpg")
             val result = compressor.compress(
-                inputPath = input.absolutePath,
-                outputPath = output.absolutePath,
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
                 config = ImageCompressionConfig(quality = DEFAULT_QUALITY),
             )
             check(result.isSuccess) { "Image iter $i failed: ${result.exceptionOrNull()}" }
@@ -101,8 +103,8 @@ class CompressionLeakTest {
             )
             val output = File(tempDir, "audio_$i.m4a")
             val result = compressor.compress(
-                inputPath = input.absolutePath,
-                outputPath = output.absolutePath,
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
                 config = AudioCompressionConfig(bitrate = AUDIO_BITRATE),
             )
             check(result.isSuccess) { "Audio iter $i failed: ${result.exceptionOrNull()}" }
@@ -132,8 +134,8 @@ class CompressionLeakTest {
             )
             val output = File(tempDir, "video_$i.mp4")
             val result = compressor.compress(
-                inputPath = input.absolutePath,
-                outputPath = output.absolutePath,
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
                 config = VideoCompressionConfig(),
             )
             check(result.isSuccess) { "Video iter $i failed: ${result.exceptionOrNull()}" }

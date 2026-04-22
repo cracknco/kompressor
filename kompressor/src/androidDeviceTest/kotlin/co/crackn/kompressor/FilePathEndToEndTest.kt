@@ -66,7 +66,11 @@ class FilePathEndToEndTest {
         val legacy = File(tempDir, "legacy.jpg")
         val novel = File(tempDir, "novel.jpg")
 
-        val legacyResult = image.compress(input.absolutePath, legacy.absolutePath, ImageCompressionConfig())
+        val legacyResult = image.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacy.absolutePath),
+            ImageCompressionConfig(),
+        )
         val novelResult = image.compress(
             input = MediaSource.Local.FilePath(input.absolutePath),
             output = MediaDestination.Local.FilePath(novel.absolutePath),
@@ -84,7 +88,11 @@ class FilePathEndToEndTest {
         val legacy = File(tempDir, "legacy.m4a")
         val novel = File(tempDir, "novel.m4a")
 
-        val legacyResult = audio.compress(input.absolutePath, legacy.absolutePath, AudioCompressionConfig())
+        val legacyResult = audio.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacy.absolutePath),
+            AudioCompressionConfig(),
+        )
         val novelResult = audio.compress(
             input = MediaSource.Local.FilePath(input.absolutePath),
             output = MediaDestination.Local.FilePath(novel.absolutePath),
@@ -104,7 +112,11 @@ class FilePathEndToEndTest {
         val legacy = File(tempDir, "legacy.mp4")
         val novel = File(tempDir, "novel.mp4")
 
-        val legacyResult = video.compress(input.absolutePath, legacy.absolutePath, VideoCompressionConfig())
+        val legacyResult = video.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacy.absolutePath),
+            VideoCompressionConfig(),
+        )
         val novelResult = video.compress(
             input = MediaSource.Local.FilePath(input.absolutePath),
             output = MediaDestination.Local.FilePath(novel.absolutePath),

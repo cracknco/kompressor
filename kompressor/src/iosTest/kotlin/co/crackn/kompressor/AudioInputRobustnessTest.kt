@@ -10,6 +10,8 @@ package co.crackn.kompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
@@ -68,7 +70,10 @@ class AudioInputRobustnessTest {
         )
         val outputPath = testDir + "pcm24_out.m4a"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess, "24-bit WAV compression failed: ${result.exceptionOrNull()}")
         val meta = readAudioMetadata(outputPath)
@@ -83,7 +88,10 @@ class AudioInputRobustnessTest {
         NSFileManager.defaultManager.createFileAtPath(inputPath, contents = null, attributes = null)
         val outputPath = testDir + "empty_out.m4a"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isFailure, "0-byte input must fail")
         val err = result.exceptionOrNull()
@@ -101,7 +109,11 @@ class AudioInputRobustnessTest {
         writeBytes(inputPath, Random(seed = 0xDEADBEEF).nextBytes(GARBAGE_SIZE_BYTES))
         val outputPath = testDir + "garbage_out.m4a"
 
-        val result = compressor.compress(inputPath, outputPath, AudioCompressionConfig())
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            AudioCompressionConfig(),
+        )
 
         assertTrue(result.isFailure, "Random-byte input must fail")
         val err = result.exceptionOrNull()

@@ -15,7 +15,10 @@ val info = kompressor.probe(inputPath).getOrThrow()
 
 when (val verdict = kompressor.canCompress(info)) {
     Supportability.Supported ->
-        kompressor.video.compress(inputPath, outputPath)
+        kompressor.video.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
     is Supportability.Unsupported ->
         showError("Can't compress: ${verdict.reasons.joinToString()}")

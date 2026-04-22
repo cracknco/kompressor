@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -72,8 +74,8 @@ class IosHdrCompressionTest {
         Mp4Generator.generateMp4(outputPath = input, width = 16, height = 16, frameCount = 4, fps = 4)
 
         val result = compressor.compress(
-            inputPath = input,
-            outputPath = output,
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
             config = VideoCompressionConfig(codec = VideoCodec.HEVC),
         )
 
@@ -110,7 +112,10 @@ class IosHdrCompressionTest {
         val output = testDir + "out.mp4"
         Mp4Generator.generateMp4(outputPath = input, width = 16, height = 16, frameCount = 4, fps = 4)
 
-        val result = compressor.compress(input, output)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(result.isSuccess, "Default config must still succeed: ${result.exceptionOrNull()}")
         assertEquals(DynamicRange.SDR, VideoCompressionConfig().dynamicRange)
         assertEquals(VideoCodec.H264, VideoCompressionConfig().codec)

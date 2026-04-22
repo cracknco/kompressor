@@ -6,6 +6,8 @@
 package co.crackn.kompressor.logging
 
 import co.crackn.kompressor.createKompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -28,8 +30,8 @@ class LoggerInjectionTest {
         val kompressor = createKompressor(logger = recorder)
 
         val result = kompressor.image.compress(
-            inputPath = "/does/not/exist.jpg",
-            outputPath = "/tmp/kompressor-injection-ios-out.jpg",
+            MediaSource.Local.FilePath("/does/not/exist.jpg"),
+            MediaDestination.Local.FilePath("/tmp/kompressor-injection-ios-out.jpg"),
         )
 
         assertTrue(result.isFailure, "Nonexistent input must surface as Result.failure")
@@ -54,8 +56,8 @@ class LoggerInjectionTest {
         val kompressor = createKompressor()
 
         val result = kompressor.image.compress(
-            inputPath = "/does/not/exist.jpg",
-            outputPath = "/tmp/kompressor-injection-ios-default-out.jpg",
+            MediaSource.Local.FilePath("/does/not/exist.jpg"),
+            MediaDestination.Local.FilePath("/tmp/kompressor-injection-ios-default-out.jpg"),
         )
         assertTrue(result.isFailure)
     }

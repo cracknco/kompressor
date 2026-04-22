@@ -161,7 +161,7 @@ dedicated arms so their remediation is explicit, while the "no retry" subtypes
 collapse into a reporting fallback. Adapt it to your app's reporting surface.
 
 ```kotlin
-kompressor.video.compress(inputPath, outputPath, config)
+kompressor.video.compress(MediaSource.Local.FilePath(inputPath), MediaDestination.Local.FilePath(outputPath), config)
     .onFailure { err ->
         when (err) {
             is VideoCompressionError.UnsupportedSourceFormat ->

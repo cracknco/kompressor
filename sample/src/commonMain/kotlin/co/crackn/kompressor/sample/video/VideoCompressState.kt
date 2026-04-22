@@ -6,6 +6,7 @@
 package co.crackn.kompressor.sample.video
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.video.MaxResolution
 
 enum class VideoPresetOption { MESSAGING, HIGH_QUALITY, LOW_BANDWIDTH, SOCIAL_MEDIA, CUSTOM }
@@ -20,6 +21,7 @@ data class VideoCompressState(
     val customMaxFrameRate: Int = 30,
     val customKeyFrameInterval: Int = 2,
     val progress: Float = 0f,
+    val phase: CompressionProgress.Phase = CompressionProgress.Phase.COMPRESSING,
     val isCompressing: Boolean = false,
     val result: CompressionResult? = null,
     val error: String? = null,

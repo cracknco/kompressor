@@ -10,6 +10,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.image.ImagePresets
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
 import java.io.File
@@ -45,7 +47,10 @@ class GoldenImageTest {
         val input = createTestImage(tempDir, 1000, 1000)
         val output = File(tempDir, "golden_default.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
@@ -67,7 +72,11 @@ class GoldenImageTest {
         val input = createTestImage(tempDir, 2000, 1000)
         val output = File(tempDir, "golden_thumbnail.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, ImagePresets.THUMBNAIL)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            ImagePresets.THUMBNAIL,
+        )
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
@@ -86,7 +95,11 @@ class GoldenImageTest {
         val input = createTestImage(tempDir, 2000, 1000)
         val output = File(tempDir, "golden_web.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, ImagePresets.WEB)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            ImagePresets.WEB,
+        )
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
@@ -106,8 +119,16 @@ class GoldenImageTest {
         val outputLow = File(tempDir, "golden_q10.jpg")
         val outputHigh = File(tempDir, "golden_q95.jpg")
 
-        compressor.compress(input.absolutePath, outputLow.absolutePath, ImageCompressionConfig(quality = 10))
-        compressor.compress(input.absolutePath, outputHigh.absolutePath, ImageCompressionConfig(quality = 95))
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputLow.absolutePath),
+            ImageCompressionConfig(quality = 10,
+        ))
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputHigh.absolutePath),
+            ImageCompressionConfig(quality = 95,
+        ))
 
         assertTrue(OutputValidators.isValidJpeg(outputLow.readBytes()))
         assertTrue(OutputValidators.isValidJpeg(outputHigh.readBytes()))

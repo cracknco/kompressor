@@ -31,7 +31,8 @@ internal enum class MediaType { IMAGE, AUDIO, VIDEO }
 
 /**
  * Result of resolving a [MediaSource.Local.Stream] / [MediaSource.Local.Bytes] input to a
- * filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads can consume.
+ * filesystem path the platform compressors' private `compressFilePath(inputPath, outputPath, ...)`
+ * helpers can consume.
  *
  * @property path Absolute path of the materialized temp file.
  * @property cleanup Idempotent cleanup closure — deletes the temp file and, when the source

@@ -10,6 +10,8 @@ package co.crackn.kompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.WavGenerator
@@ -67,8 +69,8 @@ class LargeFileCompressionTest {
         val outputPath = tempDir + "long.m4a"
 
         val result = compressor.compress(
-            inputPath,
-            outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             // Mono source → mono output; iOS rejects mono→stereo upmix upfront.
             AudioCompressionConfig(channels = AudioChannels.MONO),
         )

@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionError
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
@@ -54,7 +56,10 @@ class CmykJpegHandlingTest {
 
         val output = File(tempDir, "cmyk_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         if (result.isSuccess) {
             // Conversion path — the compressor must emit an RGB (3-component) JPEG. Verifying

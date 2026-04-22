@@ -83,40 +83,6 @@ internal class AndroidVideoCompressor(
             .intersect(setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265))
     }
 
-    override suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: VideoCompressionConfig,
-        onProgress: suspend (Float) -> Unit,
-    ): Result<CompressionResult> = suspendRunCatching {
-        logger.instrumentCompress(
-            tag = LogTags.VIDEO,
-            startMessage = {
-                "compress() start in=$inputPath out=$outputPath " +
-                    "codec=${config.codec} dynamicRange=${config.dynamicRange} " +
-                    "videoBitrate=${config.videoBitrate} maxRes=${config.maxResolution}"
-            },
-            successMessage = { r ->
-                "compress() ok durationMs=${r.durationMs} " +
-                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
-            },
-            failureMessage = { "compress() failed in=$inputPath" },
-        ) {
-            val startNanos = System.nanoTime()
-            onProgress(0f)
-            val inputSize = resolveMediaInputSize(inputPath)
-
-            deletingOutputOnFailure(outputPath) {
-                runTransformer(inputPath, outputPath, config, onProgress)
-            }
-
-            onProgress(1f)
-            val outputSize = File(outputPath).length()
-            val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
-            CompressionResult(inputSize, outputSize, durationMs)
-        }
-    }
-
     // LongMethod suppressed: the nested try/finally around input/output handle lifecycles is
     // mandated by correctness (see [MediaSource]/[MediaDestination] cleanup contracts). Splitting
     // into helpers would fragment that contract across two call sites.
@@ -141,7 +107,7 @@ internal class AndroidVideoCompressor(
         try {
             val outputHandle = output.toAndroidOutputHandle()
             try {
-                val result = compress(inputHandle.path, outputHandle.tempPath, config) { fraction ->
+                val result = compressFilePath(inputHandle.path, outputHandle.tempPath, config) { fraction ->
                     // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
                     // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
                     if (fraction < 1f) {
@@ -152,7 +118,7 @@ internal class AndroidVideoCompressor(
                             ),
                         )
                     }
-                }.getOrThrow()
+                }
                 // Commit runs under the FINALIZING_OUTPUT phase: bytes move from the temp file
                 // into the MediaStore / SAF URI / consumer Sink here. Failures during commit
                 // propagate as `Result.failure` via the enclosing `suspendRunCatching`.
@@ -174,6 +140,43 @@ internal class AndroidVideoCompressor(
         } finally {
             inputHandle.cleanup()
         }
+    }
+
+    /**
+     * Local-file → local-file compression with the CRA-47 [instrumentCompress] wrapper applied.
+     * Throws [VideoCompressionError] subtypes on failure; the outer MediaSource dispatch wraps
+     * those into `Result.failure` via `suspendRunCatching`.
+     */
+    private suspend fun compressFilePath(
+        inputPath: String,
+        outputPath: String,
+        config: VideoCompressionConfig,
+        onProgress: suspend (Float) -> Unit,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.VIDEO,
+        startMessage = {
+            "compress() start in=$inputPath out=$outputPath " +
+                "codec=${config.codec} dynamicRange=${config.dynamicRange} " +
+                "videoBitrate=${config.videoBitrate} maxRes=${config.maxResolution}"
+        },
+        successMessage = { r ->
+            "compress() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "compress() failed in=$inputPath" },
+    ) {
+        val startNanos = System.nanoTime()
+        onProgress(0f)
+        val inputSize = resolveMediaInputSize(inputPath)
+
+        deletingOutputOnFailure(outputPath) {
+            runTransformer(inputPath, outputPath, config, onProgress)
+        }
+
+        onProgress(1f)
+        val outputSize = File(outputPath).length()
+        val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
+        CompressionResult(inputSize, outputSize, durationMs)
     }
 
     private suspend fun runTransformer(

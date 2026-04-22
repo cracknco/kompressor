@@ -6,6 +6,8 @@
 package co.crackn.kompressor.golden
 
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.readTopLevelMp4Boxes
@@ -54,7 +56,10 @@ class GoldenVideoTest {
     fun defaultConfig_producesValidMp4WithCorrectDimensions() = runTest {
         val output = File(tempDir, "golden_default.mp4")
 
-        val result = compressor.compress(inputFile.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "Default config failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidMp4(output.readBytes()), "Must be valid MP4")
@@ -80,8 +85,8 @@ class GoldenVideoTest {
         val output = File(tempDir, "golden_low.mp4")
 
         val result = compressor.compress(
-            inputFile.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             VideoPresets.LOW_BANDWIDTH,
         )
 
@@ -96,8 +101,8 @@ class GoldenVideoTest {
         val output = File(tempDir, "golden_high.mp4")
 
         val result = compressor.compress(
-            inputFile.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             VideoPresets.HIGH_QUALITY,
         )
 
@@ -114,13 +119,13 @@ class GoldenVideoTest {
         val outputHigh = File(tempDir, "golden_bitrate_high.mp4")
 
         val lowResult = compressor.compress(
-            inputFile.absolutePath,
-            outputLow.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(outputLow.absolutePath),
             VideoCompressionConfig(videoBitrate = 300_000),
         )
         val highResult = compressor.compress(
-            inputFile.absolutePath,
-            outputHigh.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(outputHigh.absolutePath),
             VideoCompressionConfig(videoBitrate = 3_000_000),
         )
 
@@ -137,8 +142,8 @@ class GoldenVideoTest {
         val output = File(tempDir, "golden_size.mp4")
 
         val result = compressor.compress(
-            inputFile.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             VideoCompressionConfig(videoBitrate = 1_200_000),
         )
 

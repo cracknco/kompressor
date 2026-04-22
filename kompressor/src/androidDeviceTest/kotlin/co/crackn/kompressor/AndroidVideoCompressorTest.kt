@@ -6,6 +6,8 @@
 package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
@@ -55,8 +57,8 @@ class AndroidVideoCompressorTest {
         val output = File(tempDir, "output.mp4")
 
         val result = compressor.compress(
-            inputPath = inputFile.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
 
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
@@ -74,8 +76,8 @@ class AndroidVideoCompressorTest {
         val config = VideoCompressionConfig(maxResolution = MaxResolution.SD_480)
 
         val result = compressor.compress(
-            inputPath = inputFile.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = config,
         )
 
@@ -91,13 +93,13 @@ class AndroidVideoCompressorTest {
         val outputHigh = File(tempDir, "high_bitrate.mp4")
 
         val lowResult = compressor.compress(
-            inputFile.absolutePath,
-            outputLow.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(outputLow.absolutePath),
             VideoCompressionConfig(videoBitrate = 200_000),
         )
         val highResult = compressor.compress(
-            inputFile.absolutePath,
-            outputHigh.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(outputHigh.absolutePath),
             VideoCompressionConfig(videoBitrate = 3_000_000),
         )
 
@@ -115,9 +117,9 @@ class AndroidVideoCompressorTest {
         val progressValues = mutableListOf<Float>()
 
         compressor.compress(
-            inputPath = inputFile.absolutePath,
-            outputPath = output.absolutePath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            onProgress = { progressValues.add(it.fraction) },
         )
 
         assertTrue(progressValues.isNotEmpty())
@@ -131,7 +133,10 @@ class AndroidVideoCompressorTest {
     @Test
     fun compressVideo_fileNotFound_returnsFailure() = runTest {
         val output = File(tempDir, "out.mp4")
-        val result = compressor.compress("/nonexistent/video.mp4", output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/video.mp4"),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isFailure)
     }
 
@@ -173,7 +178,10 @@ class AndroidVideoCompressorTest {
         val garbage = File(tempDir, "garbage.mp4").apply { writeBytes(ByteArray(256) { 0xFF.toByte() }) }
         val output = File(tempDir, "out_from_garbage.mp4")
 
-        val result = compressor.compress(garbage.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(garbage.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Malformed input must produce a graceful Result.failure, not a crash")
         val err = result.exceptionOrNull()
@@ -202,7 +210,10 @@ class AndroidVideoCompressorTest {
             kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
         )
         val job = scope.launch {
-            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
+            slowCompressor.compress(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+            )
         }
 
         kotlinx.coroutines.delay(200L)
@@ -226,7 +237,10 @@ class AndroidVideoCompressorTest {
         AudioInputFixtures.createMp4WithVideoAndAudio(input, durationSeconds = 2)
         val output = File(tempDir, "v_plus_a_output.mp4")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isSuccess, "V+A compression failed: ${result.exceptionOrNull()}")
 
         assertTrue(hasAudioTrack(output), "Output MP4 must keep its audio track after video compression")
@@ -240,8 +254,8 @@ class AndroidVideoCompressorTest {
     fun compressVideo_messagingPreset_producesValidOutput() = runTest {
         val output = File(tempDir, "messaging.mp4")
         val result = compressor.compress(
-            inputFile.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             VideoPresets.MESSAGING,
         )
         assertTrue(result.isSuccess, "Messaging preset failed: ${result.exceptionOrNull()}")
@@ -255,8 +269,8 @@ class AndroidVideoCompressorTest {
         val config = VideoCompressionConfig(maxResolution = MaxResolution.Original)
 
         val result = compressor.compress(
-            inputFile.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config,
         )
 

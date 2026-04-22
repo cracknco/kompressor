@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.createTestImage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -57,7 +59,10 @@ class IoFaultInjectionTest {
         assertTrue(readOnlyDir.setWritable(false, false), "setWritable(false) must succeed")
         val output = File(readOnlyDir, "out.jpg")
 
-        val result = imageCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = imageCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         assertTrue(!output.exists(), "No partial output should remain")
@@ -70,7 +75,10 @@ class IoFaultInjectionTest {
         // Place output "under" a regular file → mkdirs cannot succeed and FileOutputStream fails.
         val output = File(regularFile, "out.jpg")
 
-        val result = imageCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = imageCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         assertTrue(!output.exists(), "No partial output should remain")
@@ -81,7 +89,10 @@ class IoFaultInjectionTest {
         val input = createTestImage(tempDir, 200, 200)
         val output = File(tempDir, "output-dir").apply { mkdirs() }
 
-        val result = imageCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = imageCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         // The directory itself is fine; what we assert is that no JPEG was written *into* it
@@ -94,7 +105,10 @@ class IoFaultInjectionTest {
         val missing = File(tempDir, "does-not-exist.wav")
         val output = File(tempDir, "out.m4a")
 
-        val result = audioCompressor.compress(missing.absolutePath, output.absolutePath)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(missing.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         val ex = result.exceptionOrNull()
@@ -114,7 +128,10 @@ class IoFaultInjectionTest {
         }
         val output = File(tempDir, "output-dir").apply { mkdirs() }
 
-        val result = audioCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         val ex = result.exceptionOrNull()

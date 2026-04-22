@@ -7,6 +7,8 @@ package co.crackn.kompressor
 
 import android.media.MediaMetadataRetriever
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import java.io.File
@@ -96,8 +98,8 @@ class VideoRotationPreservationTest {
 
         val output = File(tempDir, "output-$rotation.mp4")
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
         assertTrue(result.isSuccess, "Compression failed for rotation=$rotation: ${result.exceptionOrNull()}")
 

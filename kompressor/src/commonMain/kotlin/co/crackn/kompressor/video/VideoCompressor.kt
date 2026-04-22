@@ -43,58 +43,43 @@ public interface VideoCompressor {
     public val supportedOutputFormats: Set<String> get() = emptySet()
 
     /**
-     * Compress a video file.
+     * Compress a video file from a [MediaSource] to a [MediaDestination].
      *
      * Cancel the calling coroutine scope to abort the compression (structured concurrency).
      *
      * Failures surface as [VideoCompressionError] subtypes wrapped in [Result.failure]:
      * callers can `when`-branch on the concrete type to show actionable UI.
      *
-     * @param inputPath Absolute filesystem path to the source video.
-     * @param outputPath Absolute filesystem path for the compressed output.
-     * @param config Compression settings (codec, resolution, bitrate, etc.).
-     * @param onProgress Called with a value between 0.0 and 1.0 as compression progresses.
-     * @return [Result] wrapping [CompressionResult] on success, or a [VideoCompressionError] on failure.
-     *
-     * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
-     * calls from different coroutines or OS processes on the same instance are safe provided
-     * every call writes to a distinct output path. Concurrent calls that share an output path
-     * produce undefined results. See `docs/threading-model.md`.
-     */
-    public suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: VideoCompressionConfig = VideoCompressionConfig(),
-        onProgress: suspend (Float) -> Unit = {},
-    ): Result<CompressionResult>
-
-    /**
-     * Compress a video from a rich [MediaSource] to a [MediaDestination].
-     *
-     * See [co.crackn.kompressor.image.ImageCompressor.compress] for the rationale of the
-     * rich-source overload. Video compression emits [CompressionProgress] updates via
-     * [onProgress] — `Phase.COMPRESSING` during active transcoding, terminated by
-     * `Phase.FINALIZING_OUTPUT(1f)` on success. `Phase.MATERIALIZING_INPUT` will be added when
-     * CRA-95 wires up stream / bytes inputs (CRA-93 for Android `Uri`, CRA-94 for iOS `NSURL` /
-     * `PHAsset` / `NSData`); until then non-`FilePath` inputs throw [UnsupportedOperationException]
-     * at dispatch time.
+     * Progress emission surfaces as [CompressionProgress] updates via [onProgress] — possible
+     * phases:
+     *  - `Phase.MATERIALIZING_INPUT` while a non-file input (Stream / Bytes / Uri / PHAsset) is
+     *    materialized to a local temp file,
+     *  - `Phase.COMPRESSING` during active transcoding,
+     *  - `Phase.FINALIZING_OUTPUT` while the temp file is committed to the requested destination
+     *    (MediaStore, consumer Sink, etc.), terminated by `Phase.FINALIZING_OUTPUT(1f)` on success.
      *
      * On failure, the last emission a consumer sees is the most recent `Phase.COMPRESSING`
-     * fraction — `Phase.FINALIZING_OUTPUT` is emitted only after the inner pipeline has
-     * succeeded. Consumer UIs keying on `FINALIZING_OUTPUT(1f)` as the terminal-success signal
-     * are therefore safe; UIs wanting to reset on failure should key on the surrounding
-     * `Result.isFailure`.
+     * fraction — `Phase.FINALIZING_OUTPUT(1f)` is emitted only after the inner pipeline has
+     * succeeded and the output has been committed. Consumer UIs keying on `FINALIZING_OUTPUT(1f)`
+     * as the terminal-success signal are therefore safe; UIs wanting to reset on failure should
+     * key on the surrounding `Result.isFailure`.
      *
-     * @param input Media source — see [MediaSource] and platform-specific builders.
-     * @param output Media destination — see [MediaDestination] and platform-specific builders.
+     * Inputs and outputs cover every platform-native form via the [MediaSource] / [MediaDestination]
+     * sealed hierarchies. See [docs/concepts/io-model.md](https://github.com/cracknco/kompressor/blob/main/docs/concepts/io-model.md)
+     * for the full model, memory invariants, and `closeOnFinish` contract.
+     *
+     * @param input Source media — see [MediaSource] and platform-specific builders.
+     * @param output Destination — see [MediaDestination] and platform-specific builders.
      * @param config Compression settings (codec, resolution, bitrate, etc.).
      * @param onProgress Called with a [CompressionProgress] reflecting the current phase and
      *   per-phase fraction in `[0.0, 1.0]`. Fraction resets at each phase transition.
      * @return [Result] wrapping [CompressionResult] on success, or a [VideoCompressionError]
-     *   subtype on failure. Until CRA-95 lands, non-`FilePath` inputs/outputs surface an
-     *   [UnsupportedOperationException].
+     *   subtype on failure.
      *
-     * **Thread-safety:** same guarantees as the path-based overload. See `docs/threading-model.md`.
+     * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
+     * calls from different coroutines or OS processes on the same instance are safe provided
+     * every call writes to a distinct destination. Concurrent calls that share a destination
+     * produce undefined results. See `docs/threading-model.md`.
      */
     public suspend fun compress(
         input: MediaSource,

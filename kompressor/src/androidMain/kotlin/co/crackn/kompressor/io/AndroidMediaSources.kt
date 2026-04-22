@@ -97,8 +97,8 @@ public fun MediaSource.Companion.of(
 /**
  * Internal marker wrapper for `content://` / `file://` URI inputs. The public builder
  * [MediaSource.Companion.of] returns this; the Android compressor dispatch in
- * [toAndroidInputPath] unwraps it back to a string path that the legacy
- * `compress(inputPath, outputPath, ...)` overloads already know how to handle.
+ * [toAndroidInputPath] unwraps it back to a string path that the Android compressors'
+ * private `compressFilePath(inputPath, outputPath, ...)` helpers already know how to handle.
  */
 internal class AndroidUriMediaSource(val uri: Uri) : MediaSource.Local {
     override fun equals(other: Any?): Boolean = other is AndroidUriMediaSource && other.uri == uri

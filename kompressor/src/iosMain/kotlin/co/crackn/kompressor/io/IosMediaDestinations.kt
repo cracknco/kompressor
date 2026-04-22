@@ -52,9 +52,10 @@ private fun rejectDestinationScheme(message: String): Nothing = throw IllegalArg
 
 /**
  * Internal marker wrapper for `file://` NSURL outputs. The dispatch in [toIosOutputHandle]
- * unwraps it back to a filesystem path the legacy `compress(inputPath, outputPath, ...)`
- * overloads already know how to handle. No temp-file materialization is required for `file://`
- * URLs; the iOS compressor writes directly to the unwrapped path.
+ * unwraps it back to a filesystem path the iOS compressors' private
+ * `compressFilePath(inputPath, outputPath, ...)` helpers already know how to handle. No temp-file
+ * materialization is required for `file://` URLs; the iOS compressor writes directly to the
+ * unwrapped path.
  */
 internal class IosUrlMediaDestination(val url: NSURL) : MediaDestination.Local {
     override fun equals(other: Any?): Boolean = other is IosUrlMediaDestination && other.url == url

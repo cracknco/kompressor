@@ -9,7 +9,10 @@ Compression uses Kotlin's structured concurrency: the `compress(...)` call is a 
 
 ```kotlin
 val job = scope.launch {
-    kompressor.video.compress(inputPath, outputPath)
+    kompressor.video.compress(
+        MediaSource.Local.FilePath(inputPath),
+        MediaDestination.Local.FilePath(outputPath),
+    )
 }
 
 // Later (user tapped "Cancel", scope is tearing down, etc.)
@@ -61,7 +64,11 @@ Image compression is fast, but still a `suspend` function — it checks `current
 
 ```kotlin
 val job = scope.launch {
-    kompressor.image.compress(inputPath, outputPath, ImagePresets.WEB)
+    kompressor.image.compress(
+        MediaSource.Local.FilePath(inputPath),
+        MediaDestination.Local.FilePath(outputPath),
+        ImagePresets.WEB,
+    )
 }
 job.cancel()   // aborts if it hasn't already finished
 ```

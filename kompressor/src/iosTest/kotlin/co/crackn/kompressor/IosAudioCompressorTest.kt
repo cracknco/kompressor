@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import kotlinx.cinterop.ExperimentalForeignApi
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
@@ -58,7 +60,10 @@ class IosAudioCompressorTest {
         val inputPath = createTestWavFile(2, SAMPLE_RATE_44K, STEREO)
         val outputPath = testDir + "output.m4a"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess)
         val compression = result.getOrThrow()
@@ -76,8 +81,16 @@ class IosAudioCompressorTest {
         // 64kbps and 192kbps both sit inside the supported AAC stereo/44.1kHz range.
         // Earlier versions of this test used 32kbps which AVAssetWriter silently clamps
         // to its per-channel minimum on stereo — making both outputs identical size.
-        val lowResult = compressor.compress(inputPath, outputLow, AudioCompressionConfig(bitrate = 64_000))
-        val highResult = compressor.compress(inputPath, outputHigh, AudioCompressionConfig(bitrate = 192_000))
+        val lowResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputLow),
+            AudioCompressionConfig(bitrate = 64_000,
+        ))
+        val highResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputHigh),
+            AudioCompressionConfig(bitrate = 192_000,
+        ))
         assertTrue(lowResult.isSuccess)
         assertTrue(highResult.isSuccess)
 
@@ -97,8 +110,16 @@ class IosAudioCompressorTest {
         val outputStereo = testDir + "stereo.m4a"
         val config = AudioCompressionConfig(bitrate = 64_000)
 
-        val monoResult = compressor.compress(inputPath, outputMono, config.copy(channels = AudioChannels.MONO))
-        val stereoResult = compressor.compress(inputPath, outputStereo, config.copy(channels = AudioChannels.STEREO))
+        val monoResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputMono),
+            config.copy(channels = AudioChannels.MONO,
+        ))
+        val stereoResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputStereo),
+            config.copy(channels = AudioChannels.STEREO,
+        ))
         assertTrue(monoResult.isSuccess, "mono compression failed: ${monoResult.exceptionOrNull()}")
         assertTrue(stereoResult.isSuccess, "stereo compression failed: ${stereoResult.exceptionOrNull()}")
 
@@ -116,8 +137,8 @@ class IosAudioCompressorTest {
         val outputPath = testDir + "mono_to_stereo.m4a"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioCompressionConfig(channels = AudioChannels.STEREO),
         )
 
@@ -144,10 +165,10 @@ class IosAudioCompressorTest {
         val started = kotlinx.coroutines.CompletableDeferred<Unit>()
         val job = scope.launch {
             compressor.compress(
-                inputPath = inputPath,
-                outputPath = outputPath,
+                MediaSource.Local.FilePath(inputPath),
+                MediaDestination.Local.FilePath(outputPath),
                 config = AudioCompressionConfig(sampleRate = 22_050),
-                onProgress = { p -> if (p > 0f && !started.isCompleted) started.complete(Unit) },
+                onProgress = { p -> if (p.fraction > 0f && !started.isCompleted) started.complete(Unit) },
             )
         }
         kotlinx.coroutines.withTimeout(5_000L) { started.await() }
@@ -163,7 +184,10 @@ class IosAudioCompressorTest {
 
     @Test
     fun compressAudio_fileNotFound_returnsFailure() = runTest {
-        val result = compressor.compress("/nonexistent/audio.wav", testDir + "out.m4a")
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/audio.wav"),
+            MediaDestination.Local.FilePath(testDir + "out.m4a"),
+        )
         assertTrue(result.isFailure)
     }
 
@@ -174,9 +198,9 @@ class IosAudioCompressorTest {
         val progressValues = mutableListOf<Float>()
 
         compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            onProgress = { progressValues.add(it.fraction) },
         )
 
         assertTrue(progressValues.isNotEmpty())
@@ -193,8 +217,8 @@ class IosAudioCompressorTest {
         val outputPath = testDir + "48k_to_44k.m4a"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_44K),
         )
 
@@ -213,8 +237,8 @@ class IosAudioCompressorTest {
         val outputPath = testDir + "voice_message.m4a"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioPresets.VOICE_MESSAGE,
         )
 
@@ -233,8 +257,8 @@ class IosAudioCompressorTest {
         val outputPath = testDir + "stereo_to_mono.m4a"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioCompressionConfig(channels = AudioChannels.MONO),
         )
 
@@ -261,8 +285,8 @@ class IosAudioCompressorTest {
         val outputPath = testDir + "duration_check.m4a"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_22K),
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")

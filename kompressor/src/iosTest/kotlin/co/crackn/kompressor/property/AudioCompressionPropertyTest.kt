@@ -12,6 +12,8 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -80,7 +82,11 @@ class AudioCompressionPropertyTest {
             val outputPath = testDir + "output_${bitrate}_${sampleRate}_${channels.count}.m4a"
             writeBytes(inputPath, wavBytes)
 
-            val result = compressor.compress(inputPath, outputPath, config)
+            val result = compressor.compress(
+                MediaSource.Local.FilePath(inputPath),
+                MediaDestination.Local.FilePath(outputPath),
+                config,
+            )
 
             // Either the compressor succeeds and produces a valid M4A, or it rejects the
             // configuration with a typed `UnsupportedConfiguration` (e.g. upmix) or
@@ -141,7 +147,11 @@ class AudioCompressionPropertyTest {
             val outputPath = testDir + "smoke_output_$label.m4a"
             writeBytes(inputPath, wavBytes)
 
-            val result = compressor.compress(inputPath, outputPath, config)
+            val result = compressor.compress(
+                MediaSource.Local.FilePath(inputPath),
+                MediaDestination.Local.FilePath(outputPath),
+                config,
+            )
 
             assertTrue(
                 result.isSuccess,
@@ -166,9 +176,9 @@ class AudioCompressionPropertyTest {
         val progressValues = mutableListOf<Float>()
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            onProgress = { progressValues.add(it.fraction) },
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
 

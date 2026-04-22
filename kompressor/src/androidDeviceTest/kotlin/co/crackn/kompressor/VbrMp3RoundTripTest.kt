@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.copyResourceToCache
@@ -63,7 +65,11 @@ class VbrMp3RoundTripTest {
             channels = AudioChannels.MONO,
         )
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            config,
+        )
 
         assertTrue(result.isSuccess, "VBR MP3 compression must succeed: ${result.exceptionOrNull()}")
         val compression = result.getOrThrow()

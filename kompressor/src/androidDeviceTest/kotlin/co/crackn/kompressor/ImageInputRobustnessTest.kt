@@ -9,6 +9,8 @@ import android.graphics.Bitmap
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionError
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -47,7 +49,10 @@ class ImageInputRobustnessTest {
         val input = File(tempDir, "rgba16.png").apply { writeBytes(MinimalPngFixtures.rgba16bit2x2()) }
         val output = File(tempDir, "rgba16_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "16bpc PNG compression failed: ${result.exceptionOrNull()}")
         assertTrue(output.length() > 0, "Output must be non-empty")
@@ -58,7 +63,10 @@ class ImageInputRobustnessTest {
         val input = File(tempDir, "indexed.png").apply { writeBytes(MinimalPngFixtures.indexed4x4()) }
         val output = File(tempDir, "indexed_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "Indexed PNG compression failed: ${result.exceptionOrNull()}")
         assertTrue(output.length() > 0)
@@ -77,7 +85,10 @@ class ImageInputRobustnessTest {
         }
         val output = File(tempDir, "interlaced_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         if (result.isSuccess) {
             assertTrue(output.length() > 0, "Successful compression must produce a non-empty file")
@@ -98,7 +109,10 @@ class ImageInputRobustnessTest {
         }
         val output = File(tempDir, "truncated_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Truncated JPEG must fail")
         val err = result.exceptionOrNull()
@@ -118,7 +132,10 @@ class ImageInputRobustnessTest {
         val input = File(tempDir, "corrupt_exif.jpg").apply { writeBytes(corrupted) }
         val output = File(tempDir, "corrupt_exif_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(
             result.isSuccess,

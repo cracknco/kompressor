@@ -15,7 +15,8 @@ import platform.Foundation.NSURL
 
 /**
  * iOS-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
- * filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads can consume.
+ * filesystem path the iOS compressors' private `compressFilePath(inputPath, outputPath, ...)`
+ * helpers can consume.
  *
  * Sibling of `AndroidMediaDispatch` (androidMain). [IosUrlMediaSource] /
  * [IosPHAssetMediaSource] / [IosDataMediaSource] / [IosUrlMediaDestination] live in

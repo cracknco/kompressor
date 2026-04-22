@@ -8,6 +8,8 @@ package co.crackn.kompressor
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -56,7 +58,10 @@ class ConcurrentCompressionTest {
         val results = coroutineScope {
             inputs.zip(outputs).map { (input, output) ->
                 async(Dispatchers.Default) {
-                    audio.compress(input.absolutePath, output.absolutePath)
+                    audio.compress(
+                        MediaSource.Local.FilePath(input.absolutePath),
+                        MediaDestination.Local.FilePath(output.absolutePath),
+                    )
                 }
             }.awaitAll()
         }
@@ -86,10 +91,16 @@ class ConcurrentCompressionTest {
 
         val results = coroutineScope {
             val audioDeferreds = audioInputs.zip(audioOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { audio.compress(i.absolutePath, o.absolutePath) }
+                async(Dispatchers.Default) { audio.compress(
+                    MediaSource.Local.FilePath(i.absolutePath),
+                    MediaDestination.Local.FilePath(o.absolutePath),
+                ) }
             }
             val imageDeferreds = imageInputs.zip(imageOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { image.compress(i.absolutePath, o.absolutePath) }
+                async(Dispatchers.Default) { image.compress(
+                    MediaSource.Local.FilePath(i.absolutePath),
+                    MediaDestination.Local.FilePath(o.absolutePath),
+                ) }
             }
             (audioDeferreds + imageDeferreds).awaitAll()
         }
@@ -122,7 +133,10 @@ class ConcurrentCompressionTest {
         val results = coroutineScope {
             inputs.zip(outputs).map { (input, output) ->
                 async(Dispatchers.Default) {
-                    audio.compress(input.absolutePath, output.absolutePath)
+                    audio.compress(
+                        MediaSource.Local.FilePath(input.absolutePath),
+                        MediaDestination.Local.FilePath(output.absolutePath),
+                    )
                 }
             }.awaitAll()
         }

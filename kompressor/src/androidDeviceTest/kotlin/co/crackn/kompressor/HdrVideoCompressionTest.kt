@@ -7,6 +7,8 @@ package co.crackn.kompressor
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.DynamicRange
@@ -62,8 +64,8 @@ class HdrVideoCompressionTest {
         Mp4Generator.generateMp4(input, width = 32, height = 32, frameCount = 8, fps = 8)
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = VideoCompressionConfig(codec = VideoCodec.HEVC),
         )
 
@@ -79,8 +81,8 @@ class HdrVideoCompressionTest {
         Mp4Generator.generateMp4(input, width = 32, height = 32, frameCount = 8, fps = 8)
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = VideoCompressionConfig(codec = VideoCodec.HEVC, dynamicRange = DynamicRange.HDR10),
         )
 

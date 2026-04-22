@@ -20,9 +20,12 @@ val kompressor = createKompressor()
 ## Compress an image
 
 ```kotlin
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
 val result = kompressor.image.compress(
-    inputPath  = "/path/to/photo.jpg",
-    outputPath = "/path/to/photo_compressed.jpg",
+    input  = MediaSource.Local.FilePath("/path/to/photo.jpg"),
+    output = MediaDestination.Local.FilePath("/path/to/photo_compressed.jpg"),
 )
 
 result.onSuccess { r ->
@@ -32,24 +35,28 @@ result.onSuccess { r ->
 }
 ```
 
+<Note>
+  `MediaSource` and `MediaDestination` are sealed hierarchies — you can also pass a `Uri` (Android), `NSURL` / `PHAsset` (iOS), an `okio.Source` / `okio.Sink`, or raw `ByteArray`. See [the I/O model](/concepts/io-model) for the full set of builders.
+</Note>
+
 ## Compress a video
 
 ```kotlin
 val result = kompressor.video.compress(
-    inputPath  = "/path/to/video.mp4",
-    outputPath = "/path/to/video_compressed.mp4",
-    onProgress = { fraction -> updateProgressBar(fraction) },
+    input  = MediaSource.Local.FilePath("/path/to/video.mp4"),
+    output = MediaDestination.Local.FilePath("/path/to/video_compressed.mp4"),
+    onProgress = { progress -> updateProgressBar(progress.fraction) },
 )
 ```
 
-The `onProgress` callback is a regular `suspend (Float) -> Unit` — values flow from `0.0` to `1.0`.
+The `onProgress` callback receives a `CompressionProgress` with `phase` and `fraction` (`0.0`–`1.0`). Use `progress.phase` to swap UI labels between materializing, compressing, and finalizing — see [the I/O model](/concepts/io-model#progression-phases).
 
 ## Compress audio
 
 ```kotlin
 val result = kompressor.audio.compress(
-    inputPath  = "/path/to/recording.wav",
-    outputPath = "/path/to/recording.m4a",
+    input  = MediaSource.Local.FilePath("/path/to/recording.wav"),
+    output = MediaDestination.Local.FilePath("/path/to/recording.m4a"),
 )
 ```
 

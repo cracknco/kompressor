@@ -89,57 +89,13 @@ import platform.posix.memcpy
 
 /** iOS image compressor backed by [UIImage] and Core Graphics / ImageIO. */
 // TooManyFunctions suppressed because the NSData fast-path requires a dedicated
-// `instrumentCompressFromData` helper (CRA-47 observability parity with the legacy
-// `compress(inputPath, outputPath, config)` entry) which pushes the class one past the
-// default threshold. Each helper remains narrowly scoped and single-purpose.
+// `instrumentCompressFromData` helper (CRA-47 observability parity with the file-path
+// compress entry) which pushes the class one past the default threshold. Each helper
+// remains narrowly scoped and single-purpose.
 @Suppress("TooManyFunctions")
 internal class IosImageCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : ImageCompressor {
-
-    // LongMethod suppressed: the body is a single `instrumentCompress` call whose shape (tag +
-    // three message builders) is mandated by CRA-47 observability. Splitting the message
-    // builders out as private helpers only shifts line count around without clarifying intent,
-    // since each one is scoped to compress() and has no other caller.
-    @Suppress("LongMethod")
-    override suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: ImageCompressionConfig,
-    ): Result<CompressionResult> = suspendRunCatching {
-        logger.instrumentCompress(
-            tag = LogTags.IMAGE,
-            startMessage = {
-                "compress() start in=$inputPath out=$outputPath " +
-                    "fmt=${config.format} quality=${config.quality} " +
-                    "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
-            },
-            successMessage = { r ->
-                "compress() ok durationMs=${r.durationMs} " +
-                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
-            },
-            failureMessage = { "compress() failed in=$inputPath" },
-        ) {
-            try {
-                doCompress(inputPath, outputPath, config)
-            } catch (e: ImageCompressionError) {
-                throw e
-            } catch (e: IllegalArgumentException) {
-                throw e
-            } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
-                // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
-                // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
-                // caller subsequently dereferences a member. Classify it as `DecodingFailed` so
-                // callers see the same typed error as the Android side.
-                throw ImageCompressionError.DecodingFailed(
-                    "Platform decoder failed (nil image): ${e.message ?: "UIImage(contentsOfFile)"}",
-                    e,
-                )
-            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-                throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
-            }
-        }
-    }
 
     // LongMethod suppressed: the nested try/finally structure (inHandle outer, outHandle inner)
     // is mandated by lifecycle cleanup correctness — see the inline comment on the file-path
@@ -200,12 +156,11 @@ internal class IosImageCompressor(
             try {
                 val outHandle = output.toIosOutputHandle()
                 try {
-                    // Call the public `compress(inputPath, outputPath, config)` entry point
-                    // instead of `doCompress(...)` directly — the public path wraps with
+                    // Route through the private `compressFilePath` helper — it wraps with
                     // `logger.instrumentCompress` so the CRA-47 start/success/failure log lines
                     // fire for every MediaSource/MediaDestination caller, matching the audio /
-                    // video siblings [PR #142 review, finding #2].
-                    val result = compress(inHandle.path, outHandle.tempPath, config).getOrThrow()
+                    // video siblings.
+                    val result = compressFilePath(inHandle.path, outHandle.tempPath, config)
                     outHandle.commit()
                     result
                 } finally {
@@ -225,11 +180,56 @@ internal class IosImageCompressor(
     }
 
     /**
-     * Observability-wrapped variant of [doCompressFromData]. The public `compress(inputPath, ...)`
-     * entry point uses `logger.instrumentCompress` to emit CRA-47 start/success/failure log lines,
-     * but the NSData path has no matching public entry (no `compress(NSData, ...)` overload) — so
-     * we duplicate the instrumentation block here. Exception classification mirrors
-     * [compress] `(inputPath, outputPath, config)` line-for-line.
+     * Local-file → local-file compression with the CRA-47 [instrumentCompress] wrapper applied.
+     * Throws the typed [ImageCompressionError] hierarchy on failure; the outer MediaSource
+     * dispatch's `suspendRunCatching` converts those throws into `Result.failure`.
+     */
+    // LongMethod suppressed: the body is a single `instrumentCompress` call whose shape (tag +
+    // three message builders) is mandated by CRA-47 observability. Splitting the message
+    // builders out as private helpers only shifts line count around without clarifying intent.
+    @Suppress("LongMethod")
+    private suspend fun compressFilePath(
+        inputPath: String,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.IMAGE,
+        startMessage = {
+            "compress() start in=$inputPath out=$outputPath " +
+                "fmt=${config.format} quality=${config.quality} " +
+                "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
+        },
+        successMessage = { r ->
+            "compress() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "compress() failed in=$inputPath" },
+    ) {
+        try {
+            doCompress(inputPath, outputPath, config)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+            // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
+            // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
+            // caller subsequently dereferences a member. Classify it as `DecodingFailed` so
+            // callers see the same typed error as the Android side.
+            throw ImageCompressionError.DecodingFailed(
+                "Platform decoder failed (nil image): ${e.message ?: "UIImage(contentsOfFile)"}",
+                e,
+            )
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
+    }
+
+    /**
+     * Observability-wrapped variant of [doCompressFromData] for the NSData fast-path. Parallels
+     * [compressFilePath]'s `instrumentCompress` wrap so the CRA-47 start/success/failure log lines
+     * fire for in-memory data inputs too. Exception classification mirrors [compressFilePath]
+     * line-for-line.
      */
     private suspend fun instrumentCompressFromData(
         data: NSData,

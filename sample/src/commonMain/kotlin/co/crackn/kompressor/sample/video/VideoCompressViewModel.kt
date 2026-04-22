@@ -9,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.Kompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.video.MaxResolution
 import co.crackn.kompressor.video.VideoCompressionConfig
 import co.crackn.kompressor.video.VideoCompressionError
@@ -136,11 +138,11 @@ class VideoCompressViewModel(
             val outputFile = createTempFile("output")
             _state.update { it.copy(compressedVideoPath = outputFile.path) }
             kompressor.video.compress(
-                inputPath = inputPath,
-                outputPath = outputFile.path,
+                input = MediaSource.Local.FilePath(inputPath),
+                output = MediaDestination.Local.FilePath(outputFile.path),
                 config = buildConfig(),
                 onProgress = { progress ->
-                    _state.update { it.copy(progress = progress) }
+                    _state.update { it.copy(progress = progress.fraction, phase = progress.phase) }
                 },
             ).fold(
                 onSuccess = { handleSuccess(it) },

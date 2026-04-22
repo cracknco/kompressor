@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.audio.canUseAudioExportSession
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MultiTrackAudioFixture
 import co.crackn.kompressor.video.DynamicRange
 import co.crackn.kompressor.video.MaxResolution
@@ -197,7 +199,11 @@ class IosExportSessionFastPathTest {
         val config = AudioCompressionConfig(audioTrackIndex = 1)
         assertTrue(canUseAudioExportSession(config), "audioTrackIndex-only must stay fast-path eligible")
 
-        val result = audioCompressor.compress(input, output, config)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
 
         assertTrue(result.isSuccess, "track-1 compression failed: ${result.exceptionOrNull()}")
         val peak = dominantFrequency(output)
@@ -228,7 +234,11 @@ class IosExportSessionFastPathTest {
             "default config must stay fast-path eligible",
         )
 
-        val result = audioCompressor.compress(input, output, config)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
         assertTrue(result.isSuccess, "default config fast-path failed: ${result.exceptionOrNull()}")
         val peak = dominantFrequency(output)
         assertTrue(
@@ -257,8 +267,8 @@ class IosExportSessionFastPathTest {
         )
 
         val result = audioCompressor.compress(
-            inputPath = input,
-            outputPath = output,
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
             config = config,
         )
         assertNotNull(result.getOrNull(), "single-track fast-path failed: ${result.exceptionOrNull()}")

@@ -11,6 +11,8 @@ import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.ImageFormat
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.fileSize
 import co.crackn.kompressor.testutil.readBytes
@@ -63,7 +65,11 @@ class IosImageFormatMatrixTest {
         val input = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = testDir + "out.heic"
 
-        val result = compressor.compress(input, output, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
 
         assertTrue(result.isSuccess, "HEIC encode failed: ${result.exceptionOrNull()}")
         assertTrue(fileSize(output) > 0, "HEIC output is empty")
@@ -77,7 +83,11 @@ class IosImageFormatMatrixTest {
         val input = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = testDir + "out.avif"
 
-        val result = compressor.compress(input, output, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
 
         if (iosMajorVersion() >= IOS_16_AVIF) {
             assertTrue(result.isSuccess, "AVIF encode failed on iOS ${iosMajorVersion()}: ${result.exceptionOrNull()}")
@@ -106,7 +116,11 @@ class IosImageFormatMatrixTest {
         val input = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = testDir + "out.webp"
 
-        val result = compressor.compress(input, output, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
 
         assertTrue(result.isFailure, "WEBP output must fail on iOS")
         val err = result.exceptionOrNull()
@@ -125,7 +139,11 @@ class IosImageFormatMatrixTest {
         val input = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = testDir + "out.jpg"
 
-        val result = compressor.compress(input, output, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
 
         assertTrue(result.isSuccess, "JPEG encode regressed: ${result.exceptionOrNull()}")
         val bytes = readBytes(output)

@@ -8,6 +8,8 @@ package co.crackn.kompressor
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.createTestImage
@@ -53,7 +55,10 @@ class LargeFileCompressionTest {
         val input = createTestImage(tempDir, LARGE_IMAGE_WIDTH, LARGE_IMAGE_HEIGHT)
         val output = File(tempDir, "large.jpg")
 
-        val result = imageCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = imageCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "Large image compression failed: ${result.exceptionOrNull()}")
         val compression = result.getOrThrow()
@@ -84,7 +89,10 @@ class LargeFileCompressionTest {
         }
         val output = File(tempDir, "long.m4a")
 
-        val result = audioCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "Large audio compression failed: ${result.exceptionOrNull()}")
         val compression = result.getOrThrow()

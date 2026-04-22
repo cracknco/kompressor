@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -145,7 +147,10 @@ class IosPathEncodingTest {
         writeBytes(inputPath, MinimalPngFixtures.indexed4x4())
         val outputPath = prepareTrickyOutputPath(label, trickySegment, extension = "jpg")
 
-        val result = image.compress(inputPath, outputPath)
+        val result = image.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertSucceedsOrReturnsTypedIoFailed(
             label = label,
@@ -169,7 +174,10 @@ class IosPathEncodingTest {
         )
         val outputPath = prepareTrickyOutputPath(label, trickySegment, extension = "m4a")
 
-        val result = audio.compress(inputPath, outputPath)
+        val result = audio.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertSucceedsOrReturnsTypedIoFailed(
             label = label,
@@ -186,7 +194,10 @@ class IosPathEncodingTest {
         Mp4Generator.generateMp4(inputPath, frameCount = VIDEO_FRAME_COUNT)
         val outputPath = prepareTrickyOutputPath(label, trickySegment, extension = "mp4")
 
-        val result = video.compress(inputPath, outputPath)
+        val result = video.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertSucceedsOrReturnsTypedIoFailed(
             label = label,

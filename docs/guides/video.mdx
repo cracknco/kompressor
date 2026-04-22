@@ -13,12 +13,17 @@ Output is always **H.264 video + AAC audio in an MP4 container**.
 ## Basic usage
 
 ```kotlin
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
 val result = kompressor.video.compress(
-    inputPath  = "/path/to/video.mp4",
-    outputPath = "/path/to/video_compressed.mp4",
-    onProgress = { fraction -> updateProgressBar(fraction) },
+    input  = MediaSource.Local.FilePath("/path/to/video.mp4"),
+    output = MediaDestination.Local.FilePath("/path/to/video_compressed.mp4"),
+    onProgress = { progress -> updateProgressBar(progress.fraction) },
 )
 ```
+
+`MediaSource` and `MediaDestination` accept a wide range of native handles — `Uri` from `PickVisualMedia` (Android), `PHAsset` from `PHPickerViewController` (iOS, with iCloud download), `okio.Source` / `okio.Sink`, MediaStore output URIs (with automatic `IS_PENDING` handling). See [the I/O model](/concepts/io-model) for the full set.
 
 ## Configuration
 
@@ -88,7 +93,11 @@ public sealed class MaxResolution {
 | `LOW_BANDWIDTH`| 480p      | 600 kbps    | 96 kbps AAC   | 24         | 3 s                | Mobile networks / low storage |
 
 ```kotlin
-kompressor.video.compress(input, output, VideoPresets.MESSAGING)
+kompressor.video.compress(
+    MediaSource.Local.FilePath(input),
+    MediaDestination.Local.FilePath(output),
+    VideoPresets.MESSAGING,
+)
 ```
 
 ## Progress and cancellation
@@ -96,9 +105,10 @@ kompressor.video.compress(input, output, VideoPresets.MESSAGING)
 ```kotlin
 val job = scope.launch {
     kompressor.video.compress(
-        inputPath, outputPath,
-        onProgress = { fraction ->
-            withContext(Dispatchers.Main) { progressBar.value = fraction }
+        input  = MediaSource.Local.FilePath(inputPath),
+        output = MediaDestination.Local.FilePath(outputPath),
+        onProgress = { progress ->
+            withContext(Dispatchers.Main) { progressBar.value = progress.fraction }
         },
     )
 }
@@ -107,7 +117,7 @@ val job = scope.launch {
 job.cancel()
 ```
 
-The progress callback is throttled — it fires when the reported progress advances by at least 1 %. Cancellation triggers platform-native abort (`Transformer.cancel()` on Android, `AVAssetExportSession.cancelExport()` on iOS) and deletes the partial output file.
+The progress callback is throttled — it fires when the reported progress advances by at least 1 % within the current phase. Cancellation triggers platform-native abort (`Transformer.cancel()` on Android, `AVAssetExportSession.cancelExport()` on iOS) and deletes the partial output file.
 
 ## Known limitations
 

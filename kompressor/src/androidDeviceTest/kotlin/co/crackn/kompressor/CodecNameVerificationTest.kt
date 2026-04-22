@@ -9,6 +9,8 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.video.AndroidVideoCompressor
@@ -61,7 +63,10 @@ class CodecNameVerificationTest {
         )
         val output = File(tempDir, "out.mp4")
 
-        val result = videoCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = videoCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isSuccess, "video compress failed: ${result.exceptionOrNull()}")
 
         val format = readTrackFormat(output, mimePrefix = "video/")
@@ -90,7 +95,10 @@ class CodecNameVerificationTest {
         val input = createWav(File(tempDir, "input.wav"))
         val output = File(tempDir, "out.m4a")
 
-        val result = audioCompressor.compress(input.absolutePath, output.absolutePath)
+        val result = audioCompressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isSuccess, "audio compress failed: ${result.exceptionOrNull()}")
 
         val format = readTrackFormat(output, mimePrefix = "audio/")

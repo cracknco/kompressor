@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.createTestImage
 import java.io.File
 import kotlin.test.assertEquals

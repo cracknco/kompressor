@@ -10,6 +10,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.SlowAudioProcessor
@@ -64,8 +66,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "output.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
 
         assertTrue(result.isSuccess)
@@ -84,13 +86,13 @@ class AndroidAudioCompressorTest {
         val outputHigh = File(tempDir, "high.m4a")
 
         val lowResult = compressor.compress(
-            input.absolutePath,
-            outputLow.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputLow.absolutePath),
             AudioCompressionConfig(bitrate = 32_000),
         )
         val highResult = compressor.compress(
-            input.absolutePath,
-            outputHigh.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputHigh.absolutePath),
             AudioCompressionConfig(bitrate = 192_000),
         )
         assertTrue(lowResult.isSuccess)
@@ -116,13 +118,13 @@ class AndroidAudioCompressorTest {
         val config = AudioCompressionConfig(bitrate = 64_000)
 
         val monoResult = compressor.compress(
-            input.absolutePath,
-            outputMono.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputMono.absolutePath),
             config.copy(channels = AudioChannels.MONO),
         )
         val stereoResult = compressor.compress(
-            input.absolutePath,
-            outputStereo.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputStereo.absolutePath),
             config.copy(channels = AudioChannels.STEREO),
         )
         assertTrue(monoResult.isSuccess, "mono compression failed: ${monoResult.exceptionOrNull()}")
@@ -135,7 +137,10 @@ class AndroidAudioCompressorTest {
     @Test
     fun compressAudio_fileNotFound_returnsFailure() = runTest {
         val output = File(tempDir, "out.m4a")
-        val result = compressor.compress("/nonexistent/audio.wav", output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/audio.wav"),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isFailure)
     }
 
@@ -146,9 +151,9 @@ class AndroidAudioCompressorTest {
         val progressValues = mutableListOf<Float>()
 
         compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            onProgress = { progressValues.add(it.fraction) },
         )
 
         assertTrue(progressValues.isNotEmpty())
@@ -165,8 +170,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "48k_to_44k.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_44K),
         )
 
@@ -186,8 +191,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "voice_message.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioPresets.VOICE_MESSAGE,
         )
 
@@ -207,8 +212,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "stereo_to_mono.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(channels = AudioChannels.MONO),
         )
 
@@ -228,8 +233,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "mono_to_stereo.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(channels = AudioChannels.STEREO),
         )
 
@@ -250,8 +255,8 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "duration_check.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(sampleRate = SAMPLE_RATE_22K),
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
@@ -282,7 +287,10 @@ class AndroidAudioCompressorTest {
         )
         val output = File(tempDir, "aac_passthrough.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "AAC → AAC should succeed: ${result.exceptionOrNull()}")
         assertTrue(output.exists())
@@ -303,7 +311,10 @@ class AndroidAudioCompressorTest {
         )
         val output = File(tempDir, "audio_only.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "MP4(A+V) → M4A should succeed: ${result.exceptionOrNull()}")
         assertTrue(output.exists())
@@ -327,7 +338,10 @@ class AndroidAudioCompressorTest {
         val output = File(tempDir, "cancelled.m4a")
         val scope = CoroutineScope(Dispatchers.Default + Job())
         val job = scope.launch {
-            slowCompressor.compress(inputPath = input.absolutePath, outputPath = output.absolutePath)
+            slowCompressor.compress(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+            )
         }
 
         // The SlowAudioProcessor guarantees the encoder can't finish in < 1 second, so a 200 ms
@@ -350,8 +364,8 @@ class AndroidAudioCompressorTest {
         val target = 128_000
 
         val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             AudioCompressionConfig(bitrate = target),
         )
         assertTrue(result.isSuccess)
@@ -395,7 +409,10 @@ class AndroidAudioCompressorTest {
         val input = createTestWavFile(1, SAMPLE_RATE_44K, STEREO)
         val outputPath = File(tempDir, "nonexistent_subdir/deeper/out.m4a").absolutePath
 
-        val result = compressor.compress(input.absolutePath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isFailure, "Missing parent dir must produce a graceful Result.failure")
         assertTrue(!File(outputPath).exists(), "No partial output should exist")
@@ -415,7 +432,10 @@ class AndroidAudioCompressorTest {
         val input = File(tempDir, "input_5_1.wav").apply { writeBytes(bytes) }
         val output = File(tempDir, "output_5_1.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "5.1→stereo downmix must succeed, got: $result")
         assertTrue(output.exists() && output.length() > 0, "Output M4A must be present and non-empty")

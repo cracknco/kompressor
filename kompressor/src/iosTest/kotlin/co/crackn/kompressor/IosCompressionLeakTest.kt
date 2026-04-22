@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -164,8 +166,8 @@ class IosCompressionLeakTest {
         refs.add(WeakReference(compressor))
         val outputPath = testDir + "img_$i.jpg"
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = ImageCompressionConfig(quality = DEFAULT_QUALITY),
         )
         withClue("Image iter $i failed: ${result.exceptionOrNull()}") {
@@ -183,8 +185,8 @@ class IosCompressionLeakTest {
         refs.add(WeakReference(compressor))
         val outputPath = testDir + "audio_$i.m4a"
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = AudioCompressionConfig(bitrate = AUDIO_BITRATE),
         )
         withClue("Audio iter $i failed: ${result.exceptionOrNull()}") {
@@ -202,8 +204,8 @@ class IosCompressionLeakTest {
         refs.add(WeakReference(compressor))
         val outputPath = testDir + "video_$i.mp4"
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = VideoCompressionConfig(),
         )
         withClue("Video iter $i failed: ${result.exceptionOrNull()}") {

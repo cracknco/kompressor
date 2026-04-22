@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Android-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
- * filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads can consume.
+ * filesystem path the Android compressors' private `compressFilePath(inputPath, outputPath, ...)`
+ * helpers can consume.
  *
  * Why a platform-specific helper rather than a single `commonMain` dispatcher? Because
  * [AndroidUriMediaSource] / [AndroidPfdMediaSource] / [AndroidUriMediaDestination] live in

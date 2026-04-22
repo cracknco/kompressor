@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -57,8 +59,8 @@ class ContentUriInputTest {
         val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
 
         val result = audioCompressor.compress(
-            inputPath = contentUri.toString(),
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(contentUri.toString()),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(),
         )
 
@@ -80,8 +82,8 @@ class ContentUriInputTest {
         val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
 
         val result = imageCompressor.compress(
-            inputPath = contentUri.toString(),
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(contentUri.toString()),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
 
         assertTrue(
@@ -104,8 +106,8 @@ class ContentUriInputTest {
         val contentUri = TestContentProvider.contentUriFor("${tempDir.name}/${input.name}")
 
         val result = videoCompressor.compress(
-            inputPath = contentUri.toString(),
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(contentUri.toString()),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
 
         assertTrue(

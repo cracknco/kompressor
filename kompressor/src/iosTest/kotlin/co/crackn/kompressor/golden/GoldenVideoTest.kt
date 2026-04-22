@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor.golden
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import kotlinx.cinterop.ExperimentalForeignApi
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
@@ -59,7 +61,10 @@ class GoldenVideoTest {
     fun defaultConfig_producesValidMp4() = runTest {
         val outputPath = testDir + "golden_default.mp4"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess, "Default config failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidMp4(readBytes(outputPath)), "Must be valid MP4")
@@ -69,7 +74,11 @@ class GoldenVideoTest {
     fun lowBandwidthPreset_producesValidOutput() = runTest {
         val outputPath = testDir + "golden_low.mp4"
 
-        val result = compressor.compress(inputPath, outputPath, VideoPresets.LOW_BANDWIDTH)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            VideoPresets.LOW_BANDWIDTH,
+        )
 
         assertTrue(result.isSuccess, "LOW_BANDWIDTH failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidMp4(readBytes(outputPath)))
@@ -80,7 +89,8 @@ class GoldenVideoTest {
         val outputPath = testDir + "golden_custom_br.mp4"
 
         val result = compressor.compress(
-            inputPath, outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             VideoCompressionConfig(videoBitrate = 500_000),
         )
 
@@ -94,7 +104,8 @@ class GoldenVideoTest {
         val outputPath = testDir + "golden_social.mp4"
 
         val result = compressor.compress(
-            inputPath, outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             VideoPresets.SOCIAL_MEDIA,
         )
 

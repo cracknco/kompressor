@@ -8,6 +8,8 @@ package co.crackn.kompressor
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.MinimalPngFixtures
@@ -110,7 +112,10 @@ class PathEncodingTest {
         val input = File(inDir, inputName).apply { writeBytes(MinimalPngFixtures.indexed4x4()) }
         val output = File(outDir, outputName)
 
-        val result = image.compress(input.absolutePath, output.absolutePath)
+        val result = image.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(
             result.isSuccess,
             "Image compress must succeed for encoded path '$subdir/$inputName' → " +
@@ -132,7 +137,10 @@ class PathEncodingTest {
         )
         val output = File(outDir, outputName)
 
-        val result = audio.compress(input.absolutePath, output.absolutePath)
+        val result = audio.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(
             result.isSuccess,
             "Audio compress must succeed for encoded path '$subdir/$inputName' → " +
@@ -148,7 +156,10 @@ class PathEncodingTest {
         Mp4Generator.generateMp4(input, frameCount = VIDEO_FRAME_COUNT)
         val output = File(outDir, outputName)
 
-        val result = video.compress(input.absolutePath, output.absolutePath)
+        val result = video.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(
             result.isSuccess,
             "Video compress must succeed for encoded path '$subdir/$inputName' → " +

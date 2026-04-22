@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.WavGenerator
 import java.io.File
 import kotlinx.coroutines.test.runTest
@@ -56,8 +58,8 @@ class SurroundAudioTest {
         val output = File(testDir, "5_1_out.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(
                 channels = AudioChannels.FIVE_POINT_ONE,
                 bitrate = 192_000 * 6 / 2, // ~576 kbps for 5.1 at 44.1kHz
@@ -75,8 +77,8 @@ class SurroundAudioTest {
         val output = File(testDir, "stereo_out.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(channels = AudioChannels.STEREO, bitrate = 128_000),
         )
 
@@ -91,8 +93,8 @@ class SurroundAudioTest {
         val output = File(testDir, "stereo_out.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(channels = AudioChannels.STEREO, bitrate = 128_000),
         )
 
@@ -107,8 +109,8 @@ class SurroundAudioTest {
         val output = File(testDir, "5_1_out.m4a")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(
                 channels = AudioChannels.FIVE_POINT_ONE,
                 bitrate = 320_000,

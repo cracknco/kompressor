@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
 import co.crackn.kompressor.testutil.WavGenerator
@@ -59,7 +61,10 @@ class AudioInputRobustnessTest {
         }
         val output = File(tempDir, "pcm24_out.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "24-bit WAV compression failed: ${result.exceptionOrNull()}")
         assertTrue(output.exists())
@@ -72,7 +77,10 @@ class AudioInputRobustnessTest {
         val input = File(tempDir, "empty.wav").apply { writeBytes(ByteArray(0)) }
         val output = File(tempDir, "empty_out.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "0-byte input must fail")
         val err = result.exceptionOrNull()
@@ -93,8 +101,8 @@ class AudioInputRobustnessTest {
         val output = File(tempDir, "garbage_out.m4a")
 
         val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             AudioCompressionConfig(),
         )
 

@@ -10,6 +10,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.readTopLevelMp4Boxes
@@ -54,7 +56,10 @@ class GoldenAudioTest {
         val input = createWav(durationSeconds = 2, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
         val output = File(tempDir, "golden_default.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess)
         val compression = result.getOrThrow()
@@ -97,7 +102,11 @@ class GoldenAudioTest {
         val input = createWav(durationSeconds = 2, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
         val output = File(tempDir, "golden_voice.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, AudioPresets.VOICE_MESSAGE)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            AudioPresets.VOICE_MESSAGE,
+        )
 
         assertTrue(result.isSuccess)
         assertTrue(OutputValidators.isValidM4a(output.readBytes()), "Output must be valid M4A")
@@ -108,7 +117,10 @@ class GoldenAudioTest {
 
         // Voice preset at 32kbps should be significantly smaller than default 128kbps
         val defaultOutput = File(tempDir, "golden_default_compare.m4a")
-        compressor.compress(input.absolutePath, defaultOutput.absolutePath)
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(defaultOutput.absolutePath),
+        )
         assertTrue(
             output.length() < defaultOutput.length(),
             "Voice preset should produce smaller file than default",
@@ -121,8 +133,8 @@ class GoldenAudioTest {
         val output = File(tempDir, "golden_size_check.m4a")
 
         val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             AudioCompressionConfig(bitrate = 128_000),
         )
 
@@ -152,14 +164,17 @@ class GoldenAudioTest {
         // from the device's encoder throughput: regardless of absolute speed, passthrough
         // must be strictly faster than re-encoding because it skips decode + encode entirely.
         val transcodeResult = compressor.compress(
-            input.absolutePath,
-            transcodeOutput.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(transcodeOutput.absolutePath),
             AudioCompressionConfig(bitrate = 64_000),
         )
         assertTrue(transcodeResult.isSuccess, "Re-encode baseline must succeed: ${transcodeResult.exceptionOrNull()}")
         val transcodeMs = transcodeResult.getOrThrow().durationMs
 
-        val passthroughResult = compressor.compress(input.absolutePath, passthroughOutput.absolutePath)
+        val passthroughResult = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(passthroughOutput.absolutePath),
+        )
 
         assertTrue(
             passthroughResult.isSuccess,
@@ -193,7 +208,11 @@ class GoldenAudioTest {
         val input = createWav(durationSeconds = 3, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
         val output = File(tempDir, "golden_voice_vs_input.m4a")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, AudioPresets.VOICE_MESSAGE)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            AudioPresets.VOICE_MESSAGE,
+        )
         assertTrue(result.isSuccess)
 
         // Voice preset is 32kbps mono 22kHz — vastly smaller than 44.1kHz stereo PCM input.
@@ -210,8 +229,8 @@ class GoldenAudioTest {
         val output = File(tempDir, "golden_duration_preservation.m4a")
 
         val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             AudioCompressionConfig(sampleRate = 22_050, channels = AudioChannels.MONO),
         )
         assertTrue(result.isSuccess)

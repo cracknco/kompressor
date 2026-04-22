@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.fileSize
 import co.crackn.kompressor.testutil.runDeviceOnly
@@ -55,13 +57,13 @@ class Hdr10ExportRoundTripTest {
 
             val progressValues = mutableListOf<Float>()
             val result = compressor.compress(
-                inputPath = input,
-                outputPath = output,
+                MediaSource.Local.FilePath(input),
+                MediaDestination.Local.FilePath(output),
                 config = VideoCompressionConfig(
                     codec = VideoCodec.HEVC,
                     dynamicRange = DynamicRange.HDR10,
                 ),
-                onProgress = { progressValues.add(it) },
+                onProgress = { progressValues.add(it.fraction) },
             )
 
             assertTrue(result.isSuccess, "HDR10 HEVC compression failed: ${result.exceptionOrNull()}")
@@ -86,13 +88,13 @@ class Hdr10ExportRoundTripTest {
 
             val progressValues = mutableListOf<Float>()
             compressor.compress(
-                inputPath = input,
-                outputPath = output,
+                MediaSource.Local.FilePath(input),
+                MediaDestination.Local.FilePath(output),
                 config = VideoCompressionConfig(
                     codec = VideoCodec.HEVC,
                     dynamicRange = DynamicRange.HDR10,
                 ),
-                onProgress = { progressValues.add(it) },
+                onProgress = { progressValues.add(it.fraction) },
             )
 
             for (i in 1 until progressValues.size) {
