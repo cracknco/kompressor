@@ -6,9 +6,11 @@
 package co.crackn.kompressor.image
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 
 /** Compresses image files. */
-interface ImageCompressor {
+public interface ImageCompressor {
 
     /**
      * Compress an image file.
@@ -35,9 +37,42 @@ interface ImageCompressor {
      * every call writes to a distinct output path. Concurrent calls that share an output path
      * produce undefined results. See `docs/threading-model.md`.
      */
-    suspend fun compress(
+    public suspend fun compress(
         inputPath: String,
         outputPath: String,
+        config: ImageCompressionConfig = ImageCompressionConfig(),
+    ): Result<CompressionResult>
+
+    /**
+     * Compress an image from a rich [MediaSource] to a [MediaDestination].
+     *
+     * This is the modern signature, preferred over [compress] (the path-based overload) for any
+     * consumer working with platform pickers (`Uri`, `NSURL`, `PHAsset`) or streams. The
+     * path-based signature remains available but will be deprecated in a future release.
+     *
+     * Image compression is synchronous at the platform level — unlike [AudioCompressor.compress]
+     * and [VideoCompressor.compress], there is **no `onProgress` callback**. Cancel the calling
+     * coroutine scope to abort the compression (structured concurrency).
+     *
+     * In this release only [MediaSource.Local.FilePath] / [MediaDestination.Local.FilePath]
+     * dispatch is implemented. All other variants (`Stream`, `Bytes`, and the platform-specific
+     * `Uri` / `NSURL` / `PHAsset` / `NSData` builders that ship later) surface an
+     * [UnsupportedOperationException] wrapped in [Result.failure], with a message citing the
+     * Linear ticket that will implement them (CRA-93 for Android `Uri`, CRA-94 for iOS
+     * `NSURL` / `PHAsset` / `NSData`, CRA-95 for `Stream` / `Bytes`).
+     *
+     * @param input Media source — see [MediaSource] and platform-specific builders.
+     * @param output Media destination — see [MediaDestination] and platform-specific builders.
+     * @param config Compression settings (format, quality, resize).
+     * @return [Result] wrapping [CompressionResult] on success, or an [ImageCompressionError]
+     *   subtype on failure. See the path-based overload for the base set of error types. Until
+     *   CRA-95 lands, non-`FilePath` inputs/outputs surface an [UnsupportedOperationException].
+     *
+     * **Thread-safety:** same guarantees as the path-based overload. See `docs/threading-model.md`.
+     */
+    public suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
         config: ImageCompressionConfig = ImageCompressionConfig(),
     ): Result<CompressionResult>
 }

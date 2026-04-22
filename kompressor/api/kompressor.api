@@ -395,13 +395,16 @@ public final class co/crackn/kompressor/audio/AudioCompressionError$UnsupportedS
 }
 
 public abstract interface class co/crackn/kompressor/audio/AudioCompressor {
+	public abstract fun compress-yxL6bBk (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun compress-yxL6bBk (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public fun getSupportedInputFormats ()Ljava/util/Set;
 	public fun getSupportedOutputFormats ()Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/audio/AudioCompressor$DefaultImpls {
+	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/audio/AudioCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/audio/AudioCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static fun getSupportedInputFormats (Lco/crackn/kompressor/audio/AudioCompressor;)Ljava/util/Set;
 	public static fun getSupportedOutputFormats (Lco/crackn/kompressor/audio/AudioCompressor;)Ljava/util/Set;
@@ -610,11 +613,14 @@ public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedS
 }
 
 public abstract interface class co/crackn/kompressor/image/ImageCompressor {
+	public abstract fun compress-BWLJW6A (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun compress-BWLJW6A (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressor$DefaultImpls {
+	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
@@ -977,13 +983,16 @@ public final class co/crackn/kompressor/video/VideoCompressionError$UnsupportedS
 }
 
 public abstract interface class co/crackn/kompressor/video/VideoCompressor {
+	public abstract fun compress-yxL6bBk (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun compress-yxL6bBk (Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public fun getSupportedInputFormats ()Ljava/util/Set;
 	public fun getSupportedOutputFormats ()Ljava/util/Set;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressor$DefaultImpls {
+	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Ljava/lang/String;Ljava/lang/String;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static fun getSupportedInputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;
 	public static fun getSupportedOutputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;

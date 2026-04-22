@@ -12,6 +12,9 @@
 package co.crackn.kompressor.image
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.requireFilePathOrThrow
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -116,6 +119,22 @@ internal class IosImageCompressor(
                 throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
             }
         }
+    }
+
+    override suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
+        config: ImageCompressionConfig,
+    ): Result<CompressionResult> {
+        val inputPath: String
+        val outputPath: String
+        try {
+            inputPath = input.requireFilePathOrThrow()
+            outputPath = output.requireFilePathOrThrow()
+        } catch (e: UnsupportedOperationException) {
+            return Result.failure(e)
+        }
+        return compress(inputPath, outputPath, config)
     }
 
     private suspend fun doCompress(

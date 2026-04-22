@@ -27,6 +27,10 @@ import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.io.CompressionProgress
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.requireFilePathOrThrow
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -109,6 +113,34 @@ internal class AndroidVideoCompressor(
             val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
             CompressionResult(inputSize, outputSize, durationMs)
         }
+    }
+
+    override suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
+        config: VideoCompressionConfig,
+        onProgress: suspend (CompressionProgress) -> Unit,
+    ): Result<CompressionResult> {
+        val inputPath: String
+        val outputPath: String
+        try {
+            inputPath = input.requireFilePathOrThrow()
+            outputPath = output.requireFilePathOrThrow()
+        } catch (e: UnsupportedOperationException) {
+            return Result.failure(e)
+        }
+        val result = compress(inputPath, outputPath, config) { fraction ->
+            onProgress(
+                CompressionProgress(
+                    CompressionProgress.Phase.COMPRESSING,
+                    fraction.coerceIn(0f, 1f),
+                ),
+            )
+        }
+        if (result.isSuccess) {
+            onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+        }
+        return result
     }
 
     private suspend fun runTransformer(

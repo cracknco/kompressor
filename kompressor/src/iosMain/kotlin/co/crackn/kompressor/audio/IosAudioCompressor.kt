@@ -13,6 +13,10 @@ import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.io.CompressionProgress
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.requireFilePathOrThrow
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -140,6 +144,34 @@ internal class IosAudioCompressor(
             val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
             CompressionResult(inputSize, outputSize, durationMs)
         }
+    }
+
+    override suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
+        config: AudioCompressionConfig,
+        onProgress: suspend (CompressionProgress) -> Unit,
+    ): Result<CompressionResult> {
+        val inputPath: String
+        val outputPath: String
+        try {
+            inputPath = input.requireFilePathOrThrow()
+            outputPath = output.requireFilePathOrThrow()
+        } catch (e: UnsupportedOperationException) {
+            return Result.failure(e)
+        }
+        val result = compress(inputPath, outputPath, config) { fraction ->
+            onProgress(
+                CompressionProgress(
+                    CompressionProgress.Phase.COMPRESSING,
+                    fraction.coerceIn(0f, 1f),
+                ),
+            )
+        }
+        if (result.isSuccess) {
+            onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+        }
+        return result
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")

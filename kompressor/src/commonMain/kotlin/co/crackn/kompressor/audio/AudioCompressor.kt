@@ -6,6 +6,9 @@
 package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.io.CompressionProgress
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 
 /** Compresses audio files. */
 public interface AudioCompressor {
@@ -59,5 +62,36 @@ public interface AudioCompressor {
         outputPath: String,
         config: AudioCompressionConfig = AudioCompressionConfig(),
         onProgress: suspend (Float) -> Unit = {},
+    ): Result<CompressionResult>
+
+    /**
+     * Compress an audio file from a rich [MediaSource] to a [MediaDestination].
+     *
+     * See [ImageCompressor.compress] for the rationale of the rich-source overload. Audio
+     * compression emits [CompressionProgress] updates via [onProgress] — `Phase.COMPRESSING`
+     * during active transcoding, with `Phase.MATERIALIZING_INPUT` / `Phase.FINALIZING_OUTPUT`
+     * framing the pipeline when applicable.
+     *
+     * In this release only [MediaSource.Local.FilePath] / [MediaDestination.Local.FilePath]
+     * dispatch is implemented. `Phase.MATERIALIZING_INPUT` is never emitted because stream /
+     * bytes inputs throw [UnsupportedOperationException] until CRA-95 wires them up (CRA-93 for
+     * Android `Uri`, CRA-94 for iOS `NSURL` / `PHAsset` / `NSData`).
+     *
+     * @param input Media source — see [MediaSource] and platform-specific builders.
+     * @param output Media destination — see [MediaDestination] and platform-specific builders.
+     * @param config Compression settings (codec, bitrate, sample rate, channels).
+     * @param onProgress Called with a [CompressionProgress] reflecting the current phase and
+     *   per-phase fraction in `[0.0, 1.0]`. Fraction resets at each phase transition.
+     * @return [Result] wrapping [CompressionResult] on success, or an [AudioCompressionError]
+     *   subtype on failure. Until CRA-95 lands, non-`FilePath` inputs/outputs surface an
+     *   [UnsupportedOperationException].
+     *
+     * **Thread-safety:** same guarantees as the path-based overload. See `docs/threading-model.md`.
+     */
+    public suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
+        config: AudioCompressionConfig = AudioCompressionConfig(),
+        onProgress: suspend (CompressionProgress) -> Unit = {},
     ): Result<CompressionResult>
 }
