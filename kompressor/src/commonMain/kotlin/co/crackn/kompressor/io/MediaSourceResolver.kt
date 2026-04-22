@@ -114,12 +114,16 @@ private suspend fun materializeStream(
     tempDir: Path,
     onProgress: suspend (Float) -> Unit,
 ): ResolvedInput {
-    // Resolve an effective sizeHint for progress reporting: callers who supplied a concrete
-    // `sizeHint` when constructing the Stream win; otherwise fall back to the cross-platform
-    // [estimateSourceSize] probe so the `MATERIALIZING_INPUT` fraction can still climb from
-    // 0 → 1 instead of pinning flat at 0 (the `computeFraction` sentinel branch). When the
-    // probe also returns `null` (opaque stream, truly unknown size) we accept the flat-0
-    // heartbeat — better than emitting fabricated fractions that will overshoot and clamp.
+    // CURRENTLY a passthrough on this call path: `input` is typed `MediaSource.Local.Stream`
+    // and [estimateSourceSize]'s Stream branch echoes `input.sizeHint` back unchanged, so
+    // the effective expression reduces to `input.sizeHint ?: input.sizeHint`. The probe's
+    // real value lives in its Uri / PFD / NSURL / PHAsset / NSData branches — those get
+    // activated in CRA-99 when `materializePfdHandle` (Android) and `materializeNsData`
+    // (iOS) migrate to the probe-seeded `TempFileMaterializer` path so pre-materialisation
+    // `MATERIALIZING_INPUT` fractions become accurate for native-handle inputs too. Kept in
+    // place here so the wiring stays visible + the commonMain Stream callsite picks up the
+    // CRA-99 upgrade for free once the probe's Stream branch learns to introspect the
+    // source (e.g. via a `MediaSource.Local.Stream.source` cast to `FileSource`).
     // Probe is nullable-returning and never throws, per its contract.
     val effectiveSizeHint: Long? = input.sizeHint ?: estimateSourceSize(input)
 

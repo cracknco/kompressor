@@ -12,6 +12,15 @@ package co.crackn.kompressor.io
  * caller-supplied `sizeHint`, so the materialization-phase progress fraction can still report real
  * percentages instead of a flat `0f` heartbeat (see [TempFileMaterializer] `computeFraction`).
  *
+ * **Activation status (CRA-96):** the single current call-site in [materializeStream] passes a
+ * `MediaSource.Local.Stream` whose `sizeHint` is a direct passthrough of the probe's Stream
+ * branch — so in practice this probe is a no-op for Stream inputs today. The real activation of
+ * the `Uri` / `PFD` / `NSURL` / `PHAsset` / `NSData` branches lands in **CRA-99**, which rewires
+ * `materializePfdHandle` (Android) and `materializeNsData` (iOS) through the probe-seeded
+ * `TempFileMaterializer` path so pre-materialisation `MATERIALIZING_INPUT` fractions become
+ * accurate for native-handle inputs too. The full probe surface is implemented + tested here as
+ * preparatory infrastructure so CRA-99 can focus on the dispatch rewiring alone.
+ *
  * **Return contract:**
  *  - `null` — size genuinely unknown (unbounded stream, probe failed, PhotoKit private-KVC miss).
  *    Callers MUST treat `null` as "skip fraction reporting" — not as a zero.

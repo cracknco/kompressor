@@ -11,7 +11,14 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSNumber
 import platform.Foundation.valueForKey
+import platform.Photos.PHAssetMediaTypeAudio
+import platform.Photos.PHAssetMediaTypeImage
+import platform.Photos.PHAssetMediaTypeVideo
 import platform.Photos.PHAssetResource
+import platform.Photos.PHAssetResourceType
+import platform.Photos.PHAssetResourceTypeAudio
+import platform.Photos.PHAssetResourceTypePhoto
+import platform.Photos.PHAssetResourceTypeVideo
 
 /**
  * iOS actual of [estimateSourceSize].
@@ -24,7 +31,7 @@ import platform.Photos.PHAssetResource
  *  | [MediaSource.Local.Stream]   | Caller-supplied [MediaSource.Local.Stream.sizeHint].         |
  *  | [MediaSource.Local.Bytes]    | `bytes.size.toLong()` — always authoritative.                |
  *  | [IosUrlMediaSource]          | `url.path` → same `NSFileSize` lookup as `FilePath`.         |
- *  | [IosPHAssetMediaSource]      | `PHAssetResource.valueForKey("fileSize")` (private KVC).     |
+ *  | [IosPHAssetMediaSource]      | Primary `PHAssetResource.valueForKey("fileSize")` (private KVC). |
  *  | [IosDataMediaSource]         | `NSData.length.toLong()` — O(1), always authoritative.       |
  *
  * **PHAssetResource.fileSize disclaimer.** The `fileSize` property is not part of PhotoKit's
@@ -58,26 +65,40 @@ private fun sizeOfPath(path: String): Long? = runCatching {
 
 /**
  * PhotoKit sizing. Each [PHAsset][platform.Photos.PHAsset] may own multiple [PHAssetResource]s
- * (original photo + edit + adjustment sidecar + live-photo pair video). We sum every resource's
- * `fileSize` to report the total on-disk footprint — matches what `PHImageManager` will
- * materialise when the compressor pipeline actually requests the asset. Returns `null` when the
- * asset owns no resources or when every `valueForKey("fileSize")` raises.
+ * (original + edit + adjustment sidecar + live-photo pair + slow-mo fallback). The compressor
+ * pipeline only materialises ONE — the primary resource matching [PHAsset.mediaType] — via
+ * [platform.Photos.PHImageManager.requestAVAssetForVideo] or
+ * [platform.Photos.PHImageManager.requestImageDataAndOrientationForAsset]. Summing every
+ * resource would over-report by 2-3× on Live Photos / edited photos and peg consumer progress
+ * fractions at <100%, so we pick the single primary resource by type here [PR #144 review,
+ * finding #2]. Returns `null` when no matching primary resource is present or when the
+ * `valueForKey("fileSize")` probe raises.
  */
 private fun phAssetSize(input: IosPHAssetMediaSource): Long? {
+    val primaryType: PHAssetResourceType = primaryResourceType(input.asset.mediaType) ?: return null
+
     @Suppress("UNCHECKED_CAST")
     val resources = runCatching {
         PHAssetResource.assetResourcesForAsset(input.asset) as List<PHAssetResource>
     }.getOrNull().orEmpty()
-    var total = 0L
-    var any = false
-    resources.forEach { resource ->
-        val size = runCatching {
+
+    val primary = resources.firstOrNull { it.type == primaryType }
+    return primary?.let { resource ->
+        runCatching {
             (resource.valueForKey("fileSize") as? NSNumber)?.longLongValue
-        }.getOrNull()
-        if (size != null && size >= 0L) {
-            total += size
-            any = true
-        }
+        }.getOrNull()?.takeIf { it >= 0L }
     }
-    return if (any) total else null
+}
+
+/**
+ * Primary resource type for a given [PHAsset.mediaType]. Matches what the compressor pipeline
+ * will actually materialise via [platform.Photos.PHImageManager.requestAVAssetForVideo] or
+ * [platform.Photos.PHImageManager.requestImageDataAndOrientationForAsset] — sidecar / edit /
+ * adjustment / live-photo pair / slow-mo fallback resources are ignored.
+ */
+private fun primaryResourceType(mediaType: Long): PHAssetResourceType? = when (mediaType) {
+    PHAssetMediaTypeImage -> PHAssetResourceTypePhoto
+    PHAssetMediaTypeVideo -> PHAssetResourceTypeVideo
+    PHAssetMediaTypeAudio -> PHAssetResourceTypeAudio
+    else -> null
 }
