@@ -100,6 +100,11 @@ internal class AndroidImageCompressor(
     /**
      * Stream/Bytes input path — [memoryBytes] already fully in RAM, no temp file. Dispatches
      * on the destination side separately so Stream destinations also avoid the temp-file hop.
+     *
+     * Stream-output lifecycle: [MediaDestination.Local.Stream.closeOnFinish] is honoured in the
+     * outer `finally` block so the consumer sink is closed on every failure path — including
+     * the early-exit decode/gate/EXIF errors that never reach [writeBitmapToSink]. Parallels the
+     * iOS sibling's `outHandle.cleanup()` in a `finally` (`IosImageCompressor.kt:182-193`).
      */
     private suspend fun compressFromBytes(
         memoryBytes: ByteArray,
@@ -108,8 +113,12 @@ internal class AndroidImageCompressor(
     ): CompressionResult {
         val source = ByteArrayImageSource(memoryBytes)
         return if (output is MediaDestination.Local.Stream) {
-            doCompressDirect(source, config) { bitmap, cfg ->
-                writeBitmapToSink(bitmap, output, cfg)
+            try {
+                doCompressDirect(source, config) { bitmap, cfg ->
+                    writeBitmapToSink(bitmap, output, cfg)
+                }
+            } finally {
+                if (output.closeOnFinish) runCatching { output.sink.close() }
             }
         } else {
             val outputHandle = output.toAndroidOutputHandle()
@@ -131,6 +140,11 @@ internal class AndroidImageCompressor(
      * destination is also file-backed (fastest path, matches pre-CRA-95 behaviour byte-for-byte).
      * When the destination is a [MediaDestination.Local.Stream], decode via [ImageSource.of] and
      * write directly into the consumer [okio.Sink] — still no temp file on the output side.
+     *
+     * Sink close lifecycle for Stream output lives in [compressPathToStream]'s outer `finally`
+     * so it fires even when [doCompressDirect] throws before reaching [writeBitmapToSink]
+     * (decode gate, EXIF read, dimension decode). See [compressFromBytes] for the symmetric
+     * treatment.
      */
     private suspend fun compressFromPath(
         input: MediaSource,
@@ -140,25 +154,45 @@ internal class AndroidImageCompressor(
         val inputHandle = input.toAndroidInputPath(mediaType = MediaType.IMAGE, logger = logger)
         try {
             return if (output is MediaDestination.Local.Stream) {
-                val source = ImageSource.of(inputHandle.path)
-                doCompressDirect(source, config) { bitmap, cfg ->
-                    writeBitmapToSink(bitmap, output, cfg)
-                }
+                compressPathToStream(inputHandle.path, output, config)
             } else {
-                val outputHandle = output.toAndroidOutputHandle()
-                try {
-                    val result = compress(inputHandle.path, outputHandle.tempPath, config).getOrThrow()
-                    // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
-                    // temp file we just wrote; the commit step only moves bytes, it does not
-                    // mutate the size reported to the caller.
-                    outputHandle.commit()
-                    result
-                } finally {
-                    outputHandle.cleanup()
-                }
+                compressPathToFileBacked(inputHandle.path, output, config)
             }
         } finally {
             inputHandle.cleanup()
+        }
+    }
+
+    private suspend fun compressPathToStream(
+        inputPath: String,
+        output: MediaDestination.Local.Stream,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
+        val source = ImageSource.of(inputPath)
+        return try {
+            doCompressDirect(source, config) { bitmap, cfg ->
+                writeBitmapToSink(bitmap, output, cfg)
+            }
+        } finally {
+            if (output.closeOnFinish) runCatching { output.sink.close() }
+        }
+    }
+
+    private suspend fun compressPathToFileBacked(
+        inputPath: String,
+        output: MediaDestination,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
+        val outputHandle = output.toAndroidOutputHandle()
+        return try {
+            val result = compress(inputPath, outputHandle.tempPath, config).getOrThrow()
+            // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
+            // temp file we just wrote; the commit step only moves bytes, it does not mutate
+            // the size reported to the caller.
+            outputHandle.commit()
+            result
+        } finally {
+            outputHandle.cleanup()
         }
     }
 
@@ -258,10 +292,11 @@ internal class AndroidImageCompressor(
      * file. A [CountingOutputStream] wraps the buffered okio sink so the returned length is
      * the number of bytes actually written, matching [writeBitmapToPath]'s `File.length()`.
      *
-     * The buffered sink is `flush()`ed — never `close()`d here — because ownership is governed
-     * by [MediaDestination.Local.Stream.closeOnFinish]. Closing would silently break the
-     * "shared sink" contract (e.g. compressor output piped into an uploader still writing to
-     * the same sink after this call returns).
+     * The buffered sink is `flush()`ed — never `close()`d here. Sink ownership (governed by
+     * [MediaDestination.Local.Stream.closeOnFinish]) is enforced by the outer callers
+     * ([compressFromBytes] and [compressFromPath]) in their `finally` blocks so the close fires
+     * on every exit path, including early decode / gate / EXIF errors that would bypass this
+     * writer entirely.
      */
     private fun writeBitmapToSink(
         bitmap: Bitmap,
@@ -276,7 +311,6 @@ internal class AndroidImageCompressor(
         } finally {
             runCatching { counter.flush() }
             runCatching { bufferedSink.flush() }
-            if (dest.closeOnFinish) runCatching { bufferedSink.close() }
         }
         if (!success) {
             throw ImageCompressionError.EncodingFailed(

@@ -47,13 +47,16 @@ import platform.Foundation.create
  *
  * **Equivalence model.** For images (JPEG) the outputs are bitwise-identical because
  * `UIImage(data:)` / `UIImage(contentsOfFile:)` share the same Core Graphics decode path
- * and JPEG re-encoding is deterministic. For audio (M4A) and video (MP4) the
- * AVFoundation export writes second-resolution `mvhd` / `mdhd` creation/modification
- * timestamps — two consecutive compresses that straddle a wall-clock second boundary
- * produce slightly different container bytes. The stable invariant is *compression-outcome
- * equivalence*: both paths succeed and their output sizes agree within
- * [AV_SIZE_TOLERANCE_BYTES]. Stream / Bytes / Stream-output end-to-end coverage (CRA-95)
- * lives in `io.StreamAndBytesEndToEndTest`.
+ * and JPEG re-encoding is deterministic. For audio (M4A) and video (MP4) the legacy-vs-novel
+ * outputs differ by a few bytes on every run — but the divergence is NOT wall-clock-timestamp
+ * drift: [audio_twoConsecutiveCompressesProduceIdenticalBytes] demonstrates two back-to-back
+ * legacy-overload compresses of the same input are byte-identical, so AVFoundation itself is
+ * deterministic per-compress. The remaining divergence on legacy-vs-novel pairs is tracked
+ * for root-cause investigation (CRA-95.1 follow-up — likely NSURL dispatch overhead or
+ * `toIosInputPath` call-ordering stamping something into the AVAsset initialisation). The
+ * stable invariant pinned here is *compression-outcome equivalence*: both paths succeed and
+ * their output sizes agree within [AV_SIZE_TOLERANCE_BYTES]. Stream / Bytes / Stream-output
+ * end-to-end coverage (CRA-95) lives in `io.StreamAndBytesEndToEndTest`.
  */
 class UrlInputEndToEndTest {
 
@@ -149,6 +152,36 @@ class UrlInputEndToEndTest {
         // decode path, so the encoded output is byte-identical when the JPEG is re-encoded
         // with the same quality + dimensions.
         readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
+    }
+
+    // Pins the actual determinism of AVFoundation exports under the legacy path-based
+    // `audio.compress(path, path, config)` entry: two consecutive compresses of the same
+    // input produce byte-identical output. This contradicts the class-KDoc's "wall-clock
+    // mvhd/mdhd stamping" hypothesis and suggests the remaining tolerance on the
+    // legacy-vs-novel pair tests is masking something OTHER than timestamps (possibly an
+    // NSURL-dispatch overhead or `toIosInputPath` call-ordering effect). Tracked for
+    // follow-up investigation in a CRA-95.1 ticket [PR #143 review, finding #7].
+    @Test
+    fun audio_twoConsecutiveCompressesProduceIdenticalBytes() = runTest {
+        val inputPath = createTestWav()
+        val firstOut = testDir + "first.m4a"
+        val secondOut = testDir + "second.m4a"
+
+        val first = audio.compress(inputPath, firstOut, AudioCompressionConfig())
+        val second = audio.compress(inputPath, secondOut, AudioCompressionConfig())
+
+        first.isSuccess shouldBe true
+        second.isSuccess shouldBe true
+        withClue(
+            "Two consecutive AVFoundation exports of the same input MUST produce byte-identical " +
+                "bytes. If this fails, AVFoundation became non-deterministic per-compress and the " +
+                "class-KDoc explanation (wall-clock mvhd timestamps) would finally be justified. " +
+                "If it still passes, the legacy-vs-novel relaxation on audio_nsurlInput / " +
+                "video_nsurlInput is masking a different divergence (dispatch overhead, call " +
+                "ordering, …) and should be investigated.",
+        ) {
+            readBytes(firstOut).contentEquals(readBytes(secondOut)) shouldBe true
+        }
     }
 
     /**

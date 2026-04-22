@@ -10,6 +10,8 @@ import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.logging.SafeLogger
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Android-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
@@ -95,12 +97,11 @@ internal suspend fun MediaSource.toAndroidInputPath(
     is MediaSource.Local.FilePath -> AndroidInputHandle(path, cleanupFn = {})
     is AndroidUriMediaSource -> AndroidInputHandle(uri.toString(), cleanupFn = {})
     is AndroidPfdMediaSource -> materializePfdHandle(pfd)
-    is MediaSource.Local.Stream, is MediaSource.Local.Bytes -> materializeStreamOrBytes(
-        input = this,
-        mediaType = mediaType,
-        logger = logger,
-        onProgress = onProgress,
-    )
+    // Split into two `is` arms rather than `is A, is B` so the smart-cast narrows to the
+    // specific subtype at each call site — the `MediaSource.Local` parameter on
+    // [materializeStreamOrBytes] accepts either without a cast.
+    is MediaSource.Local.Stream -> materializeStreamOrBytes(this, mediaType, logger, onProgress)
+    is MediaSource.Local.Bytes -> materializeStreamOrBytes(this, mediaType, logger, onProgress)
     else -> throw UnsupportedOperationException(
         "Unsupported MediaSource subtype on Android: ${this::class.simpleName}",
     )
@@ -128,15 +129,13 @@ internal fun MediaDestination.toAndroidOutputHandle(): AndroidOutputHandle = whe
 }
 
 private suspend fun materializeStreamOrBytes(
-    input: MediaSource,
+    input: MediaSource.Local,
     mediaType: MediaType,
     logger: SafeLogger,
     onProgress: suspend (Float) -> Unit,
 ): AndroidInputHandle {
-    // Cast is safe — callers only reach this branch through the Stream/Bytes `is` checks
-    // above. The resolver itself rejects anything else with an IllegalStateException.
     val resolved = resolveStreamOrBytesToTempFile(
-        input = input as MediaSource.Local,
+        input = input,
         tempDir = kompressorTempDir(),
         mediaType = mediaType,
         logger = logger,
@@ -185,7 +184,13 @@ private fun androidUriOutputHandle(dest: AndroidUriMediaDestination): AndroidOut
         // URI commit is a synchronous `ContentResolver.openOutputStream` copy. No progress
         // ticks — the caller's `FINALIZING_OUTPUT, 1f` canonical terminal still fires from
         // the compressor body once `commit` returns.
-        commitFn = { _ -> copyTempToUri(tempFile, dest) },
+        //
+        // `withContext(Dispatchers.IO)` keeps structured concurrency intact when the public
+        // `compress()` entry is invoked from `Dispatchers.Default` or `Dispatchers.Main` —
+        // the FileInputStream + openOutputStream + copyTo chain would otherwise block a
+        // non-IO pool thread. Matches the pattern used in `AndroidAudioCompressor:217`,
+        // `AndroidVideoCompressor:188`, and `AndroidKompressor:35`.
+        commitFn = { _ -> withContext(Dispatchers.IO) { copyTempToUri(tempFile, dest) } },
         cleanupFn = { runCatching { tempFile.delete() } },
     )
 }

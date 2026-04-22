@@ -105,12 +105,10 @@ internal suspend fun MediaSource.toIosInputPath(
     )
     is IosPHAssetMediaSource -> resolvePhAssetHandle(this)
     is IosDataMediaSource -> materializeNsData(this, mediaType, logger, onProgress)
-    is MediaSource.Local.Stream, is MediaSource.Local.Bytes -> materializeStreamOrBytes(
-        input = this,
-        mediaType = mediaType,
-        logger = logger,
-        onProgress = onProgress,
-    )
+    // Split into two `is` arms so the smart-cast narrows to the specific subtype — the
+    // `MediaSource.Local` parameter on [materializeStreamOrBytes] accepts either directly.
+    is MediaSource.Local.Stream -> materializeStreamOrBytes(this, mediaType, logger, onProgress)
+    is MediaSource.Local.Bytes -> materializeStreamOrBytes(this, mediaType, logger, onProgress)
     else -> throw UnsupportedOperationException(
         "Unsupported MediaSource subtype on iOS: ${this::class.simpleName}",
     )
@@ -144,15 +142,13 @@ internal fun MediaDestination.toIosOutputHandle(): IosOutputHandle = when (this)
 }
 
 private suspend fun materializeStreamOrBytes(
-    input: MediaSource,
+    input: MediaSource.Local,
     mediaType: MediaType,
     logger: SafeLogger,
     onProgress: suspend (Float) -> Unit,
 ): IosInputHandle {
-    // Cast is safe — callers only reach this branch through the Stream/Bytes `is` checks
-    // above. The resolver itself rejects anything else with an IllegalStateException.
     val resolved = resolveStreamOrBytesToTempFile(
-        input = input as MediaSource.Local,
+        input = input,
         tempDir = kompressorTempDir(),
         mediaType = mediaType,
         logger = logger,
@@ -259,16 +255,7 @@ private fun renameToAvRecognizableExtension(
  * decode after content-sniffing past the extension hint.
  */
 private fun detectInputExtension(path: String, mediaType: MediaType): String {
-    val buffer = Buffer()
-    runCatching {
-        val src = kompressorFileSystem.source(path.toPath())
-        try {
-            src.read(buffer, MAGIC_BYTE_PEEK.toLong())
-        } finally {
-            src.close()
-        }
-    }
-    val magic = buffer.readByteArray()
+    val magic = peekMagicBytes(path)
     val defaultExtension = when (mediaType) {
         MediaType.VIDEO -> DEFAULT_VIDEO_EXTENSION
         MediaType.AUDIO -> DEFAULT_AUDIO_EXTENSION
@@ -283,9 +270,37 @@ private fun detectInputExtension(path: String, mediaType: MediaType): String {
     return when {
         fourccHead == "RIFF" && fourccAt8 == "WAVE" -> "wav"
         fourccAt4 == "ftyp" -> if (mediaType == MediaType.VIDEO) "mp4" else "m4a"
-        fourccHead.startsWith("ID3") -> "mp3"
+        fourccHead.startsWith("ID3") || isMp3FrameSync(magic) -> "mp3"
         else -> defaultExtension
     }
+}
+
+/** Read up to [MAGIC_BYTE_PEEK] bytes from [path]. Never throws — returns empty on I/O error. */
+private fun peekMagicBytes(path: String): ByteArray {
+    val buffer = Buffer()
+    runCatching {
+        val src = kompressorFileSystem.source(path.toPath())
+        try {
+            src.read(buffer, MAGIC_BYTE_PEEK.toLong())
+        } finally {
+            src.close()
+        }
+    }
+    return buffer.readByteArray()
+}
+
+/**
+ * Detect a raw MPEG audio-frame sync word — 11 bits set in the first two bytes plus a Layer-III
+ * marker in the layer field. Covers the typical CBR / VBR MP3 streams that skip the ID3v2
+ * header, which `.wav` / `ftyp` detection would otherwise miss — without this check, those
+ * files fall through to the `.m4a` default and AVFoundation rejects them on UTI mismatch
+ * [PR #143 review, finding #6].
+ */
+private fun isMp3FrameSync(magic: ByteArray): Boolean {
+    if (magic.size < 2) return false
+    val b0 = magic[0].toInt() and 0xFF
+    val b1 = magic[1].toInt() and 0xFF
+    return b0 == 0xFF && (b1 and 0xE0) == 0xE0 && (b1 and 0x06) == 0x02
 }
 
 private const val MAGIC_BYTE_PEEK = 16

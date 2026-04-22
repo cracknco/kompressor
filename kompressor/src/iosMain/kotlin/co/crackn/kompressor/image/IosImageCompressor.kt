@@ -157,7 +157,7 @@ internal class IosImageCompressor(
             // route through the zero-copy NSData fast path. No temp file on the input side;
             // image payloads are bounded (~50 MB typical) so holding in RAM is safe and spares
             // the materialization round-trip that audio / video must pay.
-            val streamOrBytesData: platform.Foundation.NSData? = when (input) {
+            val streamOrBytesData: NSData? = when (input) {
                 is MediaSource.Local.Bytes -> nsDataFromBytes(input.bytes)
                 is MediaSource.Local.Stream -> nsDataFromStream(input)
                 else -> null

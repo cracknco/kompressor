@@ -55,7 +55,10 @@ class OutputSinkTest {
 
     @Test
     fun streamOutputSinkProgressIsMonotonicAndEndsAtOne() = runTest {
-        // 256 KB → 4 × 64 KB chunks via SINK_COPY_BUFFER_SIZE. Predictable step pattern.
+        // 256 KB payload big enough to guarantee >= 2 chunks regardless of the
+        // `SINK_COPY_BUFFER_SIZE` constant. Asserting only "at least 2 ticks" keeps this
+        // test decoupled from the chunk-size tuning knob — the real invariants pinned here
+        // are `last() == 1.0f`, monotonic non-decreasing, and `[0f, 1f]` bounded.
         val payload = ByteArray(256 * 1024)
         val fs = FakeFileSystem()
         fs.createDirectories(tempDir)
@@ -66,7 +69,7 @@ class OutputSinkTest {
         StreamOutputSink(tempFile, Buffer(), closeOnFinish = true, fileSystem = fs)
             .publish { emitted += it }
 
-        emitted.size shouldBe 4
+        assertTrue(emitted.size >= 2, "expected at least 2 progress emissions, got ${emitted.size}")
         emitted.last() shouldBe 1.0f
         for (i in 1 until emitted.size) {
             assertTrue(emitted[i] >= emitted[i - 1], "progress went backwards: $emitted")

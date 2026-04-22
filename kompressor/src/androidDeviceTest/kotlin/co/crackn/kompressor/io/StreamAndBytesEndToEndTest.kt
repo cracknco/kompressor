@@ -113,7 +113,9 @@ class StreamAndBytesEndToEndTest {
 
         withClue("legacy: ${legacy.exceptionOrNull()}") { legacy.isSuccess shouldBe true }
         withClue("novel: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
-        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("audio Stream input must produce byte-identical output to legacy FilePath") {
+            novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -137,7 +139,9 @@ class StreamAndBytesEndToEndTest {
 
         withClue("legacy: ${legacy.exceptionOrNull()}") { legacy.isSuccess shouldBe true }
         withClue("novel: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
-        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("video Stream input must produce byte-identical output to legacy FilePath") {
+            novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -225,7 +229,9 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("audio Bytes input must produce byte-identical output to legacy FilePath") {
+            novelOut.readBytes().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -298,7 +304,9 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
-        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("image Stream output must receive byte-identical bytes to the legacy FilePath write") {
+            consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -322,7 +330,9 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
-        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("audio Stream output must receive byte-identical bytes to the legacy FilePath write") {
+            consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
@@ -346,7 +356,9 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         withClue("stream output: ${novel.exceptionOrNull()}") { novel.isSuccess shouldBe true }
-        consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        withClue("video Stream output must receive byte-identical bytes to the legacy FilePath write") {
+            consumer.readByteArray().contentEquals(legacyOut.readBytes()) shouldBe true
+        }
     }
 
     @Test
