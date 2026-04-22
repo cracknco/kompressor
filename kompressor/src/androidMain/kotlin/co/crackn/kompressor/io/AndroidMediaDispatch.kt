@@ -183,14 +183,21 @@ private suspend fun materializePfdHandle(
     val pfd = input.pfd
     val tempDir = kompressorTempDir()
     val sizeHint = estimateSourceSize(input)
+    // `withContext(Dispatchers.IO)` keeps structured concurrency intact when the public
+    // `compress()` entry is invoked from `Dispatchers.Default` or `Dispatchers.Main` —
+    // the `FileInputStream` + chunked copy chain would otherwise block a non-IO pool
+    // thread. Matches the pattern used in `androidUriOutputHandle` below (line 225),
+    // `AndroidAudioCompressor:224`, `AndroidVideoCompressor:191`, and `AndroidKompressor:35`.
     val tempFile: Path = try {
-        java.io.FileInputStream(pfd.fileDescriptor).source().use { source ->
-            source.materializeToTempFile(
-                fileSystem = kompressorFileSystem,
-                tempDir = tempDir,
-                sizeHint = sizeHint,
-                onProgress = onProgress,
-            )
+        withContext(Dispatchers.IO) {
+            java.io.FileInputStream(pfd.fileDescriptor).source().use { source ->
+                source.materializeToTempFile(
+                    fileSystem = kompressorFileSystem,
+                    tempDir = tempDir,
+                    sizeHint = sizeHint,
+                    onProgress = onProgress,
+                )
+            }
         }
     } catch (t: Throwable) {
         // [materializeToTempFile] already best-effort deletes the partial tempFile on any

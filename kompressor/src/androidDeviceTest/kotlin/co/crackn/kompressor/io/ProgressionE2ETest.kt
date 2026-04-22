@@ -255,9 +255,10 @@ class ProgressionE2ETest {
             // the observable consequence — a multi-chunk input emits more than one tick.
             (inputLength > CHUNK_SIZE_BYTES) shouldBe true
             (materializingFractions.size >= 2) shouldBe true
-            // At least one fraction is a real computed value in (0, 1] — rules out the degraded
-            // "probe returned null → flat-0 heartbeat" path which would push every tick to 0f.
-            materializingFractions.any { it > 0f } shouldBe true
+            // At least one fraction is a real mid-copy value strictly in (0, 1) — rules out
+            // BOTH the degraded "probe returned null → flat-0 heartbeat" path (every tick 0f)
+            // AND the hypothetical "only terminal tick" failure mode (every tick 1f at EOF).
+            materializingFractions.any { it > 0f && it < 1f } shouldBe true
         }
     }
 
