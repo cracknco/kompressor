@@ -25,9 +25,10 @@ import okio.source
  * so a consumer switching platforms sees the identical rejection text.
  *
  * The returned [MediaSource.Local] is consumed by the `compress(MediaSource, MediaDestination, ...)`
- * overload introduced in CRA-92. For `content://` inputs Kompressor defers to the existing
- * `ContentResolver.openInputStream` / `MediaMetadataRetriever(Context, Uri)` plumbing used by the
- * legacy string-based overload; no materialization to disk is performed.
+ * entry point. For `content://` inputs Kompressor defers to the existing
+ * `ContentResolver.openInputStream` / `MediaMetadataRetriever(Context, Uri)` plumbing invoked by
+ * the private `compressFilePath(inputPath, outputPath, ...)` helper; no materialization to disk
+ * is performed.
  *
  * @param uri The Android URI to compress from. Must be `file` or `content`.
  * @return A [MediaSource.Local] that the Android compressors recognise as a URI source.

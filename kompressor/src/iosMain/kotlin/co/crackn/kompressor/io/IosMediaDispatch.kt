@@ -38,7 +38,7 @@ import platform.Foundation.NSURL
 
 /** Result of resolving a [MediaSource] to an iOS filesystem path. */
 internal class IosInputHandle(
-    /** Absolute filesystem path the legacy compress(String, String, ...) overload accepts. */
+    /** Absolute filesystem path the private `compressFilePath(inputPath, outputPath, ...)` helper accepts. */
     val path: String,
     private val cleanupFn: () -> Unit,
 ) {
@@ -56,7 +56,7 @@ internal class IosInputHandle(
  * [commit] streams the temp file into the consumer sink, emitting progress ticks as it goes.
  */
 internal class IosOutputHandle(
-    /** Path the legacy compress(String, String, ...) overload writes to. */
+    /** Path the private `compressFilePath(inputPath, outputPath, ...)` helper writes to. */
     val tempPath: String,
     private val commitFn: suspend (suspend (Float) -> Unit) -> Unit,
     private val cleanupFn: () -> Unit,

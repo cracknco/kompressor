@@ -107,7 +107,7 @@ internal class AndroidImageCompressor(
     }
 
     /**
-     * FilePath / Uri / PFD input path — re-uses the legacy [compress] entry point when the
+     * FilePath / Uri / PFD input path — re-uses the private [compressFilePath] helper when the
      * destination is also file-backed (fastest path, matches pre-CRA-95 behaviour byte-for-byte).
      * When the destination is a [MediaDestination.Local.Stream], decode via [ImageSource.of] and
      * write directly into the consumer [okio.Sink] — still no temp file on the output side.
