@@ -176,8 +176,9 @@ class ProgressionE2ETest {
     // observable. CRA-99 routes the copy through the shared TempFileMaterializer + probe-seeded
     // sizeHint, so large PFDs now emit monotone fraction-accurate ticks just like the
     // Stream/Bytes paths. Tests assert the full MATERIALIZING_INPUT → COMPRESSING → FINALIZING
-    // sequence AND that more than one MATERIALIZING_INPUT fraction is observed (a fraction count
-    // proportional to the 64 KB chunk boundary, per the CRA-99 DoD).
+    // sequence AND that more than one MATERIALIZING_INPUT fraction is observed — the
+    // [assertPfdMaterializationTicks] helper asserts on the observable invariant (≥ 2 ticks +
+    // ≥ 1 mid-copy fraction) rather than coupling to `TempFileMaterializer.BUFFER_SIZE`.
 
     @Test
     fun audio_pfdInput_progressionIsMonotone() = runTest {
@@ -194,7 +195,7 @@ class ProgressionE2ETest {
 
         withClue("compress: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         assertProgression(events, expectMaterializing = true)
-        assertPfdMaterializationTicks(events, inputLength = input.length())
+        assertPfdMaterializationTicks(events)
     }
 
     @Test
@@ -212,7 +213,7 @@ class ProgressionE2ETest {
 
         withClue("compress: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         assertProgression(events, expectMaterializing = true)
-        assertPfdMaterializationTicks(events, inputLength = input.length())
+        assertPfdMaterializationTicks(events)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -238,22 +239,24 @@ class ProgressionE2ETest {
     }
 
     /**
-     * CRA-99 invariant for PFD inputs — assert that the probe-seeded `materializePfdHandle`
-     * emits more than one `MATERIALIZING_INPUT` tick when the input is larger than a single
-     * 64 KB chunk, and that the fractions are actually computed against the input length
-     * (at least one non-zero fraction < 1 appears mid-copy). A raw `copyTo` without probe
-     * wiring would only emit the `FINALIZING_OUTPUT(1f)` terminal — no materialization ticks
-     * at all.
+     * CRA-99 invariant for PFD inputs — asserts the probe-seeded `materializePfdHandle` emits
+     * **more than one** `MATERIALIZING_INPUT` tick and that **at least one** fraction is a
+     * real mid-copy value strictly in `(0f, 1f)`.
+     *
+     * Both invariants rely only on the fixture being larger than any reasonable
+     * [TempFileMaterializer] buffer — the WAV / MP4 fixtures used by these tests are hard-coded
+     * well above 100 KB (~180 KB 1s-stereo-44.1kHz WAV, and the MP4 fixture is larger still).
+     * Asserting against the observable output rather than the internal `BUFFER_SIZE` constant
+     * keeps these tests robust to materialiser tuning (e.g. if the buffer is raised to 128 KB
+     * for throughput, these tests still pass unchanged).
+     *
+     * A raw `copyTo` without probe wiring would either emit zero `MATERIALIZING_INPUT` ticks
+     * (old behaviour, caught by the `≥ 2` check) or emit every tick at `0f` / `1f` only (the
+     * degraded "probe returned null → flat-0 heartbeat" path, caught by the mid-copy check).
      */
-    private fun assertPfdMaterializationTicks(
-        events: List<CompressionProgress>,
-        inputLength: Long,
-    ) {
+    private fun assertPfdMaterializationTicks(events: List<CompressionProgress>) {
         val materializingFractions = events.filter { it.phase == MATERIALIZING_INPUT }.map { it.fraction }
-        withClue("materializingFractions=$materializingFractions inputLength=$inputLength") {
-            // The 64 KB chunk boundary is an internal TempFileMaterializer constant; we assert
-            // the observable consequence — a multi-chunk input emits more than one tick.
-            (inputLength > CHUNK_SIZE_BYTES) shouldBe true
+        withClue("materializingFractions=$materializingFractions") {
             (materializingFractions.size >= 2) shouldBe true
             // At least one fraction is a real mid-copy value strictly in (0, 1) — rules out
             // BOTH the degraded "probe returned null → flat-0 heartbeat" path (every tick 0f)
@@ -268,10 +271,5 @@ class ProgressionE2ETest {
 
     private fun writeMp4(): File = File(tempDir, "in_${System.nanoTime()}.mp4").also {
         AudioInputFixtures.createMp4WithVideoAndAudio(it, durationSeconds = 1)
-    }
-
-    private companion object {
-        /** Mirrors `TempFileMaterializer.BUFFER_SIZE` — kept in sync by doc convention. */
-        private const val CHUNK_SIZE_BYTES: Long = 64L * 1024L
     }
 }

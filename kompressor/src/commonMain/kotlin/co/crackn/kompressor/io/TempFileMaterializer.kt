@@ -65,6 +65,11 @@ private const val BUFFER_SIZE: Long = 64L * 1024L
  * @param onProgress Suspending progress callback. Called at each [BUFFER_SIZE]-byte
  *   boundary with a fraction in `[0.0, 1.0]` (when [sizeHint] is provided) or `0f`
  *   (when [sizeHint] is `null`).
+ * @param filenamePrefix Prefix for the generated temp file name — `<prefix>_<uuid>.bin`.
+ *   Defaults to `"kmp_io"` for the common Stream / Bytes path. Specialised call-sites
+ *   (e.g. the PFD dispatch in CRA-99 [AndroidMediaDispatch]) override it so `adb shell
+ *   find cacheDir/kompressor-io -name 'kmp_pfd_*'`-style post-mortem queries can still
+ *   isolate a specific source type.
  *
  * @return Absolute [Path] of the created temp file. The caller owns it — typical pattern
  *   is `try { … } finally { FileSystem.SYSTEM.delete(tempFile) }`.
@@ -76,11 +81,13 @@ private const val BUFFER_SIZE: Long = 64L * 1024L
 internal suspend fun Source.materializeToTempFile(
     tempDir: Path,
     sizeHint: Long? = null,
+    filenamePrefix: String = "kmp_io",
     onProgress: suspend (fraction: Float) -> Unit = {},
 ): Path = materializeToTempFile(
     fileSystem = kompressorFileSystem,
     tempDir = tempDir,
     sizeHint = sizeHint,
+    filenamePrefix = filenamePrefix,
     onProgress = onProgress,
 )
 
@@ -95,11 +102,12 @@ internal suspend fun Source.materializeToTempFile(
     fileSystem: FileSystem,
     tempDir: Path,
     sizeHint: Long? = null,
+    filenamePrefix: String = "kmp_io",
     onProgress: suspend (fraction: Float) -> Unit = {},
 ): Path {
     if (!fileSystem.exists(tempDir)) fileSystem.createDirectories(tempDir)
 
-    val tempFile = tempDir / "kmp_io_${randomMaterializationId()}.bin"
+    val tempFile = tempDir / "${filenamePrefix}_${randomMaterializationId()}.bin"
 
     try {
         copyChunksTo(fileSystem, tempFile, sizeHint, onProgress)
@@ -159,11 +167,11 @@ private fun computeFraction(bytesWritten: Long, sizeHint: Long?): Float =
     }
 
 /**
- * Short random identifier used to name the temp file (`kmp_io_<id>.bin`). Resolved per
- * platform so we don't have to propagate `@OptIn(ExperimentalUuidApi::class)` across the
- * library: Android uses `java.util.UUID.randomUUID()`, iOS uses `NSUUID.UUID().UUIDString`.
- * Both deliver >122 bits of entropy — collision on a single-process temp dir is not a
- * concern.
+ * Short random identifier used to name the temp file (`<prefix>_<id>.bin` — default prefix
+ * `kmp_io`). Resolved per platform so we don't have to propagate
+ * `@OptIn(ExperimentalUuidApi::class)` across the library: Android uses
+ * `java.util.UUID.randomUUID()`, iOS uses `NSUUID.UUID().UUIDString`. Both deliver >122 bits
+ * of entropy — collision on a single-process temp dir is not a concern.
  */
 internal expect fun randomMaterializationId(): String
 

@@ -12,33 +12,41 @@ package co.crackn.kompressor.io
  * caller-supplied `sizeHint`, so the materialization-phase progress fraction can still report real
  * percentages instead of a flat `0f` heartbeat (see [TempFileMaterializer] `computeFraction`).
  *
- * **Activation status (CRA-99):**
- *  - `AndroidPfdMediaSource` — **active**. `materializePfdHandle` routes PFD materialisation
- *    through `TempFileMaterializer` with this probe as the sizeHint seed, so seekable-FD copies
- *    emit fraction-accurate `MATERIALIZING_INPUT` ticks (pipe / socket FDs with `statSize = -1`
- *    clamp to `null` and degrade gracefully to a flat-0 heartbeat).
- *  - `MediaSource.Local.FilePath` / `MediaSource.Local.Bytes` / `IosDataMediaSource` —
- *    **indirectly active**. These branches are authoritative (file length, byte-array size,
- *    `NSData.length`) but the dispatch already knows the size without calling the probe
- *    (`Bytes.size` / `NSData.length`). The branches exist so the probe remains the single
- *    canonical size source of truth for any future dispatch call-site.
- *  - `MediaSource.Local.Stream` — **passthrough only**. The Stream branch echoes
- *    `input.sizeHint` back unchanged. Introspecting an opaque `okio.Source` at runtime is not
- *    feasible: `okio.FileSource` is `internal` to okio, reflection isn't available on
- *    Kotlin/Native, and the `Source` interface itself has no size channel. The door is closed
- *    pending a dedicated `MediaSource.Local.Stream` variant that carries an explicit size
- *    alongside the `Source` (e.g. a hypothetical `Stream.sized(source, bytes)` builder). Callers
- *    with a known size should supply `sizeHint` at construction; the Stream branch is kept
- *    probe-aware so that future enhancement lands without touching the dispatch.
- *  - `AndroidUriMediaSource` / `IosUrlMediaSource` — **scaffolding only**. Content URIs and
- *    `file://` NSURLs pass through natively to Media3 / AVFoundation today — no local
- *    materialisation, no progress fraction to seed. Branches retained so a future
- *    "force local materialisation" switch (e.g. a debug flag that forces a temp-file copy for
- *    reproducibility) can activate them without a follow-up probe change.
- *  - `IosPHAssetMediaSource` — **scaffolding only**. PHAsset image materialisation is a
- *    one-shot atomic `NSData.writeToURL(..., atomically = true)` today — no chunk boundary to
- *    report on. The branch is ready if we ever switch to a chunked write (50 MB Live Photo with
- *    mid-write cancellation cooperation).
+ * **Activation status (CRA-99).** Each `MediaSource.Local` subtype falls into one of three
+ *  reachability buckets from the current dispatch:
+ *
+ *  1. **Active** — dispatch calls the probe and seeds `sizeHint` with the result:
+ *    - `AndroidPfdMediaSource` — `materializePfdHandle` routes PFD materialisation through
+ *      `TempFileMaterializer` with this probe as the sizeHint seed, so seekable-FD copies emit
+ *      fraction-accurate `MATERIALIZING_INPUT` ticks (pipe / socket FDs with `statSize = -1`
+ *      clamp to `null` and degrade gracefully to a flat-0 heartbeat).
+ *
+ *  2. **Bypassed (authoritative size already known)** — probe branch exists but dispatch reads
+ *      the size directly without calling through the probe. Kept in sync with the Active bucket
+ *      so the probe remains a single canonical source of truth for any future dispatch call-site.
+ *    - `MediaSource.Local.FilePath` — `File.length()` / `NSFileManager[NSFileSize]` could be
+ *      queried but today's dispatch passes `FilePath` directly to `compressFilePath` without
+ *      materialisation, so there's no progress fraction to seed anyway.
+ *    - `MediaSource.Local.Bytes` — dispatch reads `bytes.size.toLong()` directly when wrapping
+ *      the buffer for materialisation.
+ *    - `IosDataMediaSource` — dispatch reads `NSData.length` directly when copying into the
+ *      `Bytes` path.
+ *
+ *  3. **Scaffolding only** — no materialisation today means no fraction to report on; branch is
+ *      retained as ready-to-activate infrastructure for a future dispatch change.
+ *    - `MediaSource.Local.Stream` — the Stream branch echoes `input.sizeHint` back unchanged.
+ *      Introspecting an opaque `okio.Source` at runtime is not feasible: `okio.FileSource` is
+ *      `internal` to okio, reflection isn't available on Kotlin/Native, and the `Source`
+ *      interface itself has no size channel. Door closed pending a dedicated
+ *      `MediaSource.Local.Stream.sized(source, bytes)` builder; callers with a known size should
+ *      supply `sizeHint` at construction.
+ *    - `AndroidUriMediaSource` / `IosUrlMediaSource` — content URIs and `file://` NSURLs pass
+ *      through natively to Media3 / AVFoundation today (no local materialisation). Ready for a
+ *      future "force local materialisation" switch (e.g. a debug flag forcing a temp-file copy
+ *      for reproducibility).
+ *    - `IosPHAssetMediaSource` — PHAsset image materialisation is a one-shot atomic
+ *      `NSData.writeToURL(..., atomically = true)` today (no chunk boundary). Ready if we ever
+ *      switch to a chunked write (50 MB Live Photo with mid-write cancellation cooperation).
  *
  * **Return contract:**
  *  - `null` — size genuinely unknown (unbounded stream, probe failed, PhotoKit private-KVC miss).

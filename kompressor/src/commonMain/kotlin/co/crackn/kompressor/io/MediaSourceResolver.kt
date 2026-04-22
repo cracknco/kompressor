@@ -137,7 +137,7 @@ private suspend fun materializeStream(
     // leak the descriptor on whichever mode we didn't enumerate.
     @Suppress("TooGenericExceptionCaught")
     val tempFile = try {
-        input.source.materializeToTempFile(fileSystem, tempDir, effectiveSizeHint, onProgress)
+        input.source.materializeToTempFile(fileSystem, tempDir, effectiveSizeHint, onProgress = onProgress)
     } catch (t: Throwable) {
         if (input.closeOnFinish) runCatching { input.source.close() }
         throw t
@@ -181,7 +181,12 @@ private suspend fun materializeBytes(
     // chunked-copy path as Stream inputs — O(BUFFER_SIZE) heap, cancellation-safe, progress-
     // reporting — without a dedicated bytes-only code branch in [materializeToTempFile].
     val buffer = Buffer().apply { write(input.bytes) }
-    val tempFile = buffer.materializeToTempFile(fileSystem, tempDir, input.bytes.size.toLong(), onProgress)
+    val tempFile = buffer.materializeToTempFile(
+        fileSystem,
+        tempDir,
+        input.bytes.size.toLong(),
+        onProgress = onProgress,
+    )
     return ResolvedInput(
         path = tempFile.toString(),
         cleanup = {

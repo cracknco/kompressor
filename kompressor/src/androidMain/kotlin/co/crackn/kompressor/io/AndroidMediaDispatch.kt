@@ -186,8 +186,13 @@ private suspend fun materializePfdHandle(
     // `withContext(Dispatchers.IO)` keeps structured concurrency intact when the public
     // `compress()` entry is invoked from `Dispatchers.Default` or `Dispatchers.Main` —
     // the `FileInputStream` + chunked copy chain would otherwise block a non-IO pool
-    // thread. Matches the pattern used in `androidUriOutputHandle` below (line 225),
-    // `AndroidAudioCompressor:224`, `AndroidVideoCompressor:191`, and `AndroidKompressor:35`.
+    // thread. Matches the pattern used in `androidUriOutputHandle` below, plus the three
+    // compressor entry points `AndroidAudioCompressor`, `AndroidVideoCompressor`, and
+    // `AndroidKompressor`.
+    //
+    // `filenamePrefix = "kmp_pfd"` preserves the pre-CRA-99 naming convention so
+    // post-mortem queries (`adb shell find cacheDir/kompressor-io -name 'kmp_pfd_*'`)
+    // and Logcat greps still isolate PFD materialisations from Stream/Bytes ones.
     val tempFile: Path = try {
         withContext(Dispatchers.IO) {
             java.io.FileInputStream(pfd.fileDescriptor).source().use { source ->
@@ -196,6 +201,7 @@ private suspend fun materializePfdHandle(
                     tempDir = tempDir,
                     sizeHint = sizeHint,
                     onProgress = onProgress,
+                    filenamePrefix = "kmp_pfd",
                 )
             }
         }
@@ -216,7 +222,10 @@ private suspend fun materializePfdHandle(
 }
 
 private fun androidUriOutputHandle(dest: AndroidUriMediaDestination): AndroidOutputHandle {
-    val tempDir = androidKompressorTempDir().apply { mkdirs() }
+    // Single shared `cacheDir/kompressor-io` tree so PFD materialisation (via
+    // `kompressorTempDir()` → `materializeToTempFile`) and URI-output temp files live under
+    // one path — sweeping the directory reclaims both in one `rm -rf`.
+    val tempDir = File(kompressorTempDir().toString()).apply { mkdirs() }
     val tempFile = File(tempDir, "kmp_uri_out_${UUID.randomUUID()}.bin")
     return AndroidOutputHandle(
         tempPath = tempFile.absolutePath,
@@ -267,10 +276,3 @@ private fun copyTempToUri(tempFile: File, dest: AndroidUriMediaDestination) {
     }
 }
 
-/**
- * Private temp directory for Android-side materialization (PFD input, URI output). Kept alongside
- * the existing `kompressor-io` tree used by [co.crackn.kompressor.io.materializeToTempFile] so all
- * Kompressor-owned temp files live under one sub-tree and can be swept together.
- */
-private fun androidKompressorTempDir(): File =
-    File(KompressorContext.appContext.cacheDir, "kompressor-io")
