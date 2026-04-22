@@ -19,6 +19,9 @@ import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
+import io.kotest.assertions.withClue
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.shouldBe
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
 import kotlin.native.runtime.GC
@@ -45,10 +48,11 @@ import kotlin.test.Test
  * Each iteration constructs a compressor in a dedicated non-inline suspend function so the
  * reference is confined to that frame's stack — the frame is popped before the next
  * iteration starts, making the compressor GC-eligible. A `WeakReference` is recorded
- * alongside (weak refs do NOT keep the target alive). After the loop we force two
- * [GC.collect] passes and assert every weak ref is now `null`. Any non-null ref signals a
- * retention path holding the compressor — same class of bug LeakCanary catches on Android,
- * minus the retention-chain printout (use Instruments.app locally to debug a flagged leak).
+ * alongside (weak refs do NOT keep the target alive). After the loop we force
+ * [GC_PASSES] [GC.collect] passes (currently 3) interleaved with `yield()` and assert every
+ * weak ref is now `null`. Any non-null ref signals a retention path holding the compressor —
+ * same class of bug LeakCanary catches on Android, minus the retention-chain printout (use
+ * Instruments.app locally to debug a flagged leak).
  *
  * Why this replaces the previous `xctrace record --template Leaks` gate: xctrace depends
  * on Instruments memory-recording services (`VMUTaskMemoryScanner`, `libmalloc`, `vmmap`)
@@ -164,7 +168,9 @@ class IosCompressionLeakTest {
             outputPath = outputPath,
             config = ImageCompressionConfig(quality = DEFAULT_QUALITY),
         )
-        check(result.isSuccess) { "Image iter $i failed: ${result.exceptionOrNull()}" }
+        withClue("Image iter $i failed: ${result.exceptionOrNull()}") {
+            result.isSuccess shouldBe true
+        }
         NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
     }
 
@@ -181,7 +187,9 @@ class IosCompressionLeakTest {
             outputPath = outputPath,
             config = AudioCompressionConfig(bitrate = AUDIO_BITRATE),
         )
-        check(result.isSuccess) { "Audio iter $i failed: ${result.exceptionOrNull()}" }
+        withClue("Audio iter $i failed: ${result.exceptionOrNull()}") {
+            result.isSuccess shouldBe true
+        }
         NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
     }
 
@@ -198,7 +206,9 @@ class IosCompressionLeakTest {
             outputPath = outputPath,
             config = VideoCompressionConfig(),
         )
-        check(result.isSuccess) { "Video iter $i failed: ${result.exceptionOrNull()}" }
+        withClue("Video iter $i failed: ${result.exceptionOrNull()}") {
+            result.isSuccess shouldBe true
+        }
         NSFileManager.defaultManager.removeItemAtPath(outputPath, null)
     }
 
@@ -220,12 +230,14 @@ class IosCompressionLeakTest {
         }
 
         val leaked = refs.withIndex().filter { (_, ref) -> ref.get() != null }
-        check(leaked.isEmpty()) {
-            val first = leaked.take(3).joinToString { "#${it.index}" }
+        val first = leaked.take(FIRST_LEAKED_REPORT_LIMIT).joinToString { "#${it.index}" }
+        withClue(
             "Leaked ${leaked.size}/${refs.size} $label instances after $GC_PASSES GC passes. " +
                 "First leaked indices: $first. Reproduce locally with " +
                 "./gradlew :kompressor:iosSimulatorArm64Test --tests '*IosCompressionLeakTest*' " +
-                "then open Instruments.app on the running simulator to inspect the retention chain."
+                "then open Instruments.app on the running simulator to inspect the retention chain.",
+        ) {
+            leaked.shouldBeEmpty()
         }
     }
 
@@ -235,6 +247,9 @@ class IosCompressionLeakTest {
 
         /** Number of GC.collect passes in [assertAllReleased] — see that function's KDoc. */
         const val GC_PASSES = 3
+
+        /** How many leaked indices to include in the failure diagnostic (keeps the log compact). */
+        const val FIRST_LEAKED_REPORT_LIMIT = 3
         const val IMAGE_DIM = 512
         const val DEFAULT_QUALITY = 75
         const val AUDIO_FIXTURE_SECONDS = 1
