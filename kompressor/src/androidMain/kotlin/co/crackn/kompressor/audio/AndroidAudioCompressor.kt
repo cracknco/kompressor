@@ -26,6 +26,7 @@ import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.MediaType
 import co.crackn.kompressor.io.toAndroidInputPath
 import co.crackn.kompressor.io.toAndroidOutputHandle
 import co.crackn.kompressor.logging.LogTags
@@ -133,13 +134,27 @@ internal class AndroidAudioCompressor(
         }
     }
 
+    // LongMethod suppressed: see AndroidVideoCompressor. The nested try/finally lifecycle
+    // around the input + output handle cleanup is the length driver; extracting it would
+    // fragment the cleanup contract.
+    @Suppress("LongMethod")
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,
         config: AudioCompressionConfig,
         onProgress: suspend (CompressionProgress) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputHandle = input.toAndroidInputPath()
+        val inputHandle = input.toAndroidInputPath(
+            mediaType = MediaType.AUDIO,
+            logger = logger,
+        ) { fraction ->
+            onProgress(
+                CompressionProgress(
+                    CompressionProgress.Phase.MATERIALIZING_INPUT,
+                    fraction.coerceIn(0f, 1f),
+                ),
+            )
+        }
         try {
             val outputHandle = output.toAndroidOutputHandle()
             try {
@@ -156,9 +171,18 @@ internal class AndroidAudioCompressor(
                     }
                 }.getOrThrow()
                 // Commit runs under the FINALIZING_OUTPUT phase: bytes move from the temp file
-                // into the MediaStore / SAF URI here. Failures during commit propagate as
-                // `Result.failure` via the enclosing `suspendRunCatching`.
-                outputHandle.commit()
+                // into the MediaStore / SAF URI / consumer Sink here. Failures during commit
+                // propagate as `Result.failure` via the enclosing `suspendRunCatching`.
+                outputHandle.commit { fraction ->
+                    if (fraction < 1f) {
+                        onProgress(
+                            CompressionProgress(
+                                CompressionProgress.Phase.FINALIZING_OUTPUT,
+                                fraction.coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }
                 onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
                 result
             } finally {
