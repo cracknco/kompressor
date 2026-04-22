@@ -114,6 +114,15 @@ private suspend fun materializeStream(
     tempDir: Path,
     onProgress: suspend (Float) -> Unit,
 ): ResolvedInput {
+    // Resolve an effective sizeHint for progress reporting: callers who supplied a concrete
+    // `sizeHint` when constructing the Stream win; otherwise fall back to the cross-platform
+    // [estimateSourceSize] probe so the `MATERIALIZING_INPUT` fraction can still climb from
+    // 0 → 1 instead of pinning flat at 0 (the `computeFraction` sentinel branch). When the
+    // probe also returns `null` (opaque stream, truly unknown size) we accept the flat-0
+    // heartbeat — better than emitting fabricated fractions that will overshoot and clamp.
+    // Probe is nullable-returning and never throws, per its contract.
+    val effectiveSizeHint: Long? = input.sizeHint ?: estimateSourceSize(input)
+
     // If `materializeToTempFile` throws (I/O, disk-full, cancellation), we must still honour
     // `closeOnFinish` on the caller-owned source — otherwise the descriptor leaks. The success
     // path defers the close to the returned cleanup closure so the caller controls lifetime;
@@ -126,7 +135,7 @@ private suspend fun materializeStream(
     // leak the descriptor on whichever mode we didn't enumerate.
     @Suppress("TooGenericExceptionCaught")
     val tempFile = try {
-        input.source.materializeToTempFile(fileSystem, tempDir, input.sizeHint, onProgress)
+        input.source.materializeToTempFile(fileSystem, tempDir, effectiveSizeHint, onProgress)
     } catch (t: Throwable) {
         if (input.closeOnFinish) runCatching { input.source.close() }
         throw t
