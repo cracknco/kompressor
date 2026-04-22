@@ -18,10 +18,10 @@ import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.video.AndroidVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
+import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.shouldBe
 import java.io.File
 import java.security.MessageDigest
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -36,7 +36,8 @@ import org.junit.Test
  * Also verifies the CompressionProgress contract for audio/video: the new overload emits
  * [CompressionProgress.Phase.COMPRESSING] fractions while the pipeline runs and a single
  * [CompressionProgress.Phase.FINALIZING_OUTPUT] with fraction 1.0f as the last emission on
- * success.
+ * success. On failure, `FINALIZING_OUTPUT` is never emitted — pinned by
+ * `audio_newOverload_onFailure_doesNotEmitFinalizing` / the video sibling.
  *
  * Sibling `iosTest/FilePathEndToEndTest.kt` mirrors these assertions on iOS per the
  * KMP parity rule.
@@ -72,9 +73,9 @@ class FilePathEndToEndTest {
             config = ImageCompressionConfig(),
         )
 
-        assertTrue(legacyResult.isSuccess, "legacy path must succeed")
-        assertTrue(novelResult.isSuccess, "FilePath dispatch path must succeed")
-        assertEquals(legacy.sha256(), novel.sha256(), "bitwise-identical output required")
+        legacyResult.isSuccess shouldBe true
+        novelResult.isSuccess shouldBe true
+        novel.sha256() shouldBe legacy.sha256()
     }
 
     @Test
@@ -90,9 +91,9 @@ class FilePathEndToEndTest {
             config = AudioCompressionConfig(),
         )
 
-        assertTrue(legacyResult.isSuccess)
-        assertTrue(novelResult.isSuccess)
-        assertEquals(legacy.sha256(), novel.sha256(), "bitwise-identical output required")
+        legacyResult.isSuccess shouldBe true
+        novelResult.isSuccess shouldBe true
+        novel.sha256() shouldBe legacy.sha256()
     }
 
     @Test
@@ -110,9 +111,9 @@ class FilePathEndToEndTest {
             config = VideoCompressionConfig(),
         )
 
-        assertTrue(legacyResult.isSuccess)
-        assertTrue(novelResult.isSuccess)
-        assertEquals(legacy.sha256(), novel.sha256(), "bitwise-identical output required")
+        legacyResult.isSuccess shouldBe true
+        novelResult.isSuccess shouldBe true
+        novel.sha256() shouldBe legacy.sha256()
     }
 
     @Test
@@ -128,15 +129,12 @@ class FilePathEndToEndTest {
             onProgress = { emissions.add(it) },
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(emissions.isNotEmpty(), "at least one progress emission expected")
-        assertTrue(
-            emissions.all { it.phase != CompressionProgress.Phase.MATERIALIZING_INPUT },
-            "MATERIALIZING_INPUT must never appear on the FilePath fast-path",
-        )
+        result.isSuccess shouldBe true
+        emissions.shouldNotBeEmpty()
+        emissions.any { it.phase == CompressionProgress.Phase.MATERIALIZING_INPUT } shouldBe false
         val last = emissions.last()
-        assertEquals(CompressionProgress.Phase.FINALIZING_OUTPUT, last.phase)
-        assertEquals(1f, last.fraction)
+        last.phase shouldBe CompressionProgress.Phase.FINALIZING_OUTPUT
+        last.fraction shouldBe 1f
     }
 
     @Test
@@ -154,15 +152,53 @@ class FilePathEndToEndTest {
             onProgress = { emissions.add(it) },
         )
 
-        assertTrue(result.isSuccess)
-        assertTrue(emissions.isNotEmpty())
-        assertTrue(
-            emissions.all { it.phase != CompressionProgress.Phase.MATERIALIZING_INPUT },
-            "MATERIALIZING_INPUT must never appear on the FilePath fast-path",
-        )
+        result.isSuccess shouldBe true
+        emissions.shouldNotBeEmpty()
+        emissions.any { it.phase == CompressionProgress.Phase.MATERIALIZING_INPUT } shouldBe false
         val last = emissions.last()
-        assertEquals(CompressionProgress.Phase.FINALIZING_OUTPUT, last.phase)
-        assertEquals(1f, last.fraction)
+        last.phase shouldBe CompressionProgress.Phase.FINALIZING_OUTPUT
+        last.fraction shouldBe 1f
+    }
+
+    // Pins the "FINALIZING_OUTPUT is emitted only on success" contract documented on
+    // AudioCompressor.compress / VideoCompressor.compress. If the inner path-based pipeline
+    // throws (here via a non-existent input), .getOrThrow() in the outer overload propagates
+    // the failure before the terminal FINALIZING_OUTPUT emit — so no consumer UI ever sees a
+    // FINALIZING_OUTPUT(1f) for a failed compression. A regression that moved the emit
+    // outside suspendRunCatching (or before .getOrThrow()) would trip these two tests.
+
+    @Test
+    fun audio_newOverload_onFailure_doesNotEmitFinalizing() = runTest {
+        val missingInput = File(tempDir, "does-not-exist.wav")
+        val output = File(tempDir, "output.m4a")
+        val emissions = mutableListOf<CompressionProgress>()
+
+        val result = audio.compress(
+            input = MediaSource.Local.FilePath(missingInput.absolutePath),
+            output = MediaDestination.Local.FilePath(output.absolutePath),
+            config = AudioCompressionConfig(),
+            onProgress = { emissions.add(it) },
+        )
+
+        result.isFailure shouldBe true
+        emissions.any { it.phase == CompressionProgress.Phase.FINALIZING_OUTPUT } shouldBe false
+    }
+
+    @Test
+    fun video_newOverload_onFailure_doesNotEmitFinalizing() = runTest {
+        val missingInput = File(tempDir, "does-not-exist.mp4")
+        val output = File(tempDir, "output.mp4")
+        val emissions = mutableListOf<CompressionProgress>()
+
+        val result = video.compress(
+            input = MediaSource.Local.FilePath(missingInput.absolutePath),
+            output = MediaDestination.Local.FilePath(output.absolutePath),
+            config = VideoCompressionConfig(),
+            onProgress = { emissions.add(it) },
+        )
+
+        result.isFailure shouldBe true
+        emissions.any { it.phase == CompressionProgress.Phase.FINALIZING_OUTPUT } shouldBe false
     }
 
     private fun createTestWav(durationSeconds: Int): File {

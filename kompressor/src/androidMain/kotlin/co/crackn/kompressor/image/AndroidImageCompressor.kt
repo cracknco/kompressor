@@ -70,16 +70,10 @@ internal class AndroidImageCompressor(
         input: MediaSource,
         output: MediaDestination,
         config: ImageCompressionConfig,
-    ): Result<CompressionResult> {
-        val inputPath: String
-        val outputPath: String
-        try {
-            inputPath = input.requireFilePathOrThrow()
-            outputPath = output.requireFilePathOrThrow()
-        } catch (e: UnsupportedOperationException) {
-            return Result.failure(e)
-        }
-        return compress(inputPath, outputPath, config)
+    ): Result<CompressionResult> = suspendRunCatching {
+        val inputPath = input.requireFilePathOrThrow()
+        val outputPath = output.requireFilePathOrThrow()
+        compress(inputPath, outputPath, config).getOrThrow()
     }
 
     private suspend fun doCompress(

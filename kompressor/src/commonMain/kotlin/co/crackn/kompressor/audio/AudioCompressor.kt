@@ -69,13 +69,16 @@ public interface AudioCompressor {
      *
      * See [ImageCompressor.compress] for the rationale of the rich-source overload. Audio
      * compression emits [CompressionProgress] updates via [onProgress] — `Phase.COMPRESSING`
-     * during active transcoding, with `Phase.MATERIALIZING_INPUT` / `Phase.FINALIZING_OUTPUT`
-     * framing the pipeline when applicable.
+     * during active transcoding, terminated by `Phase.FINALIZING_OUTPUT(1f)` on success.
+     * `Phase.MATERIALIZING_INPUT` will be added when CRA-95 wires up stream / bytes inputs
+     * (CRA-93 for Android `Uri`, CRA-94 for iOS `NSURL` / `PHAsset` / `NSData`); until then
+     * non-`FilePath` inputs throw [UnsupportedOperationException] at dispatch time.
      *
-     * In this release only [MediaSource.Local.FilePath] / [MediaDestination.Local.FilePath]
-     * dispatch is implemented. `Phase.MATERIALIZING_INPUT` is never emitted because stream /
-     * bytes inputs throw [UnsupportedOperationException] until CRA-95 wires them up (CRA-93 for
-     * Android `Uri`, CRA-94 for iOS `NSURL` / `PHAsset` / `NSData`).
+     * On failure, the last emission a consumer sees is the most recent `Phase.COMPRESSING`
+     * fraction — `Phase.FINALIZING_OUTPUT` is emitted only after the inner pipeline has
+     * succeeded. Consumer UIs keying on `FINALIZING_OUTPUT(1f)` as the terminal-success signal
+     * are therefore safe; UIs wanting to reset on failure should key on the surrounding
+     * `Result.isFailure`.
      *
      * @param input Media source — see [MediaSource] and platform-specific builders.
      * @param output Media destination — see [MediaDestination] and platform-specific builders.
