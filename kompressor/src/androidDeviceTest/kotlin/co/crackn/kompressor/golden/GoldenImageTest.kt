@@ -122,13 +122,13 @@ class GoldenImageTest {
         compressor.compress(
             MediaSource.Local.FilePath(input.absolutePath),
             MediaDestination.Local.FilePath(outputLow.absolutePath),
-            ImageCompressionConfig(quality = 10,
-        ))
+            ImageCompressionConfig(quality = 10),
+        ).getOrThrow()
         compressor.compress(
             MediaSource.Local.FilePath(input.absolutePath),
             MediaDestination.Local.FilePath(outputHigh.absolutePath),
-            ImageCompressionConfig(quality = 95,
-        ))
+            ImageCompressionConfig(quality = 95),
+        ).getOrThrow()
 
         assertTrue(OutputValidators.isValidJpeg(outputLow.readBytes()))
         assertTrue(OutputValidators.isValidJpeg(outputHigh.readBytes()))

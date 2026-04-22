@@ -84,13 +84,13 @@ class IosAudioCompressorTest {
         val lowResult = compressor.compress(
             MediaSource.Local.FilePath(inputPath),
             MediaDestination.Local.FilePath(outputLow),
-            AudioCompressionConfig(bitrate = 64_000,
-        ))
+            AudioCompressionConfig(bitrate = 64_000),
+        )
         val highResult = compressor.compress(
             MediaSource.Local.FilePath(inputPath),
             MediaDestination.Local.FilePath(outputHigh),
-            AudioCompressionConfig(bitrate = 192_000,
-        ))
+            AudioCompressionConfig(bitrate = 192_000),
+        )
         assertTrue(lowResult.isSuccess)
         assertTrue(highResult.isSuccess)
 

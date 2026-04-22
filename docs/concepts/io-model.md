@@ -6,11 +6,20 @@
 Kompressor takes inputs from many places (filesystem, MediaStore URI, `PHAsset`, an `okio.Source`, raw bytes) and writes outputs to similarly many places. Rather than overload every compressor with N variants for each combination, Kompressor offers exactly **one** entry point per media kind:
 
 ```kotlin
+// Audio + Video — the underlying pipelines emit progress ticks.
 suspend fun compress(
     input: MediaSource,
     output: MediaDestination,
     config: XxxCompressionConfig = XxxCompressionConfig(),
     onProgress: suspend (CompressionProgress) -> Unit = {},
+): Result<CompressionResult>
+
+// Image — `BitmapFactory` (Android) / `UIImage` + Core Graphics (iOS) are
+// synchronous single-step operations, so there is no `onProgress` parameter.
+suspend fun compress(
+    input: MediaSource,
+    output: MediaDestination,
+    config: ImageCompressionConfig = ImageCompressionConfig(),
 ): Result<CompressionResult>
 ```
 
@@ -499,12 +508,13 @@ val tempFile = withContext(Dispatchers.IO) {
 }
 kompressor.video.compress(tempFile.absolutePath, outputPath, config)
 
-// After — pass the okio.Source directly
-val responseChannel = httpClient.get(url).bodyAsChannel()
+// After — pass the okio.Source directly. Issue a single HEAD-or-GET to read both
+// the body channel and the Content-Length header off the same response.
+val response = httpClient.get(url)
 kompressor.video.compress(
     input = MediaSource.Local.Stream(
-        source = responseChannel.toInputStream().source(),
-        sizeHint = httpClient.get(url).contentLength(),
+        source = response.bodyAsChannel().toInputStream().source(),
+        sizeHint = response.contentLength(),
         closeOnFinish = true,
     ),
     output = MediaDestination.Local.FilePath(outputPath),

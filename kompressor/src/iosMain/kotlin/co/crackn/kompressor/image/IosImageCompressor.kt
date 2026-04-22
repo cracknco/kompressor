@@ -48,6 +48,7 @@ import kotlinx.cinterop.set
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
@@ -211,6 +212,11 @@ internal class IosImageCompressor(
             throw e
         } catch (e: IllegalArgumentException) {
             throw e
+        } catch (e: CancellationException) {
+            // Structured concurrency parity with AndroidImageCompressor: cancellation must
+            // propagate to the calling scope as a CancellationException, not be wrapped as
+            // ImageCompressionError.Unknown by the generic Throwable branch below.
+            throw e
         } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
             // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed
             // JPEG that `UIImage(contentsOfFile=)` can't decode surfaces as an NPE when the
@@ -231,6 +237,9 @@ internal class IosImageCompressor(
      * fire for in-memory data inputs too. Exception classification mirrors [compressFilePath]
      * line-for-line.
      */
+    // LongMethod suppressed for the same reason as [compressFilePath] above: the body is a
+    // single observability wrapper + the taxonomised exception table mandated by CRA-47.
+    @Suppress("LongMethod")
     private suspend fun instrumentCompressFromData(
         data: NSData,
         outputPath: String,
@@ -253,6 +262,9 @@ internal class IosImageCompressor(
         } catch (e: ImageCompressionError) {
             throw e
         } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: CancellationException) {
+            // Same rationale as compressFilePath above — propagate cancellation verbatim.
             throw e
         } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
             throw ImageCompressionError.DecodingFailed(

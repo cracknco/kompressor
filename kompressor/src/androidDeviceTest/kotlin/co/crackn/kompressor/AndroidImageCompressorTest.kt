@@ -237,18 +237,18 @@ class AndroidImageCompressorTest {
         compressor.compress(
             MediaSource.Local.FilePath(input.absolutePath),
             MediaDestination.Local.FilePath(outputLow.absolutePath),
-            ImageCompressionConfig(quality = 10,
-        ))
+            ImageCompressionConfig(quality = 10),
+        ).getOrThrow()
         compressor.compress(
             MediaSource.Local.FilePath(input.absolutePath),
             MediaDestination.Local.FilePath(outputMid.absolutePath),
-            ImageCompressionConfig(quality = 50,
-        ))
+            ImageCompressionConfig(quality = 50),
+        ).getOrThrow()
         compressor.compress(
             MediaSource.Local.FilePath(input.absolutePath),
             MediaDestination.Local.FilePath(outputHigh.absolutePath),
-            ImageCompressionConfig(quality = 95,
-        ))
+            ImageCompressionConfig(quality = 95),
+        ).getOrThrow()
 
         assertTrue(outputLow.length() < outputMid.length())
         assertTrue(outputMid.length() < outputHigh.length())

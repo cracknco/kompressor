@@ -91,16 +91,20 @@ class ConcurrentCompressionTest {
 
         val results = coroutineScope {
             val audioDeferreds = audioInputs.zip(audioOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { audio.compress(
-                    MediaSource.Local.FilePath(i.absolutePath),
-                    MediaDestination.Local.FilePath(o.absolutePath),
-                ) }
+                async(Dispatchers.Default) {
+                    audio.compress(
+                        MediaSource.Local.FilePath(i.absolutePath),
+                        MediaDestination.Local.FilePath(o.absolutePath),
+                    )
+                }
             }
             val imageDeferreds = imageInputs.zip(imageOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { image.compress(
-                    MediaSource.Local.FilePath(i.absolutePath),
-                    MediaDestination.Local.FilePath(o.absolutePath),
-                ) }
+                async(Dispatchers.Default) {
+                    image.compress(
+                        MediaSource.Local.FilePath(i.absolutePath),
+                        MediaDestination.Local.FilePath(o.absolutePath),
+                    )
+                }
             }
             (audioDeferreds + imageDeferreds).awaitAll()
         }

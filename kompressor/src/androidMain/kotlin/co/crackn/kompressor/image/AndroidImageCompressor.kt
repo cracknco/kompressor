@@ -24,6 +24,7 @@ import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.suspendRunCatching
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import okio.buffer
@@ -193,6 +194,12 @@ internal class AndroidImageCompressor(
         } catch (e: ImageCompressionError) {
             throw e
         } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: CancellationException) {
+            // Structured concurrency: never wrap cancellation as a typed compression error,
+            // or a parent scope cancelling a child compress() would see the cancellation
+            // converted into ImageCompressionError.Unknown and silently absorbed by an
+            // outer .onFailure handler. Re-throw verbatim so kotlinx.coroutines unwinds.
             throw e
         } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
             throw classifyAndroidImageError(inputPath, e)

@@ -20,7 +20,7 @@ val result = kompressor.image.compress(
 )
 ```
 
-`MediaSource` and `MediaDestination` accept **filesystem paths, `Uri` (Android), `NSURL` / `PHAsset` / `NSData` (iOS), `okio.Source` / `okio.Sink`, or raw `ByteArray`** — see [the I/O model](/concepts/io-model) for the full set of builders. Passing a `content://` URI from `PickVisualMedia` works directly:
+`MediaSource` accepts **filesystem paths, `Uri` (Android), `NSURL` / `PHAsset` / `NSData` (iOS), `okio.Source`, or raw `ByteArray`**, while `MediaDestination` accepts **filesystem paths, `okio.Sink`, or an in-memory `Bytes` sink** — see [the I/O model](/concepts/io-model) for the full set of builders on each side. Passing a `content://` URI from `PickVisualMedia` works directly:
 
 ```kotlin
 // Android — no getRealPathFromUri hack required.

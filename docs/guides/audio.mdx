@@ -33,7 +33,9 @@ import co.crackn.kompressor.io.MediaSource
 val result = kompressor.audio.compress(
     input  = MediaSource.Local.FilePath("/path/to/recording.wav"),
     output = MediaDestination.Local.FilePath("/path/to/recording.m4a"),
-    onProgress = { progress -> println("${(progress.fraction * 100).toInt()}%") },
+    onProgress = { progress ->
+        println("${progress.phase}: ${(progress.fraction * 100).toInt()}%")
+    },
 )
 ```
 
@@ -108,18 +110,22 @@ See [Cancellation](/concepts/cancellation). Cancelling the coroutine scope abort
 Failures are `Result.failure(AudioCompressionError.*)` — see [Error handling](/concepts/errors) for the full subtype table. A particularly useful one for audio is `UnsupportedConfiguration`, which fires **before** opening the encoder when the requested config is incompatible with the source (e.g. iOS asked to upmix mono to stereo, or input has more channels than the downmixer handles). Catch it to fall back to a narrower config:
 
 ```kotlin
-kompressor.audio.compress(
+val result = kompressor.audio.compress(
     MediaSource.Local.FilePath(input),
     MediaDestination.Local.FilePath(output),
     config,
-).onFailure { err ->
+)
+
+val finalResult = result.recoverCatching { err ->
     if (err is AudioCompressionError.UnsupportedConfiguration) {
-        // Retry with a simpler channel layout
+        // Retry with a simpler channel layout and surface the retry's outcome.
         kompressor.audio.compress(
             MediaSource.Local.FilePath(input),
             MediaDestination.Local.FilePath(output),
             config.copy(channels = AudioChannels.MONO),
-        )
+        ).getOrThrow()
+    } else {
+        throw err
     }
 }
 ```
