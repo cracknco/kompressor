@@ -21,7 +21,17 @@ plugins {
 }
 
 group = "co.crackn"
-version = "0.1.0"
+
+// Version is driven by semantic-release via the `ORG_GRADLE_PROJECT_version` env var set in
+// `.github/workflows/release.yml`. The Gradle project-property mechanism pre-initialises
+// `project.version` to that value before this build script executes. We must NOT unconditionally
+// overwrite it with a hardcoded literal (that was the CRA bug: every publish re-emitted
+// `0.1.0` regardless of what semantic-release computed, so Sonatype 409'd every build after the
+// very first one with "Component … already exists"). Local development without the env var
+// falls back to a SNAPSHOT string so `./gradlew publishToMavenLocal` / `apiDump` still work.
+version = (project.findProperty("version") as? String)
+    ?.takeIf { it.isNotBlank() && it != "unspecified" }
+    ?: "0.0.0-SNAPSHOT"
 
 kotlin {
     compilerOptions {
