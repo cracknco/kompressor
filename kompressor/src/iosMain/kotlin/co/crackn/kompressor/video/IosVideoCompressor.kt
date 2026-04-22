@@ -14,6 +14,10 @@ import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.io.CompressionProgress
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.requireFilePathOrThrow
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -145,6 +149,30 @@ internal class IosVideoCompressor(
             val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
             CompressionResult(inputSize, outputSize, durationMs)
         }
+    }
+
+    override suspend fun compress(
+        input: MediaSource,
+        output: MediaDestination,
+        config: VideoCompressionConfig,
+        onProgress: suspend (CompressionProgress) -> Unit,
+    ): Result<CompressionResult> = suspendRunCatching {
+        val inputPath = input.requireFilePathOrThrow()
+        val outputPath = output.requireFilePathOrThrow()
+        val result = compress(inputPath, outputPath, config) { fraction ->
+            // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+            // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+            if (fraction < 1f) {
+                onProgress(
+                    CompressionProgress(
+                        CompressionProgress.Phase.COMPRESSING,
+                        fraction.coerceIn(0f, 1f),
+                    ),
+                )
+            }
+        }.getOrThrow()
+        onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+        result
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")
