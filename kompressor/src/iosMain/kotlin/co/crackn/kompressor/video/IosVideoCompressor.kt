@@ -17,7 +17,10 @@ import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
-import co.crackn.kompressor.io.requireFilePathOrThrow
+import co.crackn.kompressor.io.PHAssetIcloudOnlyException
+import co.crackn.kompressor.io.PHAssetResolutionException
+import co.crackn.kompressor.io.toIosInputPath
+import co.crackn.kompressor.io.toIosOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -151,28 +154,50 @@ internal class IosVideoCompressor(
         }
     }
 
+    // LongMethod suppressed: same rationale as IosAudioCompressor.compress — nested try/finally
+    // is mandated by lifecycle cleanup correctness and extracting the inner block fragments
+    // the contract across two call sites.
+    @Suppress("LongMethod")
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,
         config: VideoCompressionConfig,
         onProgress: suspend (CompressionProgress) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputPath = input.requireFilePathOrThrow()
-        val outputPath = output.requireFilePathOrThrow()
-        val result = compress(inputPath, outputPath, config) { fraction ->
-            // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
-            // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
-            if (fraction < 1f) {
-                onProgress(
-                    CompressionProgress(
-                        CompressionProgress.Phase.COMPRESSING,
-                        fraction.coerceIn(0f, 1f),
-                    ),
-                )
+        val inHandle = try {
+            input.toIosInputPath()
+        } catch (e: PHAssetIcloudOnlyException) {
+            throw VideoCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+        } catch (e: PHAssetResolutionException) {
+            throw VideoCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+        }
+        // Nested try/finally so `inHandle.cleanup()` fires even when `toIosOutputHandle()` throws
+        // (e.g. MediaDestination.Local.Stream → CRA-95 UnsupportedOperationException). Mirrors
+        // the Android sibling [PR #142 review, finding #1].
+        try {
+            val outHandle = output.toIosOutputHandle()
+            try {
+                val result = compress(inHandle.path, outHandle.tempPath, config) { fraction ->
+                    // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+                    // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+                    if (fraction < 1f) {
+                        onProgress(
+                            CompressionProgress(
+                                CompressionProgress.Phase.COMPRESSING,
+                                fraction.coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }.getOrThrow()
+                outHandle.commit()
+                onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+                result
+            } finally {
+                outHandle.cleanup()
             }
-        }.getOrThrow()
-        onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
-        result
+        } finally {
+            inHandle.cleanup()
+        }
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")

@@ -12,9 +12,15 @@
 package co.crackn.kompressor.image
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.io.IosDataMediaSource
+import co.crackn.kompressor.io.IosPHAssetMediaSource
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
-import co.crackn.kompressor.io.requireFilePathOrThrow
+import co.crackn.kompressor.io.PHAssetIcloudOnlyException
+import co.crackn.kompressor.io.PHAssetResolutionException
+import co.crackn.kompressor.io.resolveImageToData
+import co.crackn.kompressor.io.toIosInputPath
+import co.crackn.kompressor.io.toIosOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -59,6 +65,7 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.writeToURL
+import platform.Photos.PHAssetMediaTypeImage
 import platform.ImageIO.CGImageDestinationAddImage
 import platform.ImageIO.CGImageDestinationCreateWithURL
 import platform.ImageIO.CGImageDestinationFinalize
@@ -73,6 +80,11 @@ import platform.UIKit.UIImageJPEGRepresentation
 import platform.posix.memcpy
 
 /** iOS image compressor backed by [UIImage] and Core Graphics / ImageIO. */
+// TooManyFunctions suppressed because the NSData fast-path requires a dedicated
+// `instrumentCompressFromData` helper (CRA-47 observability parity with the legacy
+// `compress(inputPath, outputPath, config)` entry) which pushes the class one past the
+// default threshold. Each helper remains narrowly scoped and single-purpose.
+@Suppress("TooManyFunctions")
 internal class IosImageCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : ImageCompressor {
@@ -121,14 +133,116 @@ internal class IosImageCompressor(
         }
     }
 
+    // LongMethod suppressed: the nested try/finally structure (inHandle outer, outHandle inner)
+    // is mandated by lifecycle cleanup correctness — see the inline comment on the file-path
+    // dispatch branch. The NSData short-circuit path + PHAsset-image fast-path branches are
+    // intrinsically inline at this dispatch layer; extracting them to helpers would add 2+
+    // narrowly-scoped functions to this already-at-threshold class. Tradeoff is documented.
+    @Suppress("LongMethod")
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputPath = input.requireFilePathOrThrow()
-        val outputPath = output.requireFilePathOrThrow()
-        compress(inputPath, outputPath, config).getOrThrow()
+        try {
+            // PHAsset-image fast path: resolve PhotoKit's NSData directly, skip temp-file
+            // materialisation, and route through the zero-copy UIImage(data:) decode. Video /
+            // audio PHAsset inputs still resolve via the URL path below — only image benefits
+            // from the NSData shortcut [PR #142 review, finding #3].
+            val effectiveInput: MediaSource = if (
+                input is IosPHAssetMediaSource && input.asset.mediaType == PHAssetMediaTypeImage
+            ) {
+                IosDataMediaSource(input.asset.resolveImageToData(input.allowNetworkAccess))
+            } else {
+                input
+            }
+
+            // NSData path short-circuits through UIImage(data:) — no temp file. UIImage's data
+            // initialiser internally uses CGImageSourceCreateWithData, so the decode is
+            // zero-copy when the NSData is mmap-backed (the typical case for PhotoKit /
+            // `Data(contentsOf:)` inputs). Video / audio NSData is rejected by the dispatch
+            // helper further down with a CRA-95-labelled error.
+            if (effectiveInput is IosDataMediaSource) {
+                val outHandle = output.toIosOutputHandle()
+                return@suspendRunCatching try {
+                    val result = instrumentCompressFromData(effectiveInput.data, outHandle.tempPath, config)
+                    outHandle.commit()
+                    result
+                } finally {
+                    outHandle.cleanup()
+                }
+            }
+
+            // Nested try/finally so `inHandle.cleanup()` runs even when `toIosOutputHandle()`
+            // throws (e.g. MediaDestination.Local.Stream → CRA-95 UnsupportedOperationException).
+            // A previous flat pattern leaked the PHAsset image temp file in that case — mirrors
+            // the Android sibling's lifecycle structure [PR #142 review, finding #1].
+            val inHandle = effectiveInput.toIosInputPath()
+            try {
+                val outHandle = output.toIosOutputHandle()
+                try {
+                    // Call the public `compress(inputPath, outputPath, config)` entry point
+                    // instead of `doCompress(...)` directly — the public path wraps with
+                    // `logger.instrumentCompress` so the CRA-47 start/success/failure log lines
+                    // fire for every MediaSource/MediaDestination caller, matching the audio /
+                    // video siblings [PR #142 review, finding #2].
+                    val result = compress(inHandle.path, outHandle.tempPath, config).getOrThrow()
+                    outHandle.commit()
+                    result
+                } finally {
+                    outHandle.cleanup()
+                }
+            } finally {
+                inHandle.cleanup()
+            }
+        } catch (e: PHAssetIcloudOnlyException) {
+            // Translate the resolver's typed iCloud error into the image-specific typed error
+            // so callers across image / audio / video see a consistent `SourceNotFound` subtype.
+            // Chain `e` as the cause so the PhotoKit error code / message survives in stack traces.
+            throw ImageCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+        } catch (e: PHAssetResolutionException) {
+            throw ImageCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+        }
+    }
+
+    /**
+     * Observability-wrapped variant of [doCompressFromData]. The public `compress(inputPath, ...)`
+     * entry point uses `logger.instrumentCompress` to emit CRA-47 start/success/failure log lines,
+     * but the NSData path has no matching public entry (no `compress(NSData, ...)` overload) — so
+     * we duplicate the instrumentation block here. Exception classification mirrors
+     * [compress] `(inputPath, outputPath, config)` line-for-line.
+     */
+    private suspend fun instrumentCompressFromData(
+        data: NSData,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.IMAGE,
+        startMessage = {
+            "compress(data) start len=${data.length} out=$outputPath " +
+                "fmt=${config.format} quality=${config.quality} " +
+                "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
+        },
+        successMessage = { r ->
+            "compress(data) ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "compress(data) failed len=${data.length}" },
+    ) {
+        try {
+            doCompressFromData(data, outputPath, config)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+            throw ImageCompressionError.DecodingFailed(
+                "Platform decoder failed (nil image from NSData): ${e.message ?: "UIImage(data:)"}",
+                e,
+            )
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
     }
 
     private suspend fun doCompress(
@@ -137,15 +251,59 @@ internal class IosImageCompressor(
         config: ImageCompressionConfig,
     ): CompressionResult {
         val iosVersion = iosMajorVersion()
-        iosOutputGate(config.format, iosVersion)?.let { throw it }
-
         val startTime = CFAbsoluteTimeGetCurrent()
 
         val inputSize = nsFileSize(inputPath)
         val detectedFormat = detectInputImageFormat(readHeader(inputPath), fileExtension(inputPath))
-        iosInputGate(detectedFormat, iosVersion)?.let { throw it }
+        throwIfIosIncompatible(config.format, detectedFormat, iosVersion)
 
         val image = loadImage(inputPath)
+        currentCoroutineContext().ensureActive()
+
+        val (pixelWidth, pixelHeight) = orientedPixelDimensions(image)
+        val target = calculateTargetDimensions(
+            pixelWidth, pixelHeight,
+            config.maxWidth, config.maxHeight, config.keepAspectRatio,
+        )
+        val resized = resizeImageIfNeeded(image, pixelWidth, pixelHeight, target)
+        currentCoroutineContext().ensureActive()
+
+        writeImage(resized, outputPath, config)
+
+        val outputSize = nsFileSize(outputPath)
+        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+
+        return CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Variant of [doCompress] that decodes directly from an in-memory [NSData] buffer, skipping
+     * the temp-file materialisation that would otherwise round-trip the bytes through disk.
+     *
+     * Format detection reads the first [IMAGE_SNIFF_BYTES][co.crackn.kompressor.image.IMAGE_SNIFF_BYTES]
+     * from the buffer's raw pointer — same magic-byte table as the file path, minus the filename
+     * extension fallback (the caller did not hand us a filename). DNG input will therefore fail
+     * detection here; callers with DNG NSData need to write to a temp `.dng` file first.
+     */
+    @Suppress("USELESS_ELVIS")
+    private suspend fun doCompressFromData(
+        data: NSData,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult {
+        val iosVersion = iosMajorVersion()
+        val startTime = CFAbsoluteTimeGetCurrent()
+        val inputSize = data.length.toLong()
+
+        val detectedFormat = detectInputImageFormat(readHeaderFromData(data), extension = "")
+        throwIfIosIncompatible(config.format, detectedFormat, iosVersion)
+
+        // K/N types `UIImage(data:)` as non-null but the underlying Obj-C initialiser returns
+        // nil when the data doesn't represent a decodable image. Mirror the `@Suppress` on
+        // `loadImage(path)` so a malformed NSData still surfaces as `DecodingFailed` rather
+        // than crashing downstream with an NPE on the first member access.
+        val image = UIImage(data = data)
+            ?: throw ImageCompressionError.DecodingFailed("Failed to decode NSData (length=${data.length})")
         currentCoroutineContext().ensureActive()
 
         val (pixelWidth, pixelHeight) = orientedPixelDimensions(image)
@@ -192,16 +350,14 @@ internal class IosImageCompressor(
         origWidth: Int,
         origHeight: Int,
         target: ImageDimensions,
-    ): UIImage = if (origWidth == target.width && origHeight == target.height) {
-        // No resize needed — flatten orientation by redrawing at original size and scale
-        val size = image.size.useContents { Pair(width, height) }
-        redrawInContext(image, size.first, size.second, image.scale)
-    } else {
-        redrawInContext(image, target.width.toDouble(), target.height.toDouble(), SCALE_PIXELS)
-    }
-
-    /** Draws [image] into a new bitmap context, flattening its orientation transform. */
-    private fun redrawInContext(image: UIImage, width: Double, height: Double, scale: Double): UIImage {
+    ): UIImage {
+        val (width, height, scale) = if (origWidth == target.width && origHeight == target.height) {
+            // No resize needed — flatten orientation by redrawing at original size and scale.
+            val size = image.size.useContents { Pair(width, height) }
+            Triple(size.first, size.second, image.scale)
+        } else {
+            Triple(target.width.toDouble(), target.height.toDouble(), SCALE_PIXELS)
+        }
         UIGraphicsBeginImageContextWithOptions(CGSizeMake(width, height), true, scale)
         try {
             image.drawInRect(CGRectMake(0.0, 0.0, width, height))
@@ -339,8 +495,33 @@ private inline fun <R> withQualityOptions(quality: Int, block: (CFDictionaryRef?
     }
 }
 
+/**
+ * File-scope gate that consolidates the input + output iOS-version checks into a single
+ * throw point. Pulled out of the two `doCompress*` variants so the per-variant throw count
+ * stays under detekt's ceiling and the gate logic itself lives in one place — in particular
+ * a future third decode path (e.g. PHAsset zero-copy) picks up the same checks for free.
+ */
+private fun throwIfIosIncompatible(
+    outputFormat: ImageFormat,
+    detectedFormat: InputImageFormat,
+    iosVersion: Int,
+) {
+    iosOutputGate(outputFormat, iosVersion)?.let { throw it }
+    iosInputGate(detectedFormat, iosVersion)?.let { throw it }
+}
+
 private fun readHeader(path: String): ByteArray {
     val data: NSData = NSData.dataWithContentsOfFile(path) ?: return ByteArray(0)
+    return copyPrefixBytes(data)
+}
+
+/**
+ * Variant of [readHeader] that sniffs the magic-byte header directly from an in-memory
+ * [NSData] — used by the [IosDataMediaSource] input shortcut to avoid a temp-file roundtrip.
+ */
+private fun readHeaderFromData(data: NSData): ByteArray = copyPrefixBytes(data)
+
+private fun copyPrefixBytes(data: NSData): ByteArray {
     val size = minOf(IMAGE_SNIFF_BYTES, data.length.toInt())
     val bytes = ByteArray(size)
     if (size > 0) {
