@@ -52,7 +52,7 @@ import platform.Foundation.create
  * drift: [audio_twoConsecutiveCompressesProduceIdenticalBytes] demonstrates two back-to-back
  * legacy-overload compresses of the same input are byte-identical, so AVFoundation itself is
  * deterministic per-compress. The remaining divergence on legacy-vs-novel pairs is tracked
- * for root-cause investigation (CRA-95.1 follow-up — likely NSURL dispatch overhead or
+ * for root-cause investigation (CRA-98 follow-up — likely NSURL dispatch overhead or
  * `toIosInputPath` call-ordering stamping something into the AVAsset initialisation). The
  * stable invariant pinned here is *compression-outcome equivalence*: both paths succeed and
  * their output sizes agree within [AV_SIZE_TOLERANCE_BYTES]. Stream / Bytes / Stream-output
