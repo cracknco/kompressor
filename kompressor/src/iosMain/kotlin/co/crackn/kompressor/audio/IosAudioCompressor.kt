@@ -16,7 +16,10 @@ import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
-import co.crackn.kompressor.io.requireFilePathOrThrow
+import co.crackn.kompressor.io.PHAssetIcloudOnlyException
+import co.crackn.kompressor.io.PHAssetResolutionException
+import co.crackn.kompressor.io.toIosInputPath
+import co.crackn.kompressor.io.toIosOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -152,22 +155,34 @@ internal class IosAudioCompressor(
         config: AudioCompressionConfig,
         onProgress: suspend (CompressionProgress) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputPath = input.requireFilePathOrThrow()
-        val outputPath = output.requireFilePathOrThrow()
-        val result = compress(inputPath, outputPath, config) { fraction ->
-            // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
-            // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
-            if (fraction < 1f) {
-                onProgress(
-                    CompressionProgress(
-                        CompressionProgress.Phase.COMPRESSING,
-                        fraction.coerceIn(0f, 1f),
-                    ),
-                )
-            }
-        }.getOrThrow()
-        onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
-        result
+        val inHandle = try {
+            input.toIosInputPath()
+        } catch (e: PHAssetIcloudOnlyException) {
+            throw AudioCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+        } catch (e: PHAssetResolutionException) {
+            throw AudioCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+        }
+        val outHandle = output.toIosOutputHandle()
+        try {
+            val result = compress(inHandle.path, outHandle.tempPath, config) { fraction ->
+                // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+                // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+                if (fraction < 1f) {
+                    onProgress(
+                        CompressionProgress(
+                            CompressionProgress.Phase.COMPRESSING,
+                            fraction.coerceIn(0f, 1f),
+                        ),
+                    )
+                }
+            }.getOrThrow()
+            outHandle.commit()
+            onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+            result
+        } finally {
+            inHandle.cleanup()
+            outHandle.cleanup()
+        }
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")
