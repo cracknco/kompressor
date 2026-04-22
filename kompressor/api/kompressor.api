@@ -641,6 +641,19 @@ public final class co/crackn/kompressor/image/ImagePresets {
 	public final fun getWEB ()Lco/crackn/kompressor/image/ImageCompressionConfig;
 }
 
+public final class co/crackn/kompressor/io/AndroidMediaDestinationsKt {
+	public static final fun of (Lco/crackn/kompressor/io/MediaDestination$Companion;Landroid/net/Uri;)Lco/crackn/kompressor/io/MediaDestination$Local;
+	public static final fun of (Lco/crackn/kompressor/io/MediaDestination$Companion;Ljava/io/OutputStream;Z)Lco/crackn/kompressor/io/MediaDestination$Local;
+	public static synthetic fun of$default (Lco/crackn/kompressor/io/MediaDestination$Companion;Ljava/io/OutputStream;ZILjava/lang/Object;)Lco/crackn/kompressor/io/MediaDestination$Local;
+}
+
+public final class co/crackn/kompressor/io/AndroidMediaSourcesKt {
+	public static final fun of (Lco/crackn/kompressor/io/MediaSource$Companion;Landroid/net/Uri;)Lco/crackn/kompressor/io/MediaSource$Local;
+	public static final fun of (Lco/crackn/kompressor/io/MediaSource$Companion;Landroid/os/ParcelFileDescriptor;)Lco/crackn/kompressor/io/MediaSource$Local;
+	public static final fun of (Lco/crackn/kompressor/io/MediaSource$Companion;Ljava/io/InputStream;Z)Lco/crackn/kompressor/io/MediaSource$Local;
+	public static synthetic fun of$default (Lco/crackn/kompressor/io/MediaSource$Companion;Ljava/io/InputStream;ZILjava/lang/Object;)Lco/crackn/kompressor/io/MediaSource$Local;
+}
+
 public final class co/crackn/kompressor/io/CompressionProgress {
 	public fun <init> (Lco/crackn/kompressor/io/CompressionProgress$Phase;F)V
 	public final fun component1 ()Lco/crackn/kompressor/io/CompressionProgress$Phase;

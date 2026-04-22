@@ -15,8 +15,14 @@ import okio.Sink
  */
 public sealed interface MediaDestination {
 
-    /** Media destinations backed by local storage or writable streams. */
-    public sealed interface Local : MediaDestination {
+    /**
+     * Media destinations backed by local storage or writable streams.
+     *
+     * **Not sealed** — platform source sets (`androidMain`, `iosMain`) add wrappers for native
+     * output handles (`content://` URIs, MediaStore URIs, `NSURL`, …). See [MediaSource.Local]
+     * for the full rationale.
+     */
+    public interface Local : MediaDestination {
 
         /**
          * Absolute filesystem path where the compressed output will be written.

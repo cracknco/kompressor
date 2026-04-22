@@ -22,6 +22,14 @@ internal fun MediaSource.requireFilePathOrThrow(): String = when (this) {
     is MediaSource.Local.FilePath -> path
     is MediaSource.Local.Stream -> throw UnsupportedOperationException(STREAM_INPUT_MSG)
     is MediaSource.Local.Bytes -> throw UnsupportedOperationException(BYTES_INPUT_MSG)
+    // Platform subtypes (Android `AndroidUriMediaSource`, iOS future siblings) land here when a
+    // caller passes an Android-built `MediaSource` to the iOS compressor (or vice versa). The
+    // Android compressors route through `toAndroidInputPath()` instead of this helper; iOS
+    // sibling (T5) will add an equivalent `toIosInputPath()`. Until then, fail loudly with the
+    // wrapper class name so the caller knows which builder produced the mismatch.
+    else -> throw UnsupportedOperationException(
+        "Unsupported MediaSource subtype for this platform: ${this::class.simpleName}",
+    )
 }
 
 /**
@@ -31,6 +39,9 @@ internal fun MediaSource.requireFilePathOrThrow(): String = when (this) {
 internal fun MediaDestination.requireFilePathOrThrow(): String = when (this) {
     is MediaDestination.Local.FilePath -> path
     is MediaDestination.Local.Stream -> throw UnsupportedOperationException(STREAM_OUTPUT_MSG)
+    else -> throw UnsupportedOperationException(
+        "Unsupported MediaDestination subtype for this platform: ${this::class.simpleName}",
+    )
 }
 
 private const val STREAM_INPUT_MSG =
