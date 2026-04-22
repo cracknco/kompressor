@@ -16,7 +16,8 @@ import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.KompressorContext
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
-import co.crackn.kompressor.io.requireFilePathOrThrow
+import co.crackn.kompressor.io.toAndroidInputPath
+import co.crackn.kompressor.io.toAndroidOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -71,9 +72,22 @@ internal class AndroidImageCompressor(
         output: MediaDestination,
         config: ImageCompressionConfig,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputPath = input.requireFilePathOrThrow()
-        val outputPath = output.requireFilePathOrThrow()
-        compress(inputPath, outputPath, config).getOrThrow()
+        val inputHandle = input.toAndroidInputPath()
+        try {
+            val outputHandle = output.toAndroidOutputHandle()
+            try {
+                val result = compress(inputHandle.path, outputHandle.tempPath, config).getOrThrow()
+                // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
+                // temp file we just wrote; the commit step only moves bytes, it does not mutate
+                // the size reported to the caller.
+                outputHandle.commit()
+                result
+            } finally {
+                outputHandle.cleanup()
+            }
+        } finally {
+            inputHandle.cleanup()
+        }
     }
 
     private suspend fun doCompress(

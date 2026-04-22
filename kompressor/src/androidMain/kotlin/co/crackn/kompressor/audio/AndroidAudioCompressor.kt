@@ -26,7 +26,8 @@ import co.crackn.kompressor.deletingOutputOnFailure
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
-import co.crackn.kompressor.io.requireFilePathOrThrow
+import co.crackn.kompressor.io.toAndroidInputPath
+import co.crackn.kompressor.io.toAndroidOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
@@ -138,22 +139,34 @@ internal class AndroidAudioCompressor(
         config: AudioCompressionConfig,
         onProgress: suspend (CompressionProgress) -> Unit,
     ): Result<CompressionResult> = suspendRunCatching {
-        val inputPath = input.requireFilePathOrThrow()
-        val outputPath = output.requireFilePathOrThrow()
-        val result = compress(inputPath, outputPath, config) { fraction ->
-            // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
-            // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
-            if (fraction < 1f) {
-                onProgress(
-                    CompressionProgress(
-                        CompressionProgress.Phase.COMPRESSING,
-                        fraction.coerceIn(0f, 1f),
-                    ),
-                )
+        val inputHandle = input.toAndroidInputPath()
+        try {
+            val outputHandle = output.toAndroidOutputHandle()
+            try {
+                val result = compress(inputHandle.path, outputHandle.tempPath, config) { fraction ->
+                    // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+                    // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+                    if (fraction < 1f) {
+                        onProgress(
+                            CompressionProgress(
+                                CompressionProgress.Phase.COMPRESSING,
+                                fraction.coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }.getOrThrow()
+                // Commit runs under the FINALIZING_OUTPUT phase: bytes move from the temp file
+                // into the MediaStore / SAF URI here. Failures during commit propagate as
+                // `Result.failure` via the enclosing `suspendRunCatching`.
+                outputHandle.commit()
+                onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+                result
+            } finally {
+                outputHandle.cleanup()
             }
-        }.getOrThrow()
-        onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
-        result
+        } finally {
+            inputHandle.cleanup()
+        }
     }
 
     /**

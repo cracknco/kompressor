@@ -23,4 +23,5 @@ internal object LogTags {
     const val AUDIO: String = "Kompressor.Audio"
     const val PROBE: String = "Kompressor.Probe"
     const val INIT: String = "Kompressor.Init"
+    const val IO: String = "Kompressor.IO"
 }

@@ -21,8 +21,17 @@ import okio.Source
  */
 public sealed interface MediaSource {
 
-    /** Media sources backed by local storage, device filesystem, or app memory. */
-    public sealed interface Local : MediaSource {
+    /**
+     * Media sources backed by local storage, device filesystem, or app memory.
+     *
+     * **Not sealed** — platform source sets (`androidMain`, `iosMain`) add their own wrappers for
+     * native input handles (`content://` URIs, `ParcelFileDescriptor`, `NSURL`, `PHAsset`, …).
+     * Kotlin's sealed-hierarchy-per-module rule prohibits cross-module extension, so the base is
+     * left open; `commonMain` callers that exhaustive-match on `Local` must include an `else`
+     * branch to handle the platform wrappers — see [requireFilePathOrThrow] for the canonical
+     * pattern.
+     */
+    public interface Local : MediaSource {
 
         /**
          * Absolute filesystem path to the source media file. Simplest ergonomic form.
