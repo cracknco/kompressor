@@ -12,6 +12,7 @@ import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import okio.Buffer
 import platform.Foundation.NSInputStream
+import platform.Foundation.NSStreamStatusClosed
 
 /**
  * Unit coverage for [NSInputStream.asOkioSource] — the chunked-read adapter introduced in
@@ -80,12 +81,20 @@ class NSInputStreamSourceTest {
 
     @Test
     fun closeIsIdempotent() {
-        val source = NSInputStream(data = byteArrayOf(1, 2, 3).toNsData()).asOkioSource()
+        val stream = NSInputStream(data = byteArrayOf(1, 2, 3).toNsData())
+        val source = stream.asOkioSource()
 
-        // Two closes in a row should be safe — the adapter guards against the NSStreamStatusClosed
-        // transition so Apple's "close on already-closed stream is a no-op" doc reads as "we
-        // never ask the platform" for the second close.
+        // First close drives the underlying NSInputStream into the `Closed` state — asserting the
+        // post-condition pins the actual `stream.close()` call (not just "the adapter didn't
+        // throw"). A regression that silently skipped the platform close would pass the earlier
+        // no-throw check but fail here [PR #142 review, finding #6].
         source.close()
+        stream.streamStatus shouldBe NSStreamStatusClosed
+
+        // Second close must be a no-op at the adapter level — the
+        // `if (stream.streamStatus != NSStreamStatusClosed)` guard in NSInputStreamSource.close()
+        // short-circuits the platform call. Status stays `Closed` and the call doesn't throw.
         source.close()
+        stream.streamStatus shouldBe NSStreamStatusClosed
     }
 }

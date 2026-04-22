@@ -149,6 +149,11 @@ internal class IosAudioCompressor(
         }
     }
 
+    // LongMethod suppressed: the nested try/finally (inHandle outer, outHandle inner) is
+    // mandated by lifecycle cleanup correctness — see the inline comment below. Extracting the
+    // inner compress-with-progress block to a helper would fragment the lifecycle contract
+    // across two call sites; keeping it inline reads straight through.
+    @Suppress("LongMethod")
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,
@@ -162,26 +167,32 @@ internal class IosAudioCompressor(
         } catch (e: PHAssetResolutionException) {
             throw AudioCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
         }
-        val outHandle = output.toIosOutputHandle()
+        // Nested try/finally so `inHandle.cleanup()` fires even when `toIosOutputHandle()` throws
+        // (e.g. MediaDestination.Local.Stream → CRA-95 UnsupportedOperationException). Mirrors
+        // the Android sibling [PR #142 review, finding #1].
         try {
-            val result = compress(inHandle.path, outHandle.tempPath, config) { fraction ->
-                // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
-                // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
-                if (fraction < 1f) {
-                    onProgress(
-                        CompressionProgress(
-                            CompressionProgress.Phase.COMPRESSING,
-                            fraction.coerceIn(0f, 1f),
-                        ),
-                    )
-                }
-            }.getOrThrow()
-            outHandle.commit()
-            onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
-            result
+            val outHandle = output.toIosOutputHandle()
+            try {
+                val result = compress(inHandle.path, outHandle.tempPath, config) { fraction ->
+                    // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+                    // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+                    if (fraction < 1f) {
+                        onProgress(
+                            CompressionProgress(
+                                CompressionProgress.Phase.COMPRESSING,
+                                fraction.coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }.getOrThrow()
+                outHandle.commit()
+                onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+                result
+            } finally {
+                outHandle.cleanup()
+            }
         } finally {
             inHandle.cleanup()
-            outHandle.cleanup()
         }
     }
 

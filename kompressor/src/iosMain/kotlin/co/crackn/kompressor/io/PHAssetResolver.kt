@@ -29,6 +29,38 @@ import platform.Photos.PHVideoRequestOptions
 import platform.Photos.PHVideoRequestOptionsVersionCurrent
 
 /**
+ * PhotoKit-info-dictionary key names. Apple defines these as `extern NSString * const` globals in
+ * `<Photos/PHImageManager.h>` (`PHImageCancelledKey`, `PHImageResultIsInCloudKey`,
+ * `PHImageErrorKey`) — C-globals which Kotlin/Native's cinterop does not surface for the Photos
+ * framework as of Kotlin 2.3.20. The sibling typed constants that DO surface (e.g.
+ * [PHImageRequestOptionsVersionCurrent], [PHAssetMediaTypeImage]) are `NS_ENUM` / `NS_OPTIONS`
+ * enums, which is why the cinterop handles them.
+ *
+ * We therefore pin the literal strings here. They are SDK-stable (Apple has never renamed them
+ * since iOS 8), and a test in `PHAssetInfoKeysTest` doubles as a documentation anchor. If a
+ * future Kotlin/Native release exposes these as typed constants the swap is a one-line edit at
+ * each usage site.
+ */
+private const val PH_IMAGE_CANCELLED_KEY: String = "PHImageCancelledKey"
+private const val PH_IMAGE_RESULT_IS_IN_CLOUD_KEY: String = "PHImageResultIsInCloudKey"
+private const val PH_IMAGE_ERROR_KEY: String = "PHImageErrorKey"
+
+/**
+ * Explicit ownership contract for a resolved [PHAsset].
+ *
+ * Replaces the earlier path-substring-sniff (`resolvedPath.contains("/kmp_phasset_image_")`) with
+ * an explicit flag: the resolver decides which resource it minted, the dispatch layer cleans up
+ * accordingly. No more implicit coupling between the temp-file naming scheme and the cleanup
+ * logic [PR #142 review, finding #5].
+ *
+ * @property url Resolved `file://` URL the compressor pipeline can open.
+ * @property ownsFile `true` when Kompressor materialised the file (PHAsset image path); the
+ *   dispatch layer deletes it on cleanup. `false` when the URL points to PhotoKit's own cache
+ *   (video/audio path); Kompressor MUST NOT delete those — only PhotoKit owns their lifecycle.
+ */
+internal class ResolvedPhAsset(val url: NSURL, val ownsFile: Boolean)
+
+/**
  * Resolve a [PHAsset] into a local `file://` [NSURL] the legacy
  * `compress(inputPath, outputPath, …)` overloads can consume.
  *
@@ -48,6 +80,9 @@ import platform.Photos.PHVideoRequestOptionsVersionCurrent
  *    `kompressorTempDir()` and return its file URL. This temp file is not auto-deleted by the
  *    resolver — the caller (dispatch layer) is responsible for cleanup via the
  *    [IosInputHandle.cleanup] hook so failures mid-compression don't leak the temp file.
+ *    The [IosImageCompressor] fast-path prefers [resolveImageToData] directly (no temp file)
+ *    and only audio/video compressors that incorrectly receive a PHAsset image fall through
+ *    here.
  *
  * The underlying PhotoKit call is cancellation-safe: on coroutine cancellation the resolver
  * cancels the in-flight PhotoKit request via `PHImageManager.cancelImageRequest(requestId)` so
@@ -59,18 +94,69 @@ import platform.Photos.PHVideoRequestOptionsVersionCurrent
  *   [MediaSource.Companion.of] `(asset: PHAsset, allowNetworkAccess: Boolean)` for the full
  *   rationale.
  *
+ * @return [ResolvedPhAsset] carrying the resolved URL and an explicit `ownsFile` flag.
+ *
  * @throws PHAssetIcloudOnlyException when [allowNetworkAccess] is `false` and the asset is
  *   iCloud-only.
  * @throws PHAssetResolutionException when PhotoKit returns an error, the request is cancelled by
  *   PhotoKit, or the unsupported `PHAssetMediaTypeUnknown` is encountered.
  * @throws kotlinx.coroutines.CancellationException when the caller cancels the coroutine.
  */
-internal suspend fun PHAsset.resolveToUrl(allowNetworkAccess: Boolean): NSURL = when (mediaType) {
-    PHAssetMediaTypeVideo, PHAssetMediaTypeAudio -> resolveVideoOrAudioToUrl(allowNetworkAccess)
-    PHAssetMediaTypeImage -> resolveImageToUrl(allowNetworkAccess)
+internal suspend fun PHAsset.resolveToUrl(allowNetworkAccess: Boolean): ResolvedPhAsset = when (mediaType) {
+    PHAssetMediaTypeVideo, PHAssetMediaTypeAudio ->
+        ResolvedPhAsset(resolveVideoOrAudioToUrl(allowNetworkAccess), ownsFile = false)
+    PHAssetMediaTypeImage ->
+        ResolvedPhAsset(
+            writeImageDataToTempFile(resolveImageToData(allowNetworkAccess), localIdentifier),
+            ownsFile = true,
+        )
     else -> throw PHAssetResolutionException(
         "Unsupported PHAsset mediaType: $mediaType (localIdentifier=$localIdentifier)",
     )
+}
+
+/**
+ * Image-only variant: return the raw [NSData] PhotoKit delivers, skipping the temp-file
+ * materialisation step. Lets [IosImageCompressor] route PHAsset-image inputs through its
+ * zero-copy `UIImage(data:)` / `CGImageSourceCreateWithData` fast-path — no disk roundtrip, no
+ * cleanup. Sibling helper to [resolveToUrl] and shares its PhotoKit classification internals.
+ *
+ * Only valid for [PHAssetMediaTypeImage]. Callers MUST check `mediaType` before dispatching here
+ * — passing a video/audio asset raises [PHAssetResolutionException].
+ *
+ * Cancellation + error semantics identical to [resolveToUrl].
+ */
+internal suspend fun PHAsset.resolveImageToData(allowNetworkAccess: Boolean): NSData {
+    if (mediaType != PHAssetMediaTypeImage) {
+        throw PHAssetResolutionException(
+            "resolveImageToData called on non-image PHAsset mediaType=$mediaType " +
+                "(localIdentifier=$localIdentifier)",
+        )
+    }
+    val options = PHImageRequestOptions().apply {
+        networkAccessAllowed = allowNetworkAccess
+        version = PHImageRequestOptionsVersionCurrent
+        // Synchronous=false keeps the call off the current queue; the coroutine continuation is
+        // resumed from PhotoKit's internal queue, same pattern as the video/audio path.
+        synchronous = false
+    }
+    val asset = this
+
+    return suspendCancellableCoroutine { cont ->
+        val requestId = PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(
+            asset = asset,
+            options = options,
+        ) { imageData, _, _, info ->
+            if (cont.isCompleted) return@requestImageDataAndOrientationForAsset
+            when (val outcome = classifyImageOutcome(imageData, info, allowNetworkAccess)) {
+                is ImageOutcome.Success -> cont.resume(outcome.data)
+                is ImageOutcome.Failure -> cont.resumeWithException(outcome.cause)
+            }
+        }
+        cont.invokeOnCancellation {
+            PHImageManager.defaultManager().cancelImageRequest(requestId)
+        }
+    }
 }
 
 /**
@@ -102,40 +188,6 @@ private suspend fun PHAsset.resolveVideoOrAudioToUrl(allowNetworkAccess: Boolean
             PHImageManager.defaultManager().cancelImageRequest(requestId)
         }
     }
-}
-
-/**
- * Image path: `requestImageDataAndOrientationForAsset` → NSData → private temp file. The temp
- * file lives under [kompressorTempDir] with a `kmp_phasset_image_*.bin` prefix so the dispatch
- * cleanup hook can sweep it on failure.
- */
-private suspend fun PHAsset.resolveImageToUrl(allowNetworkAccess: Boolean): NSURL {
-    val options = PHImageRequestOptions().apply {
-        networkAccessAllowed = allowNetworkAccess
-        version = PHImageRequestOptionsVersionCurrent
-        // Synchronous=false keeps the call off the current queue; the coroutine continuation
-        // is resumed from PhotoKit's internal queue, same pattern as the video/audio path.
-        synchronous = false
-    }
-    val asset = this
-
-    val data: NSData = suspendCancellableCoroutine { cont ->
-        val requestId = PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(
-            asset = asset,
-            options = options,
-        ) { imageData, _, _, info ->
-            if (cont.isCompleted) return@requestImageDataAndOrientationForAsset
-            when (val outcome = classifyImageOutcome(imageData, info, allowNetworkAccess)) {
-                is ImageOutcome.Success -> cont.resume(outcome.data)
-                is ImageOutcome.Failure -> cont.resumeWithException(outcome.cause)
-            }
-        }
-        cont.invokeOnCancellation {
-            PHImageManager.defaultManager().cancelImageRequest(requestId)
-        }
-    }
-
-    return writeImageDataToTempFile(data, asset.localIdentifier)
 }
 
 private sealed interface VideoOutcome {
@@ -210,11 +262,14 @@ private fun classifyImageOutcome(
     return ImageOutcome.Success(imageData)
 }
 
-private fun isCancelledInfo(info: Map<Any?, *>?): Boolean = info?.get("PHImageCancelledKey") == true
+private fun isCancelledInfo(info: Map<Any?, *>?): Boolean =
+    info?.get(PH_IMAGE_CANCELLED_KEY) == true
 
-private fun isIcloudOnlyInfo(info: Map<Any?, *>?): Boolean = info?.get("PHImageResultIsInCloudKey") == true
+private fun isIcloudOnlyInfo(info: Map<Any?, *>?): Boolean =
+    info?.get(PH_IMAGE_RESULT_IS_IN_CLOUD_KEY) == true
 
-private fun errorFromInfo(info: Map<Any?, *>?): NSError? = info?.get("PHImageErrorKey") as? NSError
+private fun errorFromInfo(info: Map<Any?, *>?): NSError? =
+    info?.get(PH_IMAGE_ERROR_KEY) as? NSError
 
 /**
  * Write [data] to a private temp file under [kompressorTempDir]. The caller owns cleanup — the

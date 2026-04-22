@@ -175,6 +175,65 @@ class UrlInputEndToEndTest {
         e.message!! shouldContain "NSData"
     }
 
+    // Pins the blocker from PR #142 review (finding #1): when `toIosOutputHandle()` throws —
+    // here via `MediaDestination.Local.Stream` which raises a CRA-95 UnsupportedOperationException
+    // — the new nested try/finally in the iOS compressors must still unwind `inHandle.cleanup()`.
+    // A regression that reintroduced the old flat-finally would not leak anything for NSURL
+    // file-path inputs (their cleanup is noop), but would mis-order PHAsset-image temp-file
+    // cleanup where it matters. These tests cover the error-propagation half of the invariant;
+    // the PHAsset-cleanup half is structurally verified by the nested try/finally shape.
+
+    @Test
+    fun image_streamOutput_failsWithCra95Message() = runTest {
+        val inputPath = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
+
+        val result = image.compress(
+            input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
+            output = MediaDestination.Local.Stream(okio.blackholeSink()),
+            config = ImageCompressionConfig(),
+        )
+
+        result.isFailure shouldBe true
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "Stream"
+    }
+
+    @Test
+    fun audio_streamOutput_failsWithCra95Message() = runTest {
+        val inputPath = createTestWav()
+
+        val result = audio.compress(
+            input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
+            output = MediaDestination.Local.Stream(okio.blackholeSink()),
+            config = AudioCompressionConfig(),
+        )
+
+        result.isFailure shouldBe true
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "Stream"
+    }
+
+    @Test
+    fun video_streamOutput_failsWithCra95Message() = runTest {
+        val inputPath = Mp4Generator.generateMp4(testDir + "input.mp4", frameCount = VIDEO_FRAME_COUNT)
+
+        val result = video.compress(
+            input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
+            output = MediaDestination.Local.Stream(okio.blackholeSink()),
+            config = VideoCompressionConfig(),
+        )
+
+        result.isFailure shouldBe true
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "Stream"
+    }
+
     private fun createTestWav(): String {
         val bytes = WavGenerator.generateWavBytes(AUDIO_DURATION_S, WAV_SAMPLE_RATE, WAV_CHANNELS)
         val path = testDir + "input.wav"

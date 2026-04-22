@@ -121,17 +121,17 @@ internal fun MediaDestination.toIosOutputHandle(): IosOutputHandle = when (this)
 }
 
 private suspend fun resolvePhAssetHandle(source: IosPHAssetMediaSource): IosInputHandle {
-    val url: NSURL = source.asset.resolveToUrl(source.allowNetworkAccess)
-    val resolvedPath = url.path
+    // `ResolvedPhAsset.ownsFile` is the explicit contract carried back from the resolver: true
+    // when Kompressor materialised a temp file (PHAsset image path), false when PhotoKit owns
+    // the URL (video/audio cached asset). Replaces the earlier path-substring-sniff
+    // (`resolvedPath.contains("/kmp_phasset_image_")`) that coupled this cleanup logic to the
+    // resolver's filename scheme at a distance [PR #142 review, finding #5].
+    val resolved = source.asset.resolveToUrl(source.allowNetworkAccess)
+    val resolvedPath = resolved.url.path
         ?: throw UnsupportedOperationException(
             "PHAssetResolver returned NSURL with null path (localIdentifier=${source.asset.localIdentifier})",
         )
-    // Image-path resolution materializes to a private temp file under kompressorTempDir;
-    // video/audio returns PhotoKit's own cached URL which we must NOT delete. Detect the
-    // resolver-owned temp files by prefix — safe because we control the naming scheme in
-    // [PHAssetResolver.writeImageDataToTempFile].
-    val ownsFile = resolvedPath.contains("/kmp_phasset_image_")
-    val cleanup: () -> Unit = if (ownsFile) {
+    val cleanup: () -> Unit = if (resolved.ownsFile) {
         { runCatching { kompressorFileSystem.delete(resolvedPath.toPath()) } }
     } else {
         {}
