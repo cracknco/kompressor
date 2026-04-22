@@ -80,11 +80,15 @@ pipeline.
 The three tests run 50 compression iterations each (image / audio /
 video) inside the normal `iosSimulatorArm64Test` binary. Every
 compressor instance is wrapped in a `kotlin.native.ref.WeakReference`
-before use; once the iteration's stack frame pops, two
-`kotlin.native.runtime.GC.collect()` passes force the mark-and-sweep
-and clear any ref whose target is unreachable. Any non-null ref after
-those two passes fails the test with the leaked instance count and
-index — that's the "CI red" signal.
+before use; once the iteration's stack frame pops, three
+`kotlin.native.runtime.GC.collect()` passes (interleaved with
+`yield()` so `AVAssetExportSession` / `AVAssetWriter` completion
+handlers queued on `dispatch_async` can drain between sweeps) force
+the mark-and-sweep and clear any ref whose target is unreachable. Any
+non-null ref after those three passes fails the test with the leaked
+instance count and index — that's the "CI red" signal. Pass count is
+exposed as the `GC_PASSES` constant in `IosCompressionLeakTest.kt`;
+change it in one place if the empirical minimum ever drifts.
 
 This is the iOS sibling of Android's `CompressionLeakTest`, which uses
 LeakCanary's `AppWatcher.expectWeaklyReachable` + `assertNoLeaks` —
@@ -112,7 +116,7 @@ the flake class, entirely.
 The test throws with a message like:
 
 ```
-Leaked 1/50 IosImageCompressor instances after 2 GC passes.
+Leaked 1/50 IosImageCompressor instances after 3 GC passes.
 First leaked indices: #42.
 ```
 
