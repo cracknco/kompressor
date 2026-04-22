@@ -9,6 +9,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.ByteSearch
 import co.crackn.kompressor.testutil.CmykJpegFixture
 import co.crackn.kompressor.testutil.OutputValidators
@@ -65,7 +67,10 @@ class CmykJpegHandlingTest {
 
         val outputPath = testDir + "cmyk_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         if (result.isSuccess) {
             // Conversion path — the compressor must emit a valid RGB (3-component) JPEG.

@@ -11,6 +11,8 @@ import co.crackn.kompressor.CompressionResult
 import co.crackn.kompressor.Kompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.image.ImagePresets
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
@@ -105,8 +107,8 @@ class ImageCompressViewModel(
         _state.update { it.copy(compressedImagePath = outputFile.path) }
         try {
             kompressor.image.compress(
-                inputPath = inputPath,
-                outputPath = outputFile.path,
+                input = MediaSource.Local.FilePath(inputPath),
+                output = MediaDestination.Local.FilePath(outputFile.path),
                 config = buildConfig(),
             ).fold(
                 onSuccess = { handleSuccess(outputFile.path, it) },

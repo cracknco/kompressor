@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
 import kotlinx.coroutines.launch
@@ -42,8 +44,8 @@ class AndroidImageCompressorTest {
         val output = File(tempDir, "output.jpg")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
         )
 
         assertTrue(result.isSuccess)
@@ -156,7 +158,10 @@ class AndroidImageCompressorTest {
         )
         val output = File(tempDir, "rotated_${exifOrientation}_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be valid JPEG")
 
@@ -210,8 +215,8 @@ class AndroidImageCompressorTest {
         val output = File(tempDir, "resized.jpg")
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = ImageCompressionConfig(maxWidth = 500, maxHeight = 500),
         )
 
@@ -229,9 +234,21 @@ class AndroidImageCompressorTest {
         val outputMid = File(tempDir, "mid.jpg")
         val outputHigh = File(tempDir, "high.jpg")
 
-        compressor.compress(input.absolutePath, outputLow.absolutePath, ImageCompressionConfig(quality = 10))
-        compressor.compress(input.absolutePath, outputMid.absolutePath, ImageCompressionConfig(quality = 50))
-        compressor.compress(input.absolutePath, outputHigh.absolutePath, ImageCompressionConfig(quality = 95))
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputLow.absolutePath),
+            ImageCompressionConfig(quality = 10),
+        ).getOrThrow()
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputMid.absolutePath),
+            ImageCompressionConfig(quality = 50),
+        ).getOrThrow()
+        compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(outputHigh.absolutePath),
+            ImageCompressionConfig(quality = 95),
+        ).getOrThrow()
 
         assertTrue(outputLow.length() < outputMid.length())
         assertTrue(outputMid.length() < outputHigh.length())
@@ -240,7 +257,10 @@ class AndroidImageCompressorTest {
     @Test
     fun compressImage_fileNotFound_returnsFailure() = runTest {
         val output = File(tempDir, "out.jpg")
-        val result = compressor.compress("/nonexistent/image.png", output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/image.png"),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
         assertTrue(result.isFailure)
     }
 
@@ -259,7 +279,10 @@ class AndroidImageCompressorTest {
             kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.Job(),
         )
         val job = scope.launch {
-            compressor.compress(input.absolutePath, output.absolutePath)
+            compressor.compress(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+            )
         }
         // Cancel immediately — the decode on a 3000×3000 PNG takes long enough on any device
         // that the first ensureActive() gate should trip before resize + write can start.

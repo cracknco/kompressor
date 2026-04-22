@@ -7,6 +7,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.image.IosImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.fileSize
@@ -49,7 +51,10 @@ class IosImageCompressorTest {
         val inputPath = createTestImage(testDir, 1000, 1000)
         val outputPath = testDir + "output.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess)
         val compression = result.getOrThrow()
@@ -70,8 +75,8 @@ class IosImageCompressorTest {
         val outputPath = testDir + "resized.jpg"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = ImageCompressionConfig(maxWidth = 500, maxHeight = 500),
         )
 
@@ -88,8 +93,8 @@ class IosImageCompressorTest {
         val outputPath = testDir + "no_resize.jpg"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             config = ImageCompressionConfig(maxWidth = 500, maxHeight = 500),
         )
 
@@ -107,9 +112,21 @@ class IosImageCompressorTest {
         val outputMid = testDir + "mid.jpg"
         val outputHigh = testDir + "high.jpg"
 
-        compressor.compress(inputPath, outputLow, ImageCompressionConfig(quality = 10))
-        compressor.compress(inputPath, outputMid, ImageCompressionConfig(quality = 50))
-        compressor.compress(inputPath, outputHigh, ImageCompressionConfig(quality = 95))
+        compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputLow),
+            ImageCompressionConfig(quality = 10,
+        ))
+        compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputMid),
+            ImageCompressionConfig(quality = 50,
+        ))
+        compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputHigh),
+            ImageCompressionConfig(quality = 95,
+        ))
 
         val sizeLow = fileSize(outputLow)
         val sizeMid = fileSize(outputMid)
@@ -120,7 +137,10 @@ class IosImageCompressorTest {
 
     @Test
     fun compressImage_fileNotFound_returnsFailure() = runTest {
-        val result = compressor.compress("/nonexistent/image.png", testDir + "out.jpg")
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/image.png"),
+            MediaDestination.Local.FilePath(testDir + "out.jpg"),
+        )
         assertTrue(result.isFailure)
     }
 

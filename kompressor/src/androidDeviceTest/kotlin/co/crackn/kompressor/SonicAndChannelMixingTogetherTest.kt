@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_22K
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_48K
@@ -58,8 +60,8 @@ class SonicAndChannelMixingTogetherTest {
         val output = File(tempDir, "22k_mono.m4a")
 
         val result = compressor.compress(
-            input.absolutePath,
-            output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             AudioCompressionConfig(
                 sampleRate = SAMPLE_RATE_22K,
                 channels = AudioChannels.MONO,

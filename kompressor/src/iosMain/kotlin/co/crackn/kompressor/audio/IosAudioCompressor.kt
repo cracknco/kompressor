@@ -82,74 +82,6 @@ internal class IosAudioCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : AudioCompressor {
 
-    // LongMethod suppressed: see IosImageCompressor — the extra length is from the CRA-47
-    // instrumentCompress wrapping (tag + three message builders + pipeline-selection DEBUG log).
-    @Suppress("LongMethod")
-    override suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: AudioCompressionConfig,
-        onProgress: suspend (Float) -> Unit,
-    ): Result<CompressionResult> = suspendRunCatching {
-        logger.instrumentCompress(
-            tag = LogTags.AUDIO,
-            startMessage = {
-                "compress() start in=$inputPath out=$outputPath " +
-                    "bitrate=${config.bitrate} sampleRate=${config.sampleRate} " +
-                    "channels=${config.channels} trackIndex=${config.audioTrackIndex}"
-            },
-            successMessage = { r ->
-                "compress() ok durationMs=${r.durationMs} " +
-                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
-            },
-            failureMessage = { "compress() failed in=$inputPath" },
-        ) {
-            val startTime = CFAbsoluteTimeGetCurrent()
-            onProgress(0f)
-            val inputSize = sizeOrTypedError(inputPath)
-            // Pre-flight: reject obviously-empty inputs with a typed IO error so callers see the
-            // same `IoFailed` subtype across platforms instead of the AVFoundation-specific
-            // `fileFormatNotRecognized` → `UnsupportedSourceFormat` mapping an empty file would
-            // otherwise trigger.
-            if (inputSize == 0L) {
-                throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
-            }
-            // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
-            // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
-            // sample buffer` from deep in the pipeline.
-            // Bounds-check the audio track selection first so out-of-range indices produce the
-            // documented typed error rather than being masked by downstream channel/bitrate checks
-            // that implicitly target track 0.
-            validateAudioTrackIndex(inputPath, config.audioTrackIndex)
-            validateChannelConfiguration(inputPath, config)
-            validateBitrateForSampleRateAndChannels(config)
-            requireAacEncodingCapability(config)
-            val usingExportSession = canUseExportSession(config)
-            logger.debug(LogTags.AUDIO) {
-                "Pipeline: ${if (usingExportSession) "AVAssetExportSession" else "AVAssetWriter"}"
-            }
-            runPipelineWithTypedErrors(outputPath) {
-                if (usingExportSession) {
-                    IosExportSessionPipeline(
-                        inputPath = inputPath,
-                        outputPath = outputPath,
-                        audioTrackIndex = config.audioTrackIndex,
-                    ).execute(onProgress)
-                } else {
-                    IosPipeline(inputPath, outputPath, config).execute(onProgress)
-                }
-            }
-            onProgress(1f)
-            // Route the output-size read through `sizeOrTypedError` too: a race that loses the
-            // output file between pipeline success and this read would otherwise leak the untyped
-            // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
-            // `Result.failure`, which `suspendRunCatching` passes through unchanged.
-            val outputSize = sizeOrTypedError(outputPath)
-            val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
-            CompressionResult(inputSize, outputSize, durationMs)
-        }
-    }
-
     // LongMethod suppressed: the nested try/finally (inHandle outer, outHandle inner) is
     // mandated by lifecycle cleanup correctness — see the inline comment below. Extracting the
     // inner compress-with-progress block to a helper would fragment the lifecycle contract
@@ -184,7 +116,7 @@ internal class IosAudioCompressor(
         try {
             val outHandle = output.toIosOutputHandle()
             try {
-                val result = compress(inHandle.path, outHandle.tempPath, config) { fraction ->
+                val result = compressFilePath(inHandle.path, outHandle.tempPath, config) { fraction ->
                     // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
                     // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
                     if (fraction < 1f) {
@@ -195,7 +127,7 @@ internal class IosAudioCompressor(
                             ),
                         )
                     }
-                }.getOrThrow()
+                }
                 outHandle.commit { fraction ->
                     if (fraction < 1f) {
                         onProgress(
@@ -214,6 +146,74 @@ internal class IosAudioCompressor(
         } finally {
             inHandle.cleanup()
         }
+    }
+
+    // LongMethod suppressed: the extra length is from the CRA-47 `instrumentCompress`
+    // wrapping (tag + three message builders) plus the pre-flight validation chain. Extracting
+    // the inner block to a helper would fragment the path-based pipeline contract across two
+    // call sites; keeping it inline reads straight through.
+    @Suppress("LongMethod")
+    private suspend fun compressFilePath(
+        inputPath: String,
+        outputPath: String,
+        config: AudioCompressionConfig,
+        onProgress: suspend (Float) -> Unit,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.AUDIO,
+        startMessage = {
+            "compress() start in=$inputPath out=$outputPath " +
+                "bitrate=${config.bitrate} sampleRate=${config.sampleRate} " +
+                "channels=${config.channels} trackIndex=${config.audioTrackIndex}"
+        },
+        successMessage = { r ->
+            "compress() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "compress() failed in=$inputPath" },
+    ) {
+        val startTime = CFAbsoluteTimeGetCurrent()
+        onProgress(0f)
+        val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject obviously-empty inputs with a typed IO error so callers see the
+        // same `IoFailed` subtype across platforms instead of the AVFoundation-specific
+        // `fileFormatNotRecognized` → `UnsupportedSourceFormat` mapping an empty file would
+        // otherwise trigger.
+        if (inputSize == 0L) {
+            throw AudioCompressionError.IoFailed("Input file is empty (0 bytes): $inputPath")
+        }
+        // Upfront configuration checks. Fail fast with a typed error for inputs iOS's encoder
+        // cannot honour, rather than racing a generic `AVAssetWriterInput failed to append
+        // sample buffer` from deep in the pipeline.
+        // Bounds-check the audio track selection first so out-of-range indices produce the
+        // documented typed error rather than being masked by downstream channel/bitrate checks
+        // that implicitly target track 0.
+        validateAudioTrackIndex(inputPath, config.audioTrackIndex)
+        validateChannelConfiguration(inputPath, config)
+        validateBitrateForSampleRateAndChannels(config)
+        requireAacEncodingCapability(config)
+        val usingExportSession = canUseExportSession(config)
+        logger.debug(LogTags.AUDIO) {
+            "Pipeline: ${if (usingExportSession) "AVAssetExportSession" else "AVAssetWriter"}"
+        }
+        runPipelineWithTypedErrors(outputPath) {
+            if (usingExportSession) {
+                IosExportSessionPipeline(
+                    inputPath = inputPath,
+                    outputPath = outputPath,
+                    audioTrackIndex = config.audioTrackIndex,
+                ).execute(onProgress)
+            } else {
+                IosPipeline(inputPath, outputPath, config).execute(onProgress)
+            }
+        }
+        onProgress(1f)
+        // Route the output-size read through `sizeOrTypedError` too: a race that loses the
+        // output file between pipeline success and this read would otherwise leak the untyped
+        // `IllegalStateException("Cannot read file size")` from `nsFileSize` into
+        // `Result.failure`, which `suspendRunCatching` passes through unchanged.
+        val outputSize = sizeOrTypedError(outputPath)
+        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+        CompressionResult(inputSize, outputSize, durationMs)
     }
 
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")

@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.DURATION_TOLERANCE_SEC
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -57,7 +59,10 @@ class GoldenAudioTest {
         val inputPath = createWav(durationSeconds = 2, sampleRate = SAMPLE_RATE_44K, channels = STEREO)
         val outputPath = testDir + "golden_default.m4a"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess)
         val compression = result.getOrThrow()
@@ -81,8 +86,15 @@ class GoldenAudioTest {
         val voiceOutput = testDir + "golden_voice.m4a"
         val defaultOutput = testDir + "golden_default_compare.m4a"
 
-        val voiceResult = compressor.compress(inputPath, voiceOutput, AudioPresets.VOICE_MESSAGE)
-        val defaultResult = compressor.compress(inputPath, defaultOutput)
+        val voiceResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(voiceOutput),
+            AudioPresets.VOICE_MESSAGE,
+        )
+        val defaultResult = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(defaultOutput),
+        )
         assertTrue(voiceResult.isSuccess, "Voice compression failed: ${voiceResult.exceptionOrNull()}")
         assertTrue(defaultResult.isSuccess, "Default compression failed: ${defaultResult.exceptionOrNull()}")
 
@@ -102,7 +114,8 @@ class GoldenAudioTest {
         val outputPath = testDir + "golden_size_check.m4a"
 
         val result = compressor.compress(
-            inputPath, outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             AudioCompressionConfig(bitrate = 128_000),
         )
 

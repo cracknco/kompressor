@@ -11,6 +11,8 @@ import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.testutil.MultiTrackAudioFixture
 import kotlin.math.PI
@@ -86,8 +88,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = testDir + "out0.m4a"
         val result = compressor.compress(
-            inputPath = input,
-            outputPath = output,
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
             config = AudioCompressionConfig(channels = AudioChannels.MONO, audioTrackIndex = 0),
         )
         assertTrue(result.isSuccess, "result=$result")
@@ -100,8 +102,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = testDir + "out1.m4a"
         val result = compressor.compress(
-            inputPath = input,
-            outputPath = output,
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
             config = AudioCompressionConfig(channels = AudioChannels.MONO, audioTrackIndex = 1),
         )
         assertTrue(result.isSuccess, "result=$result")
@@ -114,8 +116,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = testDir + "out_oob.m4a"
         val result = compressor.compress(
-            inputPath = input,
-            outputPath = output,
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
             config = AudioCompressionConfig(channels = AudioChannels.MONO, audioTrackIndex = 5),
         )
         assertTrue(result.isFailure)

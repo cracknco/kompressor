@@ -71,6 +71,16 @@ Kompressor ships as a Kotlin Multiplatform library with the following artifact t
 
 Versions before 1.0.0 (e.g., 0.x.y) are development releases. The API may change between any two versions without a MAJOR bump. Pin exact versions during this phase.
 
+### Pre-1.0 breaking changes log
+
+Major pre-1.0 API removals are listed here for migration convenience — the code change lands under `### Changed (BREAKING)` in [CHANGELOG.md](../CHANGELOG.md).
+
+- **0.x — path-based `compress(inputPath: String, outputPath: String, ...)` removed** from `ImageCompressor` / `AudioCompressor` / `VideoCompressor`. Migrate to the typed I/O overloads:
+    - `AudioCompressor` / `VideoCompressor`: `compress(MediaSource, MediaDestination, config, onProgress)` — the `onProgress` callback signature changes from `(Float) -> Unit` to `(CompressionProgress) -> Unit`.
+    - `ImageCompressor`: `compress(MediaSource, MediaDestination, config)` — no `onProgress` parameter, because the underlying `BitmapFactory` / `UIImage + CoreGraphics` operations are synchronous single-step and never emitted ticks even on the path-based API.
+
+    In all three cases the string paths become `MediaSource.Local.FilePath(...)` / `MediaDestination.Local.FilePath(...)`. See [the I/O model migration guide](concepts/io-model.md#migrating-from-path-based-apis).
+
 ## Enforcement: committed ABI baseline + CI gate
 
 We use the [Kotlin Binary Compatibility Validator](https://github.com/Kotlin/binary-compatibility-validator) (BCV) plugin to freeze the public Android/JVM ABI in a file committed to the repo:

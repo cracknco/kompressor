@@ -9,15 +9,11 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.IosAudioCompressor
-import co.crackn.kompressor.image.ImageCompressionConfig
-import co.crackn.kompressor.image.IosImageCompressor
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.WavGenerator
-import co.crackn.kompressor.testutil.createTestImage
-import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
@@ -33,20 +29,19 @@ import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 
 /**
- * End-to-end parity tests for CRA-92's new `compress(MediaSource, MediaDestination, ...)`
- * overload on iOS. Sibling of the androidDeviceTest `FilePathEndToEndTest`: asserts the
- * same "bitwise-identical output" gold-standard contract (the new entry delegates to the
- * path-based overload, so the outputs must match byte-for-byte) and the same progress
- * contract (COMPRESSING fractions followed by a terminal FINALIZING_OUTPUT(1f), and
- * FINALIZING_OUTPUT absent on failure).
+ * End-to-end progression-contract tests for the `compress(MediaSource, MediaDestination, ...)`
+ * entry point on the iOS `FilePath` fast path. Sibling of `androidDeviceTest/FilePathEndToEndTest`.
+ * Exercises the `CompressionProgress` invariants: audio/video emit `COMPRESSING` fractions plus
+ * a terminal `FINALIZING_OUTPUT(1f)` on success; on failure, `FINALIZING_OUTPUT` is never
+ * emitted (pinned by `audio_newOverload_onFailure_doesNotEmitFinalizing` / video sibling).
  *
- * Parity-required per the KMP rule in `cyrus-skills:implementation` — every new platform
- * behaviour lands on both Android and iOS in the same PR.
+ * CRA-97 note: the earlier `*_producesBitwiseIdenticalOutput` tests comparing the (now-
+ * removed) path-based overload to the `MediaSource` overload were retired — with the legacy
+ * overload gone both sides called the same code path, so the comparison was tautological.
  */
 class FilePathEndToEndTest {
 
     private lateinit var testDir: String
-    private val image = IosImageCompressor()
     private val audio = IosAudioCompressor()
     private val video = IosVideoCompressor()
 
@@ -61,60 +56,6 @@ class FilePathEndToEndTest {
     @AfterTest
     fun tearDown() {
         NSFileManager.defaultManager.removeItemAtPath(testDir, null)
-    }
-
-    @Test
-    fun image_newOverloadProducesBitwiseIdenticalOutput() = runTest {
-        val inputPath = createTestImage(testDir, IMAGE_SIDE, IMAGE_SIDE)
-        val legacyPath = testDir + "legacy.jpg"
-        val novelPath = testDir + "novel.jpg"
-
-        val legacy = image.compress(inputPath, legacyPath, ImageCompressionConfig())
-        val novel = image.compress(
-            input = MediaSource.Local.FilePath(inputPath),
-            output = MediaDestination.Local.FilePath(novelPath),
-            config = ImageCompressionConfig(),
-        )
-
-        legacy.isSuccess shouldBe true
-        novel.isSuccess shouldBe true
-        readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
-    }
-
-    @Test
-    fun audio_newOverloadProducesBitwiseIdenticalOutput() = runTest {
-        val inputPath = createTestWav(AUDIO_DURATION_S)
-        val legacyPath = testDir + "legacy.m4a"
-        val novelPath = testDir + "novel.m4a"
-
-        val legacy = audio.compress(inputPath, legacyPath, AudioCompressionConfig())
-        val novel = audio.compress(
-            input = MediaSource.Local.FilePath(inputPath),
-            output = MediaDestination.Local.FilePath(novelPath),
-            config = AudioCompressionConfig(),
-        )
-
-        legacy.isSuccess shouldBe true
-        novel.isSuccess shouldBe true
-        readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
-    }
-
-    @Test
-    fun video_newOverloadProducesBitwiseIdenticalOutput() = runTest {
-        val inputPath = Mp4Generator.generateMp4(testDir + "input.mp4", frameCount = VIDEO_FRAME_COUNT)
-        val legacyPath = testDir + "legacy.mp4"
-        val novelPath = testDir + "novel.mp4"
-
-        val legacy = video.compress(inputPath, legacyPath, VideoCompressionConfig())
-        val novel = video.compress(
-            input = MediaSource.Local.FilePath(inputPath),
-            output = MediaDestination.Local.FilePath(novelPath),
-            config = VideoCompressionConfig(),
-        )
-
-        legacy.isSuccess shouldBe true
-        novel.isSuccess shouldBe true
-        readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
     }
 
     @Test
@@ -206,7 +147,6 @@ class FilePathEndToEndTest {
     }
 
     private companion object {
-        const val IMAGE_SIDE = 512
         const val AUDIO_DURATION_S = 2
         const val VIDEO_FRAME_COUNT = 30
         const val WAV_SAMPLE_RATE = 44_100

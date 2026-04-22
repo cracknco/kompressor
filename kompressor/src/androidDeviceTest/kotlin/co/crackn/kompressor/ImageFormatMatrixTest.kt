@@ -11,6 +11,8 @@ import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.ImageFormat
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createTestImage
 import kotlinx.coroutines.test.runTest
@@ -67,7 +69,11 @@ class ImageFormatMatrixTest {
         val input = createTestImage(tempDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = File(tempDir, "avif_out.avif")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            config,
+        )
 
         val err = result.exceptionOrNull()
         assertNotNull(err)
@@ -88,7 +94,11 @@ class ImageFormatMatrixTest {
         val input = createTestImage(tempDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = File(tempDir, "heic_out.heic")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            config,
+        )
 
         val err = result.exceptionOrNull()
         assertNotNull(err)
@@ -106,7 +116,11 @@ class ImageFormatMatrixTest {
         val input = createTestImage(tempDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = File(tempDir, "webp_out.webp")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            config,
+        )
 
         assertTrue(result.isSuccess, "WEBP compression failed: ${result.exceptionOrNull()}")
         val bytes = output.readBytes()
@@ -126,7 +140,10 @@ class ImageFormatMatrixTest {
         val input = File(tempDir, "synth.heic").apply { writeBytes(heicBytes) }
         val output = File(tempDir, "heic_synth_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Synthetic HEIC payload should not decode")
         val err = result.exceptionOrNull()
@@ -145,7 +162,10 @@ class ImageFormatMatrixTest {
         val input = File(tempDir, "synth.avif").apply { writeBytes(avifBytes) }
         val output = File(tempDir, "avif_synth_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Synthetic AVIF payload should not decode")
         val err = result.exceptionOrNull()
@@ -168,7 +188,10 @@ class ImageFormatMatrixTest {
         val input = File(tempDir, "synth.dng").apply { writeBytes(tiffBytes) }
         val output = File(tempDir, "dng_synth_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Synthetic DNG should not decode")
         val err = result.exceptionOrNull()
@@ -187,7 +210,11 @@ class ImageFormatMatrixTest {
         val input = createTestImage(tempDir, IMAGE_SIDE, IMAGE_SIDE)
         val output = File(tempDir, "jpeg_out.jpg")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            config,
+        )
 
         assertTrue(result.isSuccess, "JPEG compression regressed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidJpeg(output.readBytes()))

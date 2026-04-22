@@ -84,7 +84,11 @@ class UrlInputEndToEndTest {
         val legacyPath = testDir + "legacy.jpg"
         val novelPath = testDir + "novel.jpg"
 
-        val legacy = image.compress(inputPath, legacyPath, ImageCompressionConfig())
+        val legacy = image.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+            ImageCompressionConfig(),
+        )
         val novel = image.compress(
             input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
             output = MediaDestination.of(NSURL.fileURLWithPath(novelPath)),
@@ -102,7 +106,11 @@ class UrlInputEndToEndTest {
         val legacyPath = testDir + "legacy.m4a"
         val novelPath = testDir + "novel.m4a"
 
-        val legacy = audio.compress(inputPath, legacyPath, AudioCompressionConfig())
+        val legacy = audio.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+            AudioCompressionConfig(),
+        )
         val novel = audio.compress(
             input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
             output = MediaDestination.of(NSURL.fileURLWithPath(novelPath)),
@@ -120,7 +128,11 @@ class UrlInputEndToEndTest {
         val legacyPath = testDir + "legacy.mp4"
         val novelPath = testDir + "novel.mp4"
 
-        val legacy = video.compress(inputPath, legacyPath, VideoCompressionConfig())
+        val legacy = video.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+            VideoCompressionConfig(),
+        )
         val novel = video.compress(
             input = MediaSource.of(NSURL.fileURLWithPath(inputPath)),
             output = MediaDestination.of(NSURL.fileURLWithPath(novelPath)),
@@ -139,7 +151,11 @@ class UrlInputEndToEndTest {
         val novelPath = testDir + "novel-data.jpg"
 
         val inputBytes = readBytes(inputPath)
-        val legacy = image.compress(inputPath, legacyPath, ImageCompressionConfig())
+        val legacy = image.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+            ImageCompressionConfig(),
+        )
         val novel = image.compress(
             input = MediaSource.of(inputBytes.toNsDataForTest()),
             output = MediaDestination.Local.FilePath(novelPath),
@@ -167,8 +183,16 @@ class UrlInputEndToEndTest {
         val firstOut = testDir + "first.m4a"
         val secondOut = testDir + "second.m4a"
 
-        val first = audio.compress(inputPath, firstOut, AudioCompressionConfig())
-        val second = audio.compress(inputPath, secondOut, AudioCompressionConfig())
+        val first = audio.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(firstOut),
+            AudioCompressionConfig(),
+        )
+        val second = audio.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(secondOut),
+            AudioCompressionConfig(),
+        )
 
         first.isSuccess shouldBe true
         second.isSuccess shouldBe true

@@ -16,7 +16,10 @@
           { "type": "ci",       "section": "Changed", "hidden": true },
           { "type": "chore",    "section": "Changed", "hidden": true }
         ]
-      }
+      },
+      "releaseRules": [
+        { "breaking": true, "release": "minor" }
+      ]
     }],
     ["@semantic-release/release-notes-generator", {
       "preset": "conventionalcommits",

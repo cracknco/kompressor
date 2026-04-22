@@ -80,6 +80,7 @@ fun AudioScreen(
                 ProgressSection(
                     visible = state.isCompressing,
                     progress = state.progress,
+                    phase = state.phase,
                 )
 
                 CompressButton(

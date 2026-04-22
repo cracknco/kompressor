@@ -8,6 +8,8 @@
 package co.crackn.kompressor.video
 
 import co.crackn.kompressor.computeRotationDegrees
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -112,7 +114,10 @@ class IosVideoRotationPreservationTest {
         assertEquals(rotation, readTrackRotation(input), "Generator did not tag rotation=$rotation")
 
         val output = testDir + "output-export-$rotation.mp4"
-        val result = compressor.compress(inputPath = input, outputPath = output)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(
             result.isSuccess,
             "Export path failed for rotation=$rotation: ${result.exceptionOrNull()}",
@@ -133,7 +138,11 @@ class IosVideoRotationPreservationTest {
         val output = testDir + "output-transcode-$rotation.mp4"
         // Any non-default config knocks us off the export-session fast path.
         val config = VideoCompressionConfig(videoBitrate = CUSTOM_BITRATE)
-        val result = compressor.compress(inputPath = input, outputPath = output, config = config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
         assertTrue(
             result.isSuccess,
             "Transcode path failed for rotation=$rotation: ${result.exceptionOrNull()}",

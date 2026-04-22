@@ -13,15 +13,21 @@ import co.crackn.kompressor.io.MediaSource
 public interface ImageCompressor {
 
     /**
-     * Compress an image file.
+     * Compress an image from a [MediaSource] to a [MediaDestination].
      *
      * Unlike audio/video compression, image compression has no progress callback because the
      * underlying platform APIs are synchronous single-step operations with no intermediate state.
      *
      * Cancel the calling coroutine scope to abort the compression (structured concurrency).
      *
-     * @param inputPath Absolute filesystem path to the source image.
-     * @param outputPath Absolute filesystem path for the compressed output.
+     * Inputs and outputs cover every platform-native form via the [MediaSource] / [MediaDestination]
+     * sealed hierarchies and their platform-specific builders — filesystem paths, Android `Uri`,
+     * iOS `NSURL` / `PHAsset` / `NSData`, `InputStream` / `NSInputStream`, `ByteArray`, and
+     * MediaStore / SAF output handles. See [docs/concepts/io-model.md](https://github.com/cracknco/kompressor/blob/main/docs/concepts/io-model.md)
+     * for the full model, memory invariants, and `closeOnFinish` contract.
+     *
+     * @param input Source media — see [MediaSource] and platform-specific builders.
+     * @param output Destination — see [MediaDestination] and platform-specific builders.
      * @param config Compression settings (format, quality, resize).
      * @return [Result] wrapping [CompressionResult] on success, or an [ImageCompressionError]
      *   subtype on failure. Possible failure types:
@@ -34,41 +40,8 @@ public interface ImageCompressor {
      *
      * **Thread-safety:** implementations are stateless and thread-safe. Concurrent `compress()`
      * calls from different coroutines or OS processes on the same instance are safe provided
-     * every call writes to a distinct output path. Concurrent calls that share an output path
+     * every call writes to a distinct destination. Concurrent calls that share a destination
      * produce undefined results. See `docs/threading-model.md`.
-     */
-    public suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: ImageCompressionConfig = ImageCompressionConfig(),
-    ): Result<CompressionResult>
-
-    /**
-     * Compress an image from a rich [MediaSource] to a [MediaDestination].
-     *
-     * This is the modern signature, preferred over [compress] (the path-based overload) for any
-     * consumer working with platform pickers (`Uri`, `NSURL`, `PHAsset`) or streams. The
-     * path-based signature remains available but will be deprecated in a future release.
-     *
-     * Image compression is synchronous at the platform level — unlike [AudioCompressor.compress]
-     * and [VideoCompressor.compress], there is **no `onProgress` callback**. Cancel the calling
-     * coroutine scope to abort the compression (structured concurrency).
-     *
-     * In this release only [MediaSource.Local.FilePath] / [MediaDestination.Local.FilePath]
-     * dispatch is implemented. All other variants (`Stream`, `Bytes`, and the platform-specific
-     * `Uri` / `NSURL` / `PHAsset` / `NSData` builders that ship later) surface an
-     * [UnsupportedOperationException] wrapped in [Result.failure], with a message citing the
-     * Linear ticket that will implement them (CRA-93 for Android `Uri`, CRA-94 for iOS
-     * `NSURL` / `PHAsset` / `NSData`, CRA-95 for `Stream` / `Bytes`).
-     *
-     * @param input Media source — see [MediaSource] and platform-specific builders.
-     * @param output Media destination — see [MediaDestination] and platform-specific builders.
-     * @param config Compression settings (format, quality, resize).
-     * @return [Result] wrapping [CompressionResult] on success, or an [ImageCompressionError]
-     *   subtype on failure. See the path-based overload for the base set of error types. Until
-     *   CRA-95 lands, non-`FilePath` inputs/outputs surface an [UnsupportedOperationException].
-     *
-     * **Thread-safety:** same guarantees as the path-based overload. See `docs/threading-model.md`.
      */
     public suspend fun compress(
         input: MediaSource,

@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Android-side dispatch from the public [MediaSource] / [MediaDestination] contract into a
- * filesystem path the legacy `compress(inputPath, outputPath, ...)` overloads can consume.
+ * filesystem path the Android compressors' private `compressFilePath(inputPath, outputPath, ...)`
+ * helpers can consume.
  *
  * Why a platform-specific helper rather than a single `commonMain` dispatcher? Because
  * [AndroidUriMediaSource] / [AndroidPfdMediaSource] / [AndroidUriMediaDestination] live in
@@ -34,7 +35,7 @@ import kotlinx.coroutines.withContext
 
 /** Result of resolving a [MediaSource] to an Android filesystem / URI string. */
 internal class AndroidInputHandle(
-    /** Path or `content://` URI string the legacy compress(String, String, ...) overload accepts. */
+    /** Path or `content://` URI string the private `compressFilePath(inputPath, outputPath, ...)` helper accepts. */
     val path: String,
     private val cleanupFn: () -> Unit,
 ) {
@@ -54,7 +55,7 @@ internal class AndroidInputHandle(
  * emitting progress ticks as it goes.
  */
 internal class AndroidOutputHandle(
-    /** Path the legacy compress(String, String, ...) overload writes to. */
+    /** Path the private `compressFilePath(inputPath, outputPath, ...)` helper writes to. */
     val tempPath: String,
     private val commitFn: suspend (suspend (Float) -> Unit) -> Unit,
     private val cleanupFn: () -> Unit,
@@ -79,8 +80,9 @@ internal class AndroidOutputHandle(
  * Resolve a [MediaSource] to an Android input path.
  *
  *  - [MediaSource.Local.FilePath] → direct path, no temp, no cleanup.
- *  - [AndroidUriMediaSource] → `uri.toString()` passed through; the legacy compressors accept
- *    `content://` URIs via their internal [android.content.ContentResolver] plumbing.
+ *  - [AndroidUriMediaSource] → `uri.toString()` passed through; the private `compressFilePath`
+ *    helpers accept `content://` URIs via their internal
+ *    [android.content.ContentResolver] plumbing.
  *  - [AndroidPfdMediaSource] → materialized to a private temp file under the app cache dir;
  *    PFD is closed on cleanup.
  *  - [MediaSource.Local.Stream] / [MediaSource.Local.Bytes] → materialized via

@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import kotlin.math.abs
 import kotlin.test.AfterTest
@@ -77,7 +79,10 @@ class IosVideoRotationSentinelTest {
             rotationDegrees = rotation,
         )
         val output = testDir + "output-export-$rotation.mp4"
-        val result = compressor.compress(inputPath = input, outputPath = output)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(
             result.isSuccess,
             "Export path failed for rotation=$rotation: ${result.exceptionOrNull()}",
@@ -97,7 +102,11 @@ class IosVideoRotationSentinelTest {
         // Custom bitrate knocks us off the AVAssetExportSession fast path onto AVAssetWriter —
         // the path that PR #56 explicitly patched to forward `preferredTransform`.
         val config = VideoCompressionConfig(videoBitrate = CUSTOM_BITRATE)
-        val result = compressor.compress(inputPath = input, outputPath = output, config = config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config,
+        )
         assertTrue(
             result.isSuccess,
             "Transcode path failed for rotation=$rotation: ${result.exceptionOrNull()}",

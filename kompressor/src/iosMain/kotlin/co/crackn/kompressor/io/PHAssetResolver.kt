@@ -61,8 +61,8 @@ private const val PH_IMAGE_ERROR_KEY: String = "PHImageErrorKey"
 internal class ResolvedPhAsset(val url: NSURL, val ownsFile: Boolean)
 
 /**
- * Resolve a [PHAsset] into a local `file://` [NSURL] the legacy
- * `compress(inputPath, outputPath, …)` overloads can consume.
+ * Resolve a [PHAsset] into a local `file://` [NSURL] the iOS compressors' private
+ * `compressFilePath(inputPath, outputPath, …)` helpers can consume.
  *
  * Dispatches on [PHAsset.mediaType]:
  *

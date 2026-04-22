@@ -10,6 +10,8 @@ import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.logging.KompressorLogger
 import co.crackn.kompressor.logging.LogLevel
 import co.crackn.kompressor.logging.SafeLogger
@@ -75,8 +77,8 @@ class StreamAndBytesEndToEndTest {
         val novelOut = File(tempDir, "novel.jpg")
 
         val legacy = imageCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             ImageCompressionConfig(),
         )
         val novel = imageCompressor.compress(
@@ -101,8 +103,8 @@ class StreamAndBytesEndToEndTest {
         val novelOut = File(tempDir, "novel.m4a")
 
         val legacy = audioCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             AudioCompressionConfig(),
         )
         val novel = audioCompressor.compress(
@@ -127,8 +129,8 @@ class StreamAndBytesEndToEndTest {
         val novelOut = File(tempDir, "novel.mp4")
 
         val legacy = videoCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             VideoCompressionConfig(),
         )
         val novel = videoCompressor.compress(
@@ -190,8 +192,8 @@ class StreamAndBytesEndToEndTest {
         val novelOut = File(tempDir, "novel.jpg")
 
         val legacy = imageCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             ImageCompressionConfig(),
         )
         val novel = imageCompressor.compress(
@@ -217,8 +219,8 @@ class StreamAndBytesEndToEndTest {
         val novelOut = File(tempDir, "novel.m4a")
 
         val legacy = audioCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             AudioCompressionConfig(),
         )
         val novel = audioCompressor.compress(
@@ -292,8 +294,8 @@ class StreamAndBytesEndToEndTest {
         val consumer = Buffer()
 
         val legacy = imageCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             ImageCompressionConfig(),
         )
         val novel = imageCompressor.compress(
@@ -318,8 +320,8 @@ class StreamAndBytesEndToEndTest {
         val consumer = Buffer()
 
         val legacy = audioCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             AudioCompressionConfig(),
         )
         val novel = audioCompressor.compress(
@@ -344,8 +346,8 @@ class StreamAndBytesEndToEndTest {
         val consumer = Buffer()
 
         val legacy = videoCompressor.compress(
-            input.absolutePath,
-            legacyOut.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
             VideoCompressionConfig(),
         )
         val novel = videoCompressor.compress(

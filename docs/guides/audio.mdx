@@ -27,12 +27,19 @@ Any container the platform's default extractors can open:
 ## Basic usage
 
 ```kotlin
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
 val result = kompressor.audio.compress(
-    inputPath  = "/path/to/recording.wav",
-    outputPath = "/path/to/recording.m4a",
-    onProgress = { fraction -> println("${(fraction * 100).toInt()}%") },
+    input  = MediaSource.Local.FilePath("/path/to/recording.wav"),
+    output = MediaDestination.Local.FilePath("/path/to/recording.m4a"),
+    onProgress = { progress ->
+        println("${progress.phase}: ${(progress.fraction * 100).toInt()}%")
+    },
 )
 ```
+
+The `onProgress` callback receives a [`CompressionProgress`](/concepts/io-model#progression-phases) — `progress.fraction` is the within-phase float, `progress.phase` distinguishes `MATERIALIZING_INPUT` (e.g. iCloud download for `PHAsset` sources) from `COMPRESSING` and `FINALIZING_OUTPUT`.
 
 ## Configuration
 
@@ -67,7 +74,11 @@ Output is always AAC-LC in an M4A container on both platforms.
 | `HIGH_QUALITY`   | 192 kbps   | 44 100 Hz   | Stereo   | Near-transparent for music        |
 
 ```kotlin
-kompressor.audio.compress(input, output, AudioPresets.VOICE_MESSAGE)
+kompressor.audio.compress(
+    MediaSource.Local.FilePath(input),
+    MediaDestination.Local.FilePath(output),
+    AudioPresets.VOICE_MESSAGE,
+)
 ```
 
 ## Passthrough fast path
@@ -99,10 +110,22 @@ See [Cancellation](/concepts/cancellation). Cancelling the coroutine scope abort
 Failures are `Result.failure(AudioCompressionError.*)` — see [Error handling](/concepts/errors) for the full subtype table. A particularly useful one for audio is `UnsupportedConfiguration`, which fires **before** opening the encoder when the requested config is incompatible with the source (e.g. iOS asked to upmix mono to stereo, or input has more channels than the downmixer handles). Catch it to fall back to a narrower config:
 
 ```kotlin
-kompressor.audio.compress(input, output, config).onFailure { err ->
+val result = kompressor.audio.compress(
+    MediaSource.Local.FilePath(input),
+    MediaDestination.Local.FilePath(output),
+    config,
+)
+
+val finalResult = result.recoverCatching { err ->
     if (err is AudioCompressionError.UnsupportedConfiguration) {
-        // Retry with a simpler channel layout
-        kompressor.audio.compress(input, output, config.copy(channels = AudioChannels.MONO))
+        // Retry with a simpler channel layout and surface the retry's outcome.
+        kompressor.audio.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+            config.copy(channels = AudioChannels.MONO),
+        ).getOrThrow()
+    } else {
+        throw err
     }
 }
 ```

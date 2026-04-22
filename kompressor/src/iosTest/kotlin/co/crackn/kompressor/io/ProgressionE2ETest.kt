@@ -12,6 +12,8 @@ import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.io.CompressionProgress.Phase.COMPRESSING
 import co.crackn.kompressor.io.CompressionProgress.Phase.FINALIZING_OUTPUT
 import co.crackn.kompressor.io.CompressionProgress.Phase.MATERIALIZING_INPUT
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.assertProgressionMonotone

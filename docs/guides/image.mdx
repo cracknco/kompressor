@@ -11,13 +11,24 @@ description: "JPEG compression with quality control, max-dimension resize, and E
 ## Basic usage
 
 ```kotlin
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
 val result = kompressor.image.compress(
-    inputPath  = "/absolute/path/to/photo.jpg",
-    outputPath = "/absolute/path/to/photo_compressed.jpg",
+    input  = MediaSource.Local.FilePath("/absolute/path/to/photo.jpg"),
+    output = MediaDestination.Local.FilePath("/absolute/path/to/photo_compressed.jpg"),
 )
 ```
 
-All paths are **absolute filesystem paths**. No `content://` URIs on Android; stage the file to your app's cache directory first if you receive a SAF URI.
+`MediaSource` accepts **filesystem paths, `Uri` (Android), `NSURL` / `PHAsset` / `NSData` (iOS), `okio.Source`, or raw `ByteArray`**, while `MediaDestination` accepts **filesystem paths, `okio.Sink`, or an in-memory `Bytes` sink** — see [the I/O model](/concepts/io-model) for the full set of builders on each side. Passing a `content://` URI from `PickVisualMedia` works directly:
+
+```kotlin
+// Android — no getRealPathFromUri hack required.
+kompressor.image.compress(
+    input  = MediaSource.of(uri),
+    output = MediaDestination.Local.FilePath(outputPath),
+)
+```
 
 ## Configuration
 
@@ -85,7 +96,11 @@ All eight EXIF orientations are honoured (rotate 90 / 180 / 270, horizontal / ve
 JPEG is lossy and already-heavily-compressed photos can re-encode **larger** than the source, especially when the requested quality is higher than the original's. Always check `isSmallerThanOriginal`:
 
 ```kotlin
-val result = kompressor.image.compress(input, output, config).getOrThrow()
+val result = kompressor.image.compress(
+    MediaSource.Local.FilePath(input),
+    MediaDestination.Local.FilePath(output),
+    config,
+).getOrThrow()
 if (!result.isSmallerThanOriginal) {
     // Keep the original instead; compressing would waste bytes.
     File(output).delete()

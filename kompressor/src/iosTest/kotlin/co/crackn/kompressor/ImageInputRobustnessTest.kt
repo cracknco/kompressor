@@ -9,6 +9,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.image.ImageCompressionError
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.fileSize
@@ -54,7 +56,10 @@ class ImageInputRobustnessTest {
         writeBytes(inputPath, MinimalPngFixtures.rgba16bit2x2())
         val outputPath = testDir + "rgba16_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess, "16bpc PNG compression failed: ${result.exceptionOrNull()}")
         assertTrue(fileSize(outputPath) > 0)
@@ -66,7 +71,10 @@ class ImageInputRobustnessTest {
         writeBytes(inputPath, MinimalPngFixtures.indexed4x4())
         val outputPath = testDir + "indexed_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess, "Indexed PNG compression failed: ${result.exceptionOrNull()}")
         assertTrue(fileSize(outputPath) > 0)
@@ -78,7 +86,10 @@ class ImageInputRobustnessTest {
         writeBytes(inputPath, MinimalPngFixtures.rgbaInterlaced4x4())
         val outputPath = testDir + "interlaced_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isSuccess, "Adam7 PNG compression failed: ${result.exceptionOrNull()}")
         assertTrue(fileSize(outputPath) > 0)
@@ -90,7 +101,10 @@ class ImageInputRobustnessTest {
         writeBytes(inputPath, MinimalPngFixtures.TRUNCATED_JPEG)
         val outputPath = testDir + "truncated_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isFailure, "Truncated JPEG must fail")
         val err = result.exceptionOrNull()
@@ -120,7 +134,10 @@ class ImageInputRobustnessTest {
         writeBytes(inputPath, corrupted)
         val outputPath = testDir + "corrupt_exif_out.jpg"
 
-        val result = compressor.compress(inputPath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(
             result.isSuccess,

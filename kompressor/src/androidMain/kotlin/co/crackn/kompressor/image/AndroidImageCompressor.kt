@@ -24,6 +24,7 @@ import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.suspendRunCatching
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import okio.buffer
@@ -36,8 +37,8 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /** Android image compressor backed by [BitmapFactory] and [Bitmap.compress]. */
-// TooManyFunctions suppressed: CRA-95 added the `compress(MediaSource, MediaDestination, ...)`
-// overload + its short-circuit helpers (`shortCircuitBytesInput`, `shortCircuitStreamInput`)
+// TooManyFunctions suppressed: CRA-95 added the Stream/Bytes short-circuit helpers
+// (`compressFromBytes`, `compressFromPath`, `compressPathToStream`, `compressPathToFileBacked`)
 // that decode directly via `BitmapFactory.decodeByteArray` / `decodeStream` without the temp-
 // file hop. Splitting into a helper class would force the short-circuit helpers to re-export
 // the compressor's private encode pipeline — not worth the structural churn.
@@ -46,36 +47,6 @@ import java.io.OutputStream
 internal class AndroidImageCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : ImageCompressor {
-
-    override suspend fun compress(
-        inputPath: String,
-        outputPath: String,
-        config: ImageCompressionConfig,
-    ): Result<CompressionResult> = suspendRunCatching {
-        logger.instrumentCompress(
-            tag = LogTags.IMAGE,
-            startMessage = {
-                "compress() start in=$inputPath out=$outputPath " +
-                    "fmt=${config.format} quality=${config.quality} " +
-                    "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
-            },
-            successMessage = { r ->
-                "compress() ok durationMs=${r.durationMs} " +
-                    "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
-            },
-            failureMessage = { "compress() failed in=$inputPath" },
-        ) {
-            try {
-                doCompress(inputPath, outputPath, config)
-            } catch (e: ImageCompressionError) {
-                throw e
-            } catch (e: IllegalArgumentException) {
-                throw e
-            } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
-                throw classifyAndroidImageError(inputPath, e)
-            }
-        }
-    }
 
     override suspend fun compress(
         input: MediaSource,
@@ -136,7 +107,7 @@ internal class AndroidImageCompressor(
     }
 
     /**
-     * FilePath / Uri / PFD input path — re-uses the legacy [compress] entry point when the
+     * FilePath / Uri / PFD input path — re-uses the private [compressFilePath] helper when the
      * destination is also file-backed (fastest path, matches pre-CRA-95 behaviour byte-for-byte).
      * When the destination is a [MediaDestination.Local.Stream], decode via [ImageSource.of] and
      * write directly into the consumer [okio.Sink] — still no temp file on the output side.
@@ -185,7 +156,7 @@ internal class AndroidImageCompressor(
     ): CompressionResult {
         val outputHandle = output.toAndroidOutputHandle()
         return try {
-            val result = compress(inputPath, outputHandle.tempPath, config).getOrThrow()
+            val result = compressFilePath(inputPath, outputHandle.tempPath, config)
             // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
             // temp file we just wrote; the commit step only moves bytes, it does not mutate
             // the size reported to the caller.
@@ -193,6 +164,45 @@ internal class AndroidImageCompressor(
             result
         } finally {
             outputHandle.cleanup()
+        }
+    }
+
+    /**
+     * Local-file → local-file compression with the CRA-47 [instrumentCompress] wrapper applied.
+     * Throws the typed [ImageCompressionError] hierarchy on failure — the outer MediaSource
+     * dispatch's `suspendRunCatching` converts those throws into `Result.failure`.
+     */
+    private suspend fun compressFilePath(
+        inputPath: String,
+        outputPath: String,
+        config: ImageCompressionConfig,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.IMAGE,
+        startMessage = {
+            "compress() start in=$inputPath out=$outputPath " +
+                "fmt=${config.format} quality=${config.quality} " +
+                "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
+        },
+        successMessage = { r ->
+            "compress() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "compress() failed in=$inputPath" },
+    ) {
+        try {
+            doCompress(inputPath, outputPath, config)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: CancellationException) {
+            // Structured concurrency: never wrap cancellation as a typed compression error,
+            // or a parent scope cancelling a child compress() would see the cancellation
+            // converted into ImageCompressionError.Unknown and silently absorbed by an
+            // outer .onFailure handler. Re-throw verbatim so kotlinx.coroutines unwinds.
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw classifyAndroidImageError(inputPath, e)
         }
     }
 

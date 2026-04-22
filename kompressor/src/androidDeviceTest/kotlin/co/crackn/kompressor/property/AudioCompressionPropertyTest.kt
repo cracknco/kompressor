@@ -9,6 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -68,7 +70,11 @@ class AudioCompressionPropertyTest {
             input.writeBytes(wavBytes)
             val output = File(tempDir, "output_${bitrate}_${sampleRate}_${channels.count}.m4a")
 
-            val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+            val result = compressor.compress(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+                config,
+            )
 
             assertTrue(result.isSuccess, "Compression failed for config $config: ${result.exceptionOrNull()}")
             val compression = result.getOrThrow()
@@ -96,9 +102,9 @@ class AudioCompressionPropertyTest {
         val progressValues = mutableListOf<Float>()
 
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            onProgress = { progressValues.add(it.fraction) },
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
 
@@ -136,7 +142,11 @@ class AudioCompressionPropertyTest {
             }
             val output = File(tempDir, "cross_out_${System.nanoTime()}.m4a")
 
-            val result = compressor.compress(input.absolutePath, output.absolutePath, config)
+            val result = compressor.compress(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+                config,
+            )
             assertTrue(
                 result.isSuccess,
                 "compress failed for ($inputFormat, $config): ${result.exceptionOrNull()}",

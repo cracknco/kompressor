@@ -9,6 +9,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.TestConstants.STEREO
@@ -60,7 +62,10 @@ class ConcurrentCompressionTest {
 
         val results = coroutineScope {
             inputs.zip(outputs).map { (inPath, outPath) ->
-                async(Dispatchers.Default) { audio.compress(inPath, outPath) }
+                async(Dispatchers.Default) { audio.compress(
+                    MediaSource.Local.FilePath(inPath),
+                    MediaDestination.Local.FilePath(outPath),
+                ) }
             }.awaitAll()
         }
 
@@ -85,10 +90,16 @@ class ConcurrentCompressionTest {
 
         val results = coroutineScope {
             val audioDeferreds = audioInputs.zip(audioOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { audio.compress(i, o) }
+                async(Dispatchers.Default) { audio.compress(
+                    MediaSource.Local.FilePath(i),
+                    MediaDestination.Local.FilePath(o),
+                ) }
             }
             val imageDeferreds = imageInputs.zip(imageOutputs).map { (i, o) ->
-                async(Dispatchers.Default) { image.compress(i, o) }
+                async(Dispatchers.Default) { image.compress(
+                    MediaSource.Local.FilePath(i),
+                    MediaDestination.Local.FilePath(o),
+                ) }
             }
             (audioDeferreds + imageDeferreds).awaitAll()
         }
@@ -108,7 +119,10 @@ class ConcurrentCompressionTest {
 
         val results = coroutineScope {
             inputs.zip(outputs).map { (inPath, outPath) ->
-                async(Dispatchers.Default) { audio.compress(inPath, outPath) }
+                async(Dispatchers.Default) { audio.compress(
+                    MediaSource.Local.FilePath(inPath),
+                    MediaDestination.Local.FilePath(outPath),
+                ) }
             }.awaitAll()
         }
 

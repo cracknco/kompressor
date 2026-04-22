@@ -9,6 +9,8 @@ package co.crackn.kompressor
 
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.MinimalPngFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -120,7 +122,10 @@ class PathEncodingTest {
         val output = outDir + outputName
         writeBytes(input, MinimalPngFixtures.indexed4x4())
 
-        val result = image.compress(input, output)
+        val result = image.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(
             result.isSuccess,
             "Image compress must succeed for encoded path '$subdir/$inputName' → " +
@@ -145,7 +150,10 @@ class PathEncodingTest {
             ),
         )
 
-        val result = audio.compress(input, output)
+        val result = audio.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(
             result.isSuccess,
             "Audio compress must succeed for encoded path '$subdir/$inputName' → " +
@@ -163,7 +171,10 @@ class PathEncodingTest {
         val output = outDir + outputName
         Mp4Generator.generateMp4(input, frameCount = VIDEO_FRAME_COUNT)
 
-        val result = video.compress(input, output)
+        val result = video.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
         assertTrue(
             result.isSuccess,
             "Video compress must succeed for encoded path '$subdir/$inputName' → " +

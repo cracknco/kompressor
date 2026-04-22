@@ -7,6 +7,8 @@
 
 package co.crackn.kompressor
 
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import kotlinx.cinterop.ExperimentalForeignApi
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
@@ -57,8 +59,8 @@ class IosVideoCompressorTest {
         val outputPath = testDir + "output.mp4"
 
         val result = compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
         )
 
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
@@ -77,7 +79,11 @@ class IosVideoCompressorTest {
         val outputPath = testDir + "480p.mp4"
         val config = VideoCompressionConfig(maxResolution = MaxResolution.SD_480)
 
-        val result = compressor.compress(inputPath, outputPath, config)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            config,
+        )
 
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidMp4(readBytes(outputPath)))
@@ -88,7 +94,8 @@ class IosVideoCompressorTest {
         val outputPath = testDir + "custom.mp4"
 
         val result = compressor.compress(
-            inputPath, outputPath,
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
             VideoCompressionConfig(videoBitrate = 500_000),
         )
 
@@ -103,9 +110,9 @@ class IosVideoCompressorTest {
         val progressValues = mutableListOf<Float>()
 
         compressor.compress(
-            inputPath = inputPath,
-            outputPath = outputPath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            onProgress = { progressValues.add(it.fraction) },
         )
 
         assertTrue(progressValues.isNotEmpty())
@@ -118,7 +125,10 @@ class IosVideoCompressorTest {
 
     @Test
     fun compressVideo_fileNotFound_returnsFailure() = runTest {
-        val result = compressor.compress("/nonexistent/video.mp4", testDir + "out.mp4")
+        val result = compressor.compress(
+            MediaSource.Local.FilePath("/nonexistent/video.mp4"),
+            MediaDestination.Local.FilePath(testDir + "out.mp4"),
+        )
         assertTrue(result.isFailure)
     }
 
@@ -143,9 +153,9 @@ class IosVideoCompressorTest {
         val started = kotlinx.coroutines.CompletableDeferred<Unit>()
         val job = scope.launch {
             compressor.compress(
-                inputPath = longInputPath,
-                outputPath = outputPath,
-                onProgress = { p -> if (p > 0f && !started.isCompleted) started.complete(Unit) },
+                MediaSource.Local.FilePath(longInputPath),
+                MediaDestination.Local.FilePath(outputPath),
+                onProgress = { p -> if (p.fraction > 0f && !started.isCompleted) started.complete(Unit) },
             )
         }
         kotlinx.coroutines.withTimeout(5_000L) { started.await() }
@@ -168,7 +178,10 @@ class IosVideoCompressorTest {
         writeBytes(garbagePath, ByteArray(256) { 0xFF.toByte() })
         val outputPath = testDir + "out_from_garbage.mp4"
 
-        val result = compressor.compress(garbagePath, outputPath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(garbagePath),
+            MediaDestination.Local.FilePath(outputPath),
+        )
 
         assertTrue(result.isFailure, "Malformed MP4 must fail cleanly, not crash")
     }
@@ -176,7 +189,11 @@ class IosVideoCompressorTest {
     @Test
     fun compressVideo_messagingPreset_producesValidOutput() = runTest {
         val outputPath = testDir + "messaging.mp4"
-        val result = compressor.compress(inputPath, outputPath, VideoPresets.MESSAGING)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(outputPath),
+            VideoPresets.MESSAGING,
+        )
         assertTrue(result.isSuccess, "Messaging preset failed: ${result.exceptionOrNull()}")
         assertTrue(OutputValidators.isValidMp4(readBytes(outputPath)))
     }

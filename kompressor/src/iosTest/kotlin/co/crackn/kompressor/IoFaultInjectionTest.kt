@@ -10,6 +10,8 @@ package co.crackn.kompressor
 import co.crackn.kompressor.audio.AudioCompressionError
 import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.writeBytes
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -64,7 +66,10 @@ class IoFaultInjectionTest {
         chmod(readOnly, 0b101_101_101)
         val output = readOnly + "out.jpg"
 
-        val result = image.compress(input, output)
+        val result = image.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         assertFalse(NSFileManager.defaultManager.fileExistsAtPath(output))
@@ -77,7 +82,10 @@ class IoFaultInjectionTest {
         NSFileManager.defaultManager.createFileAtPath(regularFile, contents = null, attributes = null)
         val output = "$regularFile/out.jpg"
 
-        val result = image.compress(input, output)
+        val result = image.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         assertFalse(NSFileManager.defaultManager.fileExistsAtPath(output))
@@ -91,7 +99,10 @@ class IoFaultInjectionTest {
             output, withIntermediateDirectories = true, attributes = null, error = null,
         )
 
-        val result = image.compress(input, output)
+        val result = image.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
     }
@@ -101,7 +112,10 @@ class IoFaultInjectionTest {
         val missing = tempDir + "does-not-exist.wav"
         val output = tempDir + "out.m4a"
 
-        val result = audio.compress(missing, output)
+        val result = audio.compress(
+            MediaSource.Local.FilePath(missing),
+            MediaDestination.Local.FilePath(output),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         val ex = result.exceptionOrNull()
@@ -122,7 +136,10 @@ class IoFaultInjectionTest {
             output, withIntermediateDirectories = true, attributes = null, error = null,
         )
 
-        val result = audio.compress(input, output)
+        val result = audio.compress(
+            MediaSource.Local.FilePath(input),
+            MediaDestination.Local.FilePath(output),
+        )
 
         assertTrue(result.isFailure, "Expected failure but got $result")
         val ex = result.exceptionOrNull()

@@ -6,6 +6,8 @@
 package co.crackn.kompressor
 
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
@@ -56,7 +58,10 @@ class VideoEdgeCasesTest {
         )
         val output = File(tempDir, "audio_only_out.mp4")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isFailure, "Audio-only MP4 must be rejected")
         val err = result.exceptionOrNull()
@@ -74,7 +79,10 @@ class VideoEdgeCasesTest {
         Mp4Generator.generateMp4(input, frameCount = VIDEO_FRAME_COUNT)
         val output = File(tempDir, "video_only_out.mp4")
 
-        val result = compressor.compress(input.absolutePath, output.absolutePath)
+        val result = compressor.compress(
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
 
         assertTrue(result.isSuccess, "Video-only input must compress: ${result.exceptionOrNull()}")
         assertTrue(output.exists() && output.length() > 0)

@@ -11,9 +11,10 @@ import android.provider.MediaStore
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.AndroidImageCompressor
 import co.crackn.kompressor.testutil.createTestImage
+import io.kotest.assertions.withClue
+import io.kotest.matchers.longs.shouldBeGreaterThan
+import io.kotest.matchers.shouldBe
 import java.io.File
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assume.assumeTrue
@@ -77,10 +78,9 @@ class MediaStoreOutputEndToEndTest {
                 input = MediaSource.Local.FilePath(input.absolutePath),
                 output = MediaDestination.of(mediaStoreUri),
             )
-            assertTrue(
-                result.isSuccess,
-                "Image compress to MediaStore URI must succeed: ${result.exceptionOrNull()}",
-            )
+            withClue("Image compress to MediaStore URI must succeed: ${result.exceptionOrNull()}") {
+                result.isSuccess shouldBe true
+            }
 
             // IS_PENDING must be 0 after compress() returns — gallery / file pickers rely on this
             // to make the newly-written file visible.
@@ -91,11 +91,18 @@ class MediaStoreOutputEndToEndTest {
                 null,
                 null,
             ).use { cursor ->
-                assertTrue(cursor != null && cursor.moveToFirst(), "Query returned no row")
+                withClue("Query returned no row") {
+                    (cursor != null && cursor.moveToFirst()) shouldBe true
+                }
+                checkNotNull(cursor)
                 val pendingCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_PENDING)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                assertEquals(0, cursor.getInt(pendingCol), "IS_PENDING must be cleared after write")
-                assertTrue(cursor.getLong(sizeCol) > 0, "Entry must have bytes written")
+                withClue("IS_PENDING must be cleared after write") {
+                    cursor.getInt(pendingCol) shouldBe 0
+                }
+                withClue("Entry must have bytes written") {
+                    cursor.getLong(sizeCol) shouldBeGreaterThan 0L
+                }
             }
         } finally {
             resolver.delete(mediaStoreUri, null, null)

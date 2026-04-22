@@ -113,8 +113,10 @@ public sealed class ImageCompressionError(
     ) : ImageCompressionError("Encoding failed: $details", cause)
 
     /**
-     * I/O failure reading the input or writing the output (missing file, permission denied,
-     * disk full, revoked `content://` URI, etc.).
+     * I/O failure reading the input or writing the output — missing file, permission denied,
+     * disk full, revoked `content://` URI, or a PhotoKit `PHAsset` that could not be resolved
+     * to image data (transient iCloud download error, cancelled
+     * `requestImageDataAndOrientationForAsset`, etc.).
      */
     public data class IoFailed(
         /** Free-form diagnostic. */
@@ -146,8 +148,11 @@ public sealed class ImageCompressionError(
 
     /**
      * The source stream threw on read. Includes `IOException` during okio [okio.Source]
-     * consumption, `RemoteException` from a content provider, or network failure during
-     * iCloud download of a `PHAsset`.
+     * consumption or `RemoteException` from a content provider.
+     *
+     * PhotoKit asset-resolution failures (iCloud download error, PHAsset corruption, etc.)
+     * surface as [IoFailed], not this subtype — they happen during resolution, before any
+     * stream is opened for reading.
      *
      * @property details Free-form diagnostic — the source identifier and the failing read offset
      *   or platform error message when known.

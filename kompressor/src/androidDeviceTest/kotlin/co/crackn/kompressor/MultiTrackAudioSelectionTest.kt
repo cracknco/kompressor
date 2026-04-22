@@ -12,6 +12,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioCompressionError
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.testutil.MultiTrackAudioFixture
 import java.io.File
@@ -63,8 +65,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = File(tempDir, "out0.m4a")
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(audioTrackIndex = 0),
         )
         assertTrue(result.isSuccess, "result=$result")
@@ -80,8 +82,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = File(tempDir, "out1.m4a")
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(audioTrackIndex = 1),
         )
         assertTrue(result.isSuccess, "result=$result")
@@ -97,8 +99,8 @@ class MultiTrackAudioSelectionTest {
         val input = buildTwoTrackFixture()
         val output = File(tempDir, "out_oob.m4a")
         val result = compressor.compress(
-            inputPath = input.absolutePath,
-            outputPath = output.absolutePath,
+            MediaSource.Local.FilePath(input.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
             config = AudioCompressionConfig(audioTrackIndex = 5),
         )
         assertTrue(result.isFailure)

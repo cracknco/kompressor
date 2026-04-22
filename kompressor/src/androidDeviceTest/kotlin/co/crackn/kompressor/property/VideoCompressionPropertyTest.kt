@@ -6,6 +6,8 @@
 package co.crackn.kompressor.property
 
 import androidx.test.platform.app.InstrumentationRegistry
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.video.AndroidVideoCompressor
@@ -71,8 +73,8 @@ class VideoCompressionPropertyTest {
             )
 
             val result = compressor.compress(
-                inputFile.absolutePath,
-                output.absolutePath,
+                MediaSource.Local.FilePath(inputFile.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
                 config,
             )
 
@@ -96,9 +98,9 @@ class VideoCompressionPropertyTest {
         val progressValues = mutableListOf<Float>()
 
         val result = compressor.compress(
-            inputPath = inputFile.absolutePath,
-            outputPath = output.absolutePath,
-            onProgress = { progressValues.add(it) },
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            onProgress = { progressValues.add(it.fraction) },
         )
         assertTrue(result.isSuccess, "Compression failed: ${result.exceptionOrNull()}")
         assertTrue(progressValues.isNotEmpty(), "Progress should be reported")

@@ -12,6 +12,8 @@ import co.crackn.kompressor.Kompressor
 import co.crackn.kompressor.audio.AudioChannels
 import co.crackn.kompressor.audio.AudioCompressionConfig
 import co.crackn.kompressor.audio.AudioPresets
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.cacheDir
@@ -114,11 +116,11 @@ class AudioCompressViewModel(
             val outputFile = createTempFile("output")
             _state.update { it.copy(compressedAudioPath = outputFile.path) }
             kompressor.audio.compress(
-                inputPath = inputPath,
-                outputPath = outputFile.path,
+                input = MediaSource.Local.FilePath(inputPath),
+                output = MediaDestination.Local.FilePath(outputFile.path),
                 config = buildConfig(),
                 onProgress = { progress ->
-                    _state.update { it.copy(progress = progress) }
+                    _state.update { it.copy(progress = progress.fraction, phase = progress.phase) }
                 },
             ).fold(
                 onSuccess = { handleSuccess(it) },
