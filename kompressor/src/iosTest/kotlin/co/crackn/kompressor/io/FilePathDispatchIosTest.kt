@@ -5,34 +5,36 @@
 
 package co.crackn.kompressor.io
 
-import co.crackn.kompressor.audio.AndroidAudioCompressor
 import co.crackn.kompressor.audio.AudioCompressionConfig
-import co.crackn.kompressor.image.AndroidImageCompressor
+import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.ImageCompressionConfig
-import co.crackn.kompressor.video.AndroidVideoCompressor
+import co.crackn.kompressor.image.IosImageCompressor
+import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlin.test.Test
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
-import kotlin.test.Test
 
 /**
- * Pins the dispatch side of the new `compress(MediaSource, MediaDestination, ...)` overload on
- * all three Android compressors: Stream / Bytes inputs and Stream outputs short-circuit into
- * `Result.failure(UnsupportedOperationException)` **before** any platform I/O runs. These can
- * therefore live in `androidHostTest` (no emulator) — the error path never constructs a
- * `MediaExtractor`, `Transformer`, or `BitmapFactory`.
+ * iOS sibling of [FilePathDispatchAndroidTest] — pins that the dispatch side of the new
+ * `compress(MediaSource, MediaDestination, ...)` overload short-circuits into
+ * `Result.failure(UnsupportedOperationException)` **before** any platform I/O runs on each
+ * of the three iOS compressors. These can therefore live in `iosTest` without needing a
+ * real input file: the error path never opens an `AVURLAsset`, `AVAssetExportSession`, or
+ * `UIImage`.
  *
- * Bitwise-identical FilePath dispatch is asserted end-to-end in the sibling
- * `androidDeviceTest` / `iosTest` tree because it needs a real input file to round-trip.
+ * Bitwise-identical FilePath dispatch is asserted end-to-end in
+ * [FilePathEndToEndTest][co.crackn.kompressor.FilePathEndToEndTest] because it needs a
+ * real input file to round-trip.
  */
-class FilePathDispatchAndroidTest {
+class FilePathDispatchIosTest {
 
     @Test
     fun imageCompressorStreamInputFailsWithCra95() = runTest {
-        val compressor = AndroidImageCompressor()
+        val compressor = IosImageCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Stream(Buffer()),
@@ -49,7 +51,7 @@ class FilePathDispatchAndroidTest {
 
     @Test
     fun imageCompressorBytesInputFailsWithCra95() = runTest {
-        val compressor = AndroidImageCompressor()
+        val compressor = IosImageCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Bytes(byteArrayOf(1, 2, 3)),
@@ -66,7 +68,7 @@ class FilePathDispatchAndroidTest {
 
     @Test
     fun imageCompressorStreamOutputFailsWithCra95() = runTest {
-        val compressor = AndroidImageCompressor()
+        val compressor = IosImageCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.FilePath("/tmp/unused.jpg"),
@@ -75,13 +77,15 @@ class FilePathDispatchAndroidTest {
         )
 
         result.isFailure shouldBe true
-        result.exceptionOrNull()!!.shouldBeInstanceOf<UnsupportedOperationException>()
-        result.exceptionOrNull()!!.message!! shouldContain "MediaDestination.Local.Stream"
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "MediaDestination.Local.Stream"
     }
 
     @Test
     fun audioCompressorStreamInputFailsWithCra95() = runTest {
-        val compressor = AndroidAudioCompressor()
+        val compressor = IosAudioCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Stream(Buffer()),
@@ -90,13 +94,15 @@ class FilePathDispatchAndroidTest {
         )
 
         result.isFailure shouldBe true
-        result.exceptionOrNull()!!.shouldBeInstanceOf<UnsupportedOperationException>()
-        result.exceptionOrNull()!!.message!! shouldContain "CRA-95"
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "MediaSource.Local.Stream"
     }
 
     @Test
     fun audioCompressorBytesInputFailsWithCra95() = runTest {
-        val compressor = AndroidAudioCompressor()
+        val compressor = IosAudioCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Bytes(byteArrayOf(1, 2, 3)),
@@ -113,7 +119,7 @@ class FilePathDispatchAndroidTest {
 
     @Test
     fun audioCompressorStreamOutputFailsWithCra95() = runTest {
-        val compressor = AndroidAudioCompressor()
+        val compressor = IosAudioCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.FilePath("/tmp/unused.mp3"),
@@ -130,7 +136,7 @@ class FilePathDispatchAndroidTest {
 
     @Test
     fun videoCompressorStreamInputFailsWithCra95() = runTest {
-        val compressor = AndroidVideoCompressor()
+        val compressor = IosVideoCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Stream(Buffer()),
@@ -139,13 +145,15 @@ class FilePathDispatchAndroidTest {
         )
 
         result.isFailure shouldBe true
-        result.exceptionOrNull()!!.shouldBeInstanceOf<UnsupportedOperationException>()
-        result.exceptionOrNull()!!.message!! shouldContain "CRA-95"
+        val e = result.exceptionOrNull()!!
+        e.shouldBeInstanceOf<UnsupportedOperationException>()
+        e.message!! shouldContain "CRA-95"
+        e.message!! shouldContain "MediaSource.Local.Stream"
     }
 
     @Test
     fun videoCompressorBytesInputFailsWithCra95() = runTest {
-        val compressor = AndroidVideoCompressor()
+        val compressor = IosVideoCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.Bytes(byteArrayOf(1, 2, 3)),
@@ -162,7 +170,7 @@ class FilePathDispatchAndroidTest {
 
     @Test
     fun videoCompressorStreamOutputFailsWithCra95() = runTest {
-        val compressor = AndroidVideoCompressor()
+        val compressor = IosVideoCompressor()
 
         val result = compressor.compress(
             input = MediaSource.Local.FilePath("/tmp/unused.mp4"),

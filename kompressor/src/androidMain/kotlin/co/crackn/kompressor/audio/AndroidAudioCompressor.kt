@@ -137,27 +137,23 @@ internal class AndroidAudioCompressor(
         output: MediaDestination,
         config: AudioCompressionConfig,
         onProgress: suspend (CompressionProgress) -> Unit,
-    ): Result<CompressionResult> {
-        val inputPath: String
-        val outputPath: String
-        try {
-            inputPath = input.requireFilePathOrThrow()
-            outputPath = output.requireFilePathOrThrow()
-        } catch (e: UnsupportedOperationException) {
-            return Result.failure(e)
-        }
+    ): Result<CompressionResult> = suspendRunCatching {
+        val inputPath = input.requireFilePathOrThrow()
+        val outputPath = output.requireFilePathOrThrow()
         val result = compress(inputPath, outputPath, config) { fraction ->
-            onProgress(
-                CompressionProgress(
-                    CompressionProgress.Phase.COMPRESSING,
-                    fraction.coerceIn(0f, 1f),
-                ),
-            )
-        }
-        if (result.isSuccess) {
-            onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
-        }
-        return result
+            // FINALIZING_OUTPUT(1f) is the canonical terminal — don't double-signal 100%
+            // by forwarding the inner pipeline's own 1f tick as a COMPRESSING emission.
+            if (fraction < 1f) {
+                onProgress(
+                    CompressionProgress(
+                        CompressionProgress.Phase.COMPRESSING,
+                        fraction.coerceIn(0f, 1f),
+                    ),
+                )
+            }
+        }.getOrThrow()
+        onProgress(CompressionProgress(CompressionProgress.Phase.FINALIZING_OUTPUT, 1f))
+        result
     }
 
     /**
