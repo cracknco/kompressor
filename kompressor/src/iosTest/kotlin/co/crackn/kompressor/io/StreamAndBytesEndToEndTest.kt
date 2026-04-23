@@ -25,7 +25,6 @@ import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
 import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
-import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -51,13 +50,14 @@ import platform.Foundation.NSUUID
  *
  * **Equivalence model.** On iOS, JPEG re-encoding is deterministic so image outputs stay
  * bitwise-identical across two different source paths. For audio (M4A) and video (MP4) the
- * AVFoundation export writes path-dependent container metadata (`mvhd` / `mdhd`
- * creation-time & modification-time timestamps), so the novel output can never be exactly
- * byte-equal to the legacy output. The correct invariant is *compression-outcome
- * equivalence*: both paths must succeed and the output sizes must agree within
- * [AV_SIZE_TOLERANCE_BYTES] (small enough to catch real regressions, loose enough to
- * tolerate container-metadata drift). The Android sibling keeps bitwise comparison because
- * Media3 Transformer output is deterministic.
+ * AVFoundation export writes wall-clock `mvhd` / `tkhd` / `mdhd` creation/modification
+ * timestamps — two compresses straddling a 1-second boundary flip a handful of byte-level
+ * bits without changing the file length (CRA-98 confirmed H1; see
+ * [co.crackn.kompressor.UrlInputNonDeterminismInvestigationTest] and
+ * `docs/investigations/avfoundation-nsurl-divergence.md`). The correct invariant is
+ * *structural equivalence*: both paths succeed, output sizes are equal, and the count of
+ * differing bytes stays within [AV_TIMESTAMP_BYTE_TOLERANCE]. The Android sibling keeps
+ * bitwise comparison because Media3 Transformer output is deterministic.
  */
 class StreamAndBytesEndToEndTest {
 
@@ -130,7 +130,7 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertSizeMatchesWithinTolerance(novelPath, legacyPath)
+        assertAvOutputStructurallyEquivalent(novelPath, legacyPath)
     }
 
     @Test
@@ -156,7 +156,7 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertSizeMatchesWithinTolerance(novelPath, legacyPath)
+        assertAvOutputStructurallyEquivalent(novelPath, legacyPath)
     }
 
     @Test
@@ -236,7 +236,7 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertSizeMatchesWithinTolerance(novelPath, legacyPath)
+        assertAvOutputStructurallyEquivalent(novelPath, legacyPath)
     }
 
     @Test
@@ -329,7 +329,10 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertSizeMatchesWithinTolerance(consumer.size, readBytes(legacyPath).size.toLong())
+        assertAvOutputStructurallyEquivalent(
+            novelBytes = consumer.readByteArray(),
+            legacyBytes = readBytes(legacyPath),
+        )
     }
 
     @Test
@@ -351,7 +354,10 @@ class StreamAndBytesEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertSizeMatchesWithinTolerance(consumer.size, readBytes(legacyPath).size.toLong())
+        assertAvOutputStructurallyEquivalent(
+            novelBytes = consumer.readByteArray(),
+            legacyBytes = readBytes(legacyPath),
+        )
     }
 
     @Test
@@ -387,24 +393,31 @@ class StreamAndBytesEndToEndTest {
     // --- helpers --------------------------------------------------------------
 
     /**
-     * Assert two audio/video outputs have sizes within [AV_SIZE_TOLERANCE_BYTES]. Used in
-     * lieu of bitwise comparison because AVFoundation's `mvhd` / `mdhd` boxes carry
-     * source-path-dependent creation/modification timestamps.
+     * Assert two audio/video outputs are *structurally* equivalent: sizes match exactly and
+     * the count of differing bytes fits inside the AVFoundation wall-clock timestamp budget
+     * ([AV_TIMESTAMP_BYTE_TOLERANCE]). See the class KDoc and CRA-98 for the derivation.
      */
-    private fun assertSizeMatchesWithinTolerance(novelPath: String, legacyPath: String) {
-        assertSizeMatchesWithinTolerance(
-            novelSize = readBytes(novelPath).size.toLong(),
-            legacySize = readBytes(legacyPath).size.toLong(),
+    private fun assertAvOutputStructurallyEquivalent(novelPath: String, legacyPath: String) {
+        assertAvOutputStructurallyEquivalent(
+            novelBytes = readBytes(novelPath),
+            legacyBytes = readBytes(legacyPath),
         )
     }
 
-    private fun assertSizeMatchesWithinTolerance(novelSize: Long, legacySize: Long) {
-        val delta = abs(novelSize - legacySize)
+    private fun assertAvOutputStructurallyEquivalent(novelBytes: ByteArray, legacyBytes: ByteArray) {
         withClue(
-            "Expected novel/legacy output sizes within $AV_SIZE_TOLERANCE_BYTES bytes — " +
-                "novel=$novelSize legacy=$legacySize delta=$delta",
+            "Output sizes must be equal (AVFoundation timestamp drift does not resize the " +
+                "container). novel=${novelBytes.size} legacy=${legacyBytes.size}",
         ) {
-            (novelSize > 0 && legacySize > 0 && delta <= AV_SIZE_TOLERANCE_BYTES) shouldBe true
+            novelBytes.size shouldBe legacyBytes.size
+        }
+        var differing = 0
+        for (i in novelBytes.indices) if (novelBytes[i] != legacyBytes[i]) differing++
+        withClue(
+            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation wall-clock " +
+                "`mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
+        ) {
+            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
         }
     }
 
@@ -493,11 +506,14 @@ class StreamAndBytesEndToEndTest {
         const val DATA_SIZE_OFFSET = 40
 
         /**
-         * Max byte delta between the legacy FilePath path and the novel Stream/Bytes path for
-         * audio / video outputs on iOS. Accommodates `mvhd` / `mdhd` container-metadata drift
-         * (path-dependent timestamps written by AVFoundation) without masking real regressions
-         * — the produced MP4 / M4A payloads differ only at the tens-of-bytes level.
+         * Max count of differing bytes between the legacy FilePath path and the novel
+         * Stream/Bytes path for audio / video outputs on iOS. Derived from the ISOBMFF
+         * `mvhd` + `tkhd` + `mdhd` timestamp budget (~40 B worst case) with a 1.6× safety
+         * margin. Mirror of
+         * [co.crackn.kompressor.UrlInputEndToEndTest.AV_TIMESTAMP_BYTE_TOLERANCE]; see
+         * `docs/investigations/avfoundation-nsurl-divergence.md` for the CRA-98 derivation
+         * that replaces the former `AV_SIZE_TOLERANCE_BYTES = 1024L`.
          */
-        const val AV_SIZE_TOLERANCE_BYTES: Long = 1024
+        const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
 }
