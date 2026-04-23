@@ -45,7 +45,7 @@ dokka = "2.2.0"
 # `MediaDestination.Local.Stream` public types (CRA-90 scaffolding for the CRA-89 I/O refactor).
 # Added as `implementation` in `commonMain` only; see the inline comment in
 # `kompressor/build.gradle.kts` for why this is deliberately NOT `api`.
-okio = "3.9.0"
+okio = "3.17.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
