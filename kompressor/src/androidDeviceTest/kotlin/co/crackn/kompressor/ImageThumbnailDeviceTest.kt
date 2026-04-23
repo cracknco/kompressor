@@ -15,14 +15,16 @@ import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createExifTaggedJpeg
 import co.crackn.kompressor.testutil.createTestImage
+import io.kotest.assertions.withClue
+import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
 import kotlin.math.max
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * On-device end-to-end tests for [AndroidImageCompressor.thumbnail]. Proves the DoD for CRA-108
@@ -66,18 +68,15 @@ class ImageThumbnailDeviceTest {
             maxDimension = MAX_DIMENSION,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output should be valid JPEG")
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        withClue("Output should be valid JPEG") { OutputValidators.isValidJpeg(output.readBytes()) shouldBe true }
 
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(output.absolutePath, options)
-        assertTrue(
-            max(options.outWidth, options.outHeight) <= MAX_DIMENSION,
-            "Long edge ${max(options.outWidth, options.outHeight)} must fit under $MAX_DIMENSION",
-        )
+        max(options.outWidth, options.outHeight) shouldBeLessThanOrEqualTo MAX_DIMENSION
         // 4000×3000 (4:3) at maxDim=200 → 200×150 exactly after the exact-resize Pass 2.
-        assertEquals(MAX_DIMENSION, options.outWidth)
-        assertEquals(MAX_SHORT_EDGE, options.outHeight)
+        options.outWidth shouldBe MAX_DIMENSION
+        options.outHeight shouldBe MAX_SHORT_EDGE
     }
 
     @Test
@@ -107,12 +106,11 @@ class ImageThumbnailDeviceTest {
         val peak = runtime.totalMemory() - runtime.freeMemory()
         val deltaBytes = peak - baseline
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
-        assertTrue(
-            deltaBytes <= MAX_PEAK_DELTA_BYTES,
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        withClue(
             "Peak heap delta $deltaBytes B exceeds sampled-decode envelope $MAX_PEAK_DELTA_BYTES B — " +
                 "possible regression to full-resolution decode",
-        )
+        ) { (deltaBytes <= MAX_PEAK_DELTA_BYTES) shouldBe true }
     }
 
     @Test
@@ -135,14 +133,14 @@ class ImageThumbnailDeviceTest {
             maxDimension = MAX_DIMENSION,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(output.absolutePath, options)
-        assertTrue(max(options.outWidth, options.outHeight) <= MAX_DIMENSION)
+        max(options.outWidth, options.outHeight) shouldBeLessThanOrEqualTo MAX_DIMENSION
         // Post-rotation 100×200 — dims swapped relative to the 200×100 source. Proves the
         // sampled-decode path honours EXIF rotation and didn't degrade to "ignore orientation".
-        assertEquals(EXIF_SRC_HEIGHT, options.outWidth)
-        assertEquals(EXIF_SRC_WIDTH, options.outHeight)
+        options.outWidth shouldBe EXIF_SRC_HEIGHT
+        options.outHeight shouldBe EXIF_SRC_WIDTH
     }
 
     @Test
@@ -156,12 +154,9 @@ class ImageThumbnailDeviceTest {
             maxDimension = 0,
         )
 
-        assertTrue(result.isFailure, "Expected failure for maxDimension=0")
-        assertTrue(
-            result.exceptionOrNull() is IllegalArgumentException,
-            "Expected IllegalArgumentException, got ${result.exceptionOrNull()}",
-        )
-        assertTrue(!output.exists(), "No output file should be created for invalid args")
+        withClue("Expected failure for maxDimension=0") { result.isFailure shouldBe true }
+        result.exceptionOrNull().shouldBeInstanceOf<IllegalArgumentException>()
+        withClue("No output file should be created for invalid args") { output.exists() shouldBe false }
     }
 
     @Test
@@ -175,9 +170,9 @@ class ImageThumbnailDeviceTest {
             maxDimension = -1,
         )
 
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(!output.exists())
+        result.isFailure shouldBe true
+        result.exceptionOrNull().shouldBeInstanceOf<IllegalArgumentException>()
+        output.exists() shouldBe false
     }
 
     @Test
@@ -195,12 +190,12 @@ class ImageThumbnailDeviceTest {
             format = ImageFormat.JPEG,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidJpeg(output.readBytes()))
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        OutputValidators.isValidJpeg(output.readBytes()) shouldBe true
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(output.absolutePath, options)
-        assertEquals(SMALL_DIM, options.outWidth)
-        assertEquals(SMALL_DIM, options.outHeight)
+        options.outWidth shouldBe SMALL_DIM
+        options.outHeight shouldBe SMALL_DIM
     }
 
     private companion object {
