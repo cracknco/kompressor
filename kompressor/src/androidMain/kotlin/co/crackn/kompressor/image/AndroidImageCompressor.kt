@@ -23,6 +23,7 @@ import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
+import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.suspendRunCatching
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -179,7 +180,7 @@ internal class AndroidImageCompressor(
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.IMAGE,
         startMessage = {
-            "compress() start in=$inputPath out=$outputPath " +
+            "compress() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
                 "fmt=${config.format} quality=${config.quality} " +
                 "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
         },
@@ -187,7 +188,7 @@ internal class AndroidImageCompressor(
             "compress() ok durationMs=${r.durationMs} " +
                 "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
         },
-        failureMessage = { "compress() failed in=$inputPath" },
+        failureMessage = { "compress() failed in=${redactPath(inputPath)}" },
     ) {
         try {
             doCompress(inputPath, outputPath, config)
