@@ -89,8 +89,12 @@ class UrlInputNonDeterminismInvestigationTest {
      * **Step 1 — H1: wall-clock timestamp straddling. CONFIRMED.**
      *
      * Runs [LOOP_ITERATIONS] consecutive legacy-overload audio compresses of the same WAV input,
-     * with [STRADDLE_DELAY_MS] ms between iterations. At [LOOP_ITERATIONS]=100 × 50 ms ≥ 5 s the
-     * loop is guaranteed to span multiple wall-clock second boundaries.
+     * with a [STRADDLE_DELAY_MS] ms `delay(...)` between iterations. Under `runTest` the suspension
+     * is virtual (the delay itself adds no wall-clock time), so what actually spans the straddle is
+     * the real work: each AVFoundation compress takes ~10–30 ms of wall clock, and 100 iterations
+     * compound to 1–3 s of real elapsed time — enough to cross multiple second boundaries and
+     * expose the `mvhd` / `tkhd` / `mdhd` timestamp LSB flips. The virtual delays only serve to
+     * interleave iterations on the dispatcher, not to pad the wall clock.
      *
      * **Observed** (iOS Simulator arm64, CRA-98 branch): `distinctByteSets=3`, all sizes equal
      * at 27537 bytes, first divergent offsets `[26370, 26486, 26586]` — all inside the file's
@@ -354,6 +358,12 @@ class UrlInputNonDeterminismInvestigationTest {
      * Minimal ISOBMFF top-level box scanner — reads the 4-byte size + 4-char type at the file
      * start and recursively walks siblings (not children). Produces strings like
      * "ftyp@0-32 moov@32-4096 mdat@4096-...". Tail-lenient: stops on malformed sizes.
+     *
+     * NOTE: This does not implement ISO/IEC 14496-12 §4.2 edge cases — `size == 1` (64-bit
+     * `largesize` follows the type) and `size == 0` (box extends to EOF) — because the
+     * AVFoundation outputs observed here use neither. If a future iOS SDK emits largesize boxes
+     * (e.g. for long videos) this scanner would stop early; it is diagnostic-only and callers
+     * should not depend on its completeness for correctness.
      */
     private fun scanTopLevelIsoBmffBoxes(bytes: ByteArray): List<String> {
         val result = mutableListOf<String>()

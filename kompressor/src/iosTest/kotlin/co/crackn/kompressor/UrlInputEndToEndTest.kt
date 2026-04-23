@@ -220,6 +220,9 @@ class UrlInputEndToEndTest {
     private fun assertAvOutputStructurallyEquivalent(novelPath: String, legacyPath: String) {
         val novel = readBytes(novelPath)
         val legacy = readBytes(legacyPath)
+        withClue("Outputs must not be empty. novel=${novel.size} legacy=${legacy.size}") {
+            (novel.isNotEmpty() && legacy.isNotEmpty()) shouldBe true
+        }
         withClue(
             "Output sizes must be equal (timestamp drift does not resize the container). " +
                 "novel=${novel.size} legacy=${legacy.size}",
