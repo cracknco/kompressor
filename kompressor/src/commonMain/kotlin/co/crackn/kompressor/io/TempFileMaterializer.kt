@@ -19,7 +19,7 @@ import okio.use
  * Chunk size for materialization — 64 KB. Small enough to keep the heap footprint
  * constant on streams of arbitrary size, large enough to amortise per-syscall cost on
  * mobile storage (8 KB produces excess syscalls on multi-GB streams; 1 MB forfeits
- * the "heap stays small" property). Value pinned by `tmp/tier1-1-io-model.md` §3.2.
+ * the "heap stays small" property).
  */
 private const val BUFFER_SIZE: Long = 64L * 1024L
 
@@ -51,7 +51,9 @@ private const val BUFFER_SIZE: Long = 64L * 1024L
  * underestimates the real source size). When [sizeHint] is `null`, [onProgress] is still
  * invoked at every chunk but with a constant `0f` — callers that want a "something is
  * happening" heartbeat can count invocations; callers that want a real bar should supply
- * a size hint. Matches the transparency-first design in `tmp/tier1-1-io-model.md` §5.2.
+ * a size hint. The transparency-first design — materialisation progress is always observable,
+ * never silently remapped onto compression progress — is documented in `docs/concepts/io-model.md`
+ * (see the "Progression phases" section).
  *
  * **Error handling:** any [Throwable] raised during copy (read failure, disk full,
  * permission denied) triggers a best-effort `deleteIfExists(tempFile)` before rethrowing
