@@ -35,9 +35,13 @@ and run on `iosSimulatorArm64Test`.
 
 ### Step 1 — `audio_legacyOverload_spansWallClockSecondBoundary`
 
-Runs **100 consecutive legacy-overload** audio compresses with `delay(50)` between
-iterations. At 100 × 50 ms = 5 000 ms of explicit delay (plus ~10–30 ms of actual compress
-time per call) the loop is guaranteed to span ≥5 wall-clock seconds.
+Runs **100 consecutive legacy-overload** audio compresses with a real
+`platform.posix.usleep(50 * 1000)` between iterations (NOT
+`kotlinx.coroutines.delay`, which is virtual under `runTest` and contributes
+nothing to the wall clock). The 99 inter-iteration sleeps total 4.95 s of
+guaranteed real elapsed time, plus ~10–30 ms per compress on top — so the loop
+mathematically spans ≥4 wall-clock second boundaries regardless of how fast
+AVFoundation gets on future simulator hardware.
 
 **Observed** (iOS Simulator arm64, macOS 26.4.1):
 
