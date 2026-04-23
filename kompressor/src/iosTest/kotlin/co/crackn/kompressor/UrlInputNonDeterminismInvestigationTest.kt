@@ -23,12 +23,12 @@ import io.kotest.matchers.shouldBe
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
+import platform.posix.usleep
 
 /**
  * CRA-98 investigation tests for the legacy-vs-novel AVFoundation byte divergence observed in
@@ -89,12 +89,20 @@ class UrlInputNonDeterminismInvestigationTest {
      * **Step 1 — H1: wall-clock timestamp straddling. CONFIRMED.**
      *
      * Runs [LOOP_ITERATIONS] consecutive legacy-overload audio compresses of the same WAV input,
-     * with a [STRADDLE_DELAY_MS] ms `delay(...)` between iterations. Under `runTest` the suspension
-     * is virtual (the delay itself adds no wall-clock time), so what actually spans the straddle is
-     * the real work: each AVFoundation compress takes ~10–30 ms of wall clock, and 100 iterations
-     * compound to 1–3 s of real elapsed time — enough to cross multiple second boundaries and
-     * expose the `mvhd` / `tkhd` / `mdhd` timestamp LSB flips. The virtual delays only serve to
-     * interleave iterations on the dispatcher, not to pad the wall clock.
+     * with a real [STRADDLE_DELAY_MS] ms [usleep] (blocking-on-OS-thread, not
+     * [kotlinx.coroutines.delay]) between iterations. Using a coroutine `delay(...)` inside
+     * [kotlinx.coroutines.test.runTest] would be a no-op in wall-clock terms (the scheduler
+     * advances virtual time but sleeps nothing on the dispatching thread), which would make the
+     * assertion \[`distinctCount >= 2`] depend on AVFoundation's own per-compress wall-clock cost
+     * — and that cost has been trending downward with every Apple Silicon refresh. A real
+     * `usleep` pads the wall clock independently of compressor speed: 99 inter-iteration
+     * delays × [STRADDLE_DELAY_MS] ms = [MIN_STRADDLE_SPAN_MS] ms of guaranteed real elapsed
+     * time, so the 100-iteration loop is mathematically guaranteed to cross ≥4 wall-clock
+     * second boundaries and expose the `mvhd` / `tkhd` / `mdhd` timestamp LSB flips regardless
+     * of how fast AVFoundation gets.
+     *
+     * The method is documented in the CRA-98 investigation artefact as Option A of the
+     * "runner-speed fragility" fix (see `docs/investigations/avfoundation-nsurl-divergence.md`).
      *
      * **Observed** (iOS Simulator arm64, CRA-98 branch): `distinctByteSets=3`, all sizes equal
      * at 27537 bytes, first divergent offsets `[26370, 26486, 26586]` — all inside the file's
@@ -116,7 +124,11 @@ class UrlInputNonDeterminismInvestigationTest {
             )
             result.isSuccess shouldBe true
             outputs += readBytes(out)
-            if (i < LOOP_ITERATIONS - 1) delay(STRADDLE_DELAY_MS)
+            // Real wall-clock sleep — NOT `kotlinx.coroutines.delay`, which would advance
+            // `runTest`'s virtual clock without spending any real time. `usleep` takes a
+            // microsecond count; the `.toUInt()` cast is safe because `STRADDLE_DELAY_MS`
+            // is a small positive compile-time constant.
+            if (i < LOOP_ITERATIONS - 1) usleep((STRADDLE_DELAY_MS * MICROS_PER_MILLI).toUInt())
         }
 
         val hashBuckets = outputs.groupBy { it.contentHashCode() }
@@ -139,11 +151,12 @@ class UrlInputNonDeterminismInvestigationTest {
         println(diagnostic)
 
         withClue(
-            "H1 = AVFoundation stamps wall-clock mvhd/mdhd. A 100-iteration loop with " +
-                "delay(50) spans ~5 s of wall-clock time (≥5 second-boundary crossings), so if H1 " +
-                "holds the legacy path MUST produce ≥2 distinct byte-sets. All outputs also MUST " +
-                "have identical size — H1 flips existing bytes in fixed timestamp fields, never " +
-                "the file length. Observed: $diagnostic",
+            "H1 = AVFoundation stamps wall-clock mvhd/mdhd. A 100-iteration loop with a real " +
+                "usleep($STRADDLE_DELAY_MS) between iterations spans ≥${MIN_STRADDLE_SPAN_MS}ms " +
+                "of wall-clock time (≥4 second-boundary crossings, independent of runner " +
+                "speed), so if H1 holds the legacy path MUST produce ≥2 distinct byte-sets. " +
+                "All outputs also MUST have identical size — H1 flips existing bytes in fixed " +
+                "timestamp fields, never the file length. Observed: $diagnostic",
         ) {
             sizeSet.size shouldBe 1
             (distinctCount >= 2) shouldBe true
@@ -371,6 +384,11 @@ class UrlInputNonDeterminismInvestigationTest {
         val max = MAX_BOX_SCAN
         while (pos + ISOBMFF_HEADER_SIZE <= bytes.size && result.size < max) {
             val size = readUInt32BE(bytes, pos)
+            // `readUInt32BE` is unsigned (masked via `and 0xFF`) so `size >= 0`; the header-size
+            // guard rejects the `size == 0` "extends to EOF" sentinel + the `size == 1`
+            // largesize sentinel, since both fall below 8. A malformed oversize that would walk
+            // past EOF is caught by the next iteration's `pos + ISOBMFF_HEADER_SIZE <= bytes.size`
+            // guard — no extra check needed here.
             if (size < ISOBMFF_HEADER_SIZE.toLong()) break
             val type = bytes.decodeToString(
                 startIndex = pos + ISOBMFF_SIZE_BYTES,
@@ -378,7 +396,6 @@ class UrlInputNonDeterminismInvestigationTest {
             )
             val end = (pos + size).coerceAtMost(bytes.size.toLong()).toInt()
             result += "$type@$pos-$end"
-            if (size <= 0) break
             pos = (pos + size).toInt()
         }
         return result
@@ -394,7 +411,25 @@ class UrlInputNonDeterminismInvestigationTest {
 
     private companion object {
         const val LOOP_ITERATIONS = 100
+
+        /**
+         * Real inter-iteration wall-clock pad (milliseconds), consumed by
+         * [platform.posix.usleep]. Keeps [LOOP_ITERATIONS]×[STRADDLE_DELAY_MS] guaranteed wall-
+         * clock runtime independent of AVFoundation per-compress cost — see
+         * [audio_legacyOverload_spansWallClockSecondBoundary] KDoc for the rationale.
+         */
         const val STRADDLE_DELAY_MS = 50L
+
+        /** Microseconds per millisecond — [platform.posix.usleep] takes microseconds. */
+        const val MICROS_PER_MILLI = 1_000L
+
+        /**
+         * Lower bound on the total wall-clock span of the Step-1 loop, computed as
+         * `(LOOP_ITERATIONS - 1) * STRADDLE_DELAY_MS`. Purely derivable (`= 99 × 50 = 4_950 ms`)
+         * but kept as a named constant so the assertion message and the KDoc stay in sync.
+         */
+        const val MIN_STRADDLE_SPAN_MS = (LOOP_ITERATIONS - 1) * STRADDLE_DELAY_MS
+
         const val DUMP_OFFSET_LIMIT = 32
         const val FULL_DUMP_LIMIT = 512
         const val AUDIO_DURATION_S = 2
