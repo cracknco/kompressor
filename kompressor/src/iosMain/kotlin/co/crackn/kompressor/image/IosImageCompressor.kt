@@ -360,10 +360,10 @@ internal class IosImageCompressor(
      * the nil-image error message — e.g. `UIImage(contentsOfFile)` / `CGImageSourceCreateWithData`
      * — so a `DecodingFailed` surface tells the caller which decode path failed.
      */
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
     private suspend inline fun <T> runClassifyingIosImageErrors(
         nilDecoderHint: String,
-        block: suspend () -> T,
+        block: () -> T,
     ): T = try {
         block()
     } catch (e: ImageCompressionError) {
@@ -784,14 +784,34 @@ private inline fun <R> withQualityOptions(quality: Int, block: (CFDictionaryRef?
  * = true bakes EXIF orientation into the pixel data so the caller never sees an un-rotated
  * bitmap). All CF references are released before [block] returns.
  */
-@Suppress("UNCHECKED_CAST")
+// LongMethod suppressed: the body is a single CFDictionaryCreate with a 3-entry key/value
+// setup, wrapped in the mandatory `memScoped { try { ... } finally { CFRelease } }` lifecycle
+// boilerplate. Splitting out the key/value wiring or the dict finalize would only shuffle line
+// count at the cost of breaking the retain/release pairing the compiler currently verifies by
+// proximity. Mirrors the shape of [withQualityOptions] above.
+@Suppress("UNCHECKED_CAST", "LongMethod")
 private inline fun <R> withThumbnailOptions(maxDim: Int, block: (CFDictionaryRef?) -> R): R =
     memScoped {
         val maxDimVar = alloc<kotlinx.cinterop.IntVar>().apply { value = maxDim }
         val maxDimNumber: CFNumberRef = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, maxDimVar.ptr)
             ?: return@memScoped block(null)
         try {
-            val dict = buildThumbnailOptionsDictionary(this, maxDimNumber)
+            val keys = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
+            val values = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
+            keys[KEY_INDEX_MAX_PIXEL_SIZE] = kCGImageSourceThumbnailMaxPixelSize as COpaquePointer?
+            values[KEY_INDEX_MAX_PIXEL_SIZE] = maxDimNumber as COpaquePointer
+            keys[KEY_INDEX_CREATE_ALWAYS] = kCGImageSourceCreateThumbnailFromImageAlways as COpaquePointer?
+            values[KEY_INDEX_CREATE_ALWAYS] = kCFBooleanTrue as COpaquePointer?
+            keys[KEY_INDEX_WITH_TRANSFORM] = kCGImageSourceCreateThumbnailWithTransform as COpaquePointer?
+            values[KEY_INDEX_WITH_TRANSFORM] = kCFBooleanTrue as COpaquePointer?
+            val dict = CFDictionaryCreate(
+                kCFAllocatorDefault,
+                keys,
+                values,
+                THUMBNAIL_OPTION_COUNT.toLong(),
+                kCFTypeDictionaryKeyCallBacks.ptr,
+                kCFTypeDictionaryValueCallBacks.ptr,
+            )
             try {
                 block(dict)
             } finally {
@@ -801,34 +821,6 @@ private inline fun <R> withThumbnailOptions(maxDim: Int, block: (CFDictionaryRef
             CFRelease(maxDimNumber)
         }
     }
-
-/**
- * Populates the keys/values arrays for the 3-entry thumbnail options dict and calls
- * [CFDictionaryCreate]. Extracted from [withThumbnailOptions] so the retain/release ladder for
- * `maxDimNumber` stays one `try/finally` deep and the body fits the Detekt length limit.
- */
-@Suppress("UNCHECKED_CAST")
-private fun buildThumbnailOptionsDictionary(
-    scope: kotlinx.cinterop.MemScope,
-    maxDimNumber: CFNumberRef,
-): CFDictionaryRef? = with(scope) {
-    val keys = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
-    val values = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
-    keys[KEY_INDEX_MAX_PIXEL_SIZE] = kCGImageSourceThumbnailMaxPixelSize as COpaquePointer?
-    values[KEY_INDEX_MAX_PIXEL_SIZE] = maxDimNumber as COpaquePointer
-    keys[KEY_INDEX_CREATE_ALWAYS] = kCGImageSourceCreateThumbnailFromImageAlways as COpaquePointer?
-    values[KEY_INDEX_CREATE_ALWAYS] = kCFBooleanTrue as COpaquePointer?
-    keys[KEY_INDEX_WITH_TRANSFORM] = kCGImageSourceCreateThumbnailWithTransform as COpaquePointer?
-    values[KEY_INDEX_WITH_TRANSFORM] = kCFBooleanTrue as COpaquePointer?
-    CFDictionaryCreate(
-        kCFAllocatorDefault,
-        keys,
-        values,
-        THUMBNAIL_OPTION_COUNT.toLong(),
-        kCFTypeDictionaryKeyCallBacks.ptr,
-        kCFTypeDictionaryValueCallBacks.ptr,
-    )
-}
 
 private const val THUMBNAIL_OPTION_COUNT = 3
 private const val KEY_INDEX_MAX_PIXEL_SIZE = 0
