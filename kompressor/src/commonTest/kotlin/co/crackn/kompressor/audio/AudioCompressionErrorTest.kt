@@ -167,4 +167,31 @@ class AudioCompressionErrorTest {
     fun tempFileFailedCauseDefaultsToNull() {
         AudioCompressionError.TempFileFailed("x").cause shouldBe null
     }
+
+    // ── CRA-110 waveform error variant ─────────────────────────────────────
+    //
+    // `NoAudioTrack` surfaces when a source container (e.g. a video-only MP4 or an image file)
+    // is passed to `AudioCompressor.waveform`. Mirrors the shape of the other `data class`
+    // I/O variants (CRA-90).
+
+    @Test
+    fun noAudioTrackCarriesDetailsAndCause() {
+        val cause = RuntimeException("image passthrough")
+        val err = AudioCompressionError.NoAudioTrack("photo.jpg has 0 audio tracks", cause)
+        err.details shouldBe "photo.jpg has 0 audio tracks"
+        err.cause shouldBe cause
+        err shouldBe AudioCompressionError.NoAudioTrack("photo.jpg has 0 audio tracks", cause)
+        checkNotNull(err.message) shouldContain "No audio track"
+    }
+
+    @Test
+    fun noAudioTrackExtendsAudioCompressionError() {
+        val err: AudioCompressionError = AudioCompressionError.NoAudioTrack("x")
+        err.shouldBeInstanceOf<AudioCompressionError>()
+    }
+
+    @Test
+    fun noAudioTrackCauseDefaultsToNull() {
+        AudioCompressionError.NoAudioTrack("x").cause shouldBe null
+    }
 }

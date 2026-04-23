@@ -81,4 +81,65 @@ public interface AudioCompressor {
         config: AudioCompressionConfig = AudioCompressionConfig(),
         onProgress: suspend (CompressionProgress) -> Unit = {},
     ): Result<CompressionResult>
+
+    /**
+     * Extract a peak waveform from [input] — each returned float is the maximum absolute
+     * amplitude observed in one time bucket, normalized to `[0f, 1f]`.
+     *
+     * **Output format — "absolute peaks" (mobile-UI convention).** The returned [FloatArray]
+     * follows the convention used by every major mobile waveform renderer (`DSWaveformImage`
+     * iOS, `Amplituda` / `compose-audiowaveform` / `WaveformSeekBar` Android, WhatsApp voice
+     * notes, Apple Podcasts scrub bars, Telegram, Signal). Each element is computed as
+     * `max(|sample|) / 32_768f` across the samples in one bucket, where `32_768` is the
+     * full-scale value for 16-bit signed PCM. The result is guaranteed non-negative and
+     * clamped to `[0f, 1f]`.
+     *
+     * Signed PCM `[-1f, 1f]` (pro-audio / Web Audio API convention) is **not** what this
+     * API returns — the sign is eliminated by `abs()` when building the bucket peak.
+     *
+     * Directly usable by `DSWaveformImage` (iOS). For Android libraries that expect integer
+     * amplitudes (`compose-audiowaveform`, `Amplituda`) map the array before passing it in:
+     *
+     * ```kotlin
+     * val peaks: FloatArray = kompressor.audio.waveform(source).getOrThrow()
+     * // compose-audiowaveform expects List<Int>:
+     * val amplitudes: List<Int> = peaks.map { (it * 1000).toInt() }
+     * // custom Canvas drawing: peaks[i] * canvasHeight
+     * ```
+     *
+     * **Memory invariant.** The implementation streams PCM chunk-by-chunk and never holds
+     * more than ~64 KB of decoded audio in memory, regardless of source duration. A 1-hour
+     * podcast in MP3 (≈60 MB compressed, ≈608 MB decoded) is safe to waveform on-device.
+     *
+     * **Progress.** [onProgress] emits [CompressionProgress] with phase
+     * [CompressionProgress.Phase.COMPRESSING] only — there is no `MATERIALIZING_INPUT` when
+     * [input] is already a local file, and no `FINALIZING_OUTPUT` because the result is an
+     * in-memory [FloatArray] with no sink.
+     *
+     * **Track selection.** Always operates on the **first** audio track of the source. Support
+     * for an `audioTrackIndex` parameter is a future extension (see design doc §4.6).
+     *
+     * Cancel the calling coroutine scope to abort the extraction (structured concurrency).
+     *
+     * @param input Source media — see [MediaSource]. A source with no audio track (e.g. a
+     *   video-only MP4 or an image file) surfaces as
+     *   [Result.failure] wrapping [AudioCompressionError.NoAudioTrack].
+     * @param targetSamples Number of peak values to return. 200 is typical for UI waveforms;
+     *   10 000 is the rough upper bound for a high-detail scrub bar. Must be positive —
+     *   `0` or negative values fail with [IllegalArgumentException] wrapped in [Result.failure].
+     * @param onProgress Called with a [CompressionProgress] reflecting the
+     *   [CompressionProgress.Phase.COMPRESSING] fraction in `[0f, 1f]` as PCM buckets are
+     *   processed. Emission frequency is coerced to avoid flooding the callback for very
+     *   large [targetSamples].
+     * @return [Result] wrapping a [FloatArray] of size at most [targetSamples]. Every element
+     *   is in `[0f, 1f]`. The array **may be shorter** than [targetSamples] when the source
+     *   is shorter than one bucket's duration (or when the final bucket has no samples).
+     *   On failure the [Result] wraps an [AudioCompressionError] subtype — notably
+     *   [AudioCompressionError.NoAudioTrack] when the source has no audio.
+     */
+    public suspend fun waveform(
+        input: MediaSource,
+        targetSamples: Int = 200,
+        onProgress: suspend (CompressionProgress) -> Unit = {},
+    ): Result<FloatArray>
 }

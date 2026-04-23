@@ -154,4 +154,23 @@ public sealed class AudioCompressionError(
         public val details: String,
         override val cause: Throwable? = null,
     ) : AudioCompressionError("Temp file failed: $details", cause)
+
+    /**
+     * The source media does not contain an audio track. Distinct from [UnsupportedSourceFormat]
+     * (the format itself is recognised but no decoder exists on this device) and from
+     * [SourceReadFailed] (an I/O issue mid-read). Typical cause: a consumer passes a video
+     * file with no audio stream, or an image file, through the audio compressor.
+     *
+     * Emitted by [AudioCompressor.waveform] when the input container reports zero audio
+     * tracks. Consumers that want to gate the call first can probe the source with
+     * `MediaMetadataRetriever` (Android) or `AVURLAsset.tracksWithMediaType(AVMediaTypeAudio)`
+     * (iOS); for video-only inputs, prefer `VideoCompressor.thumbnail` instead.
+     *
+     * @property details Free-form diagnostic — the source identifier and the platform-reported
+     *   track count when known.
+     */
+    public data class NoAudioTrack(
+        public val details: String,
+        override val cause: Throwable? = null,
+    ) : AudioCompressionError("No audio track in source: $details", cause)
 }

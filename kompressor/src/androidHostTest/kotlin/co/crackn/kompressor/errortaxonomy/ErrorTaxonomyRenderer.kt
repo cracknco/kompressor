@@ -203,6 +203,15 @@ internal object ErrorTaxonomyRenderer {
                 consumerFix = "Report with `cause` attached.",
             ),
         )
+        put(
+            "AudioCompressionError.NoAudioTrack",
+            Guidance(
+                retrySafe = "no",
+                consumerFix = "Pick a different source \u2014 the input container has no audio stream " +
+                    "(e.g. a silent video, an image file). For video-only inputs prefer " +
+                    "`VideoCompressor.thumbnail`.",
+            ),
+        )
         putAll(ioGuidance("AudioCompressionError"))
 
         // VideoCompressionError
