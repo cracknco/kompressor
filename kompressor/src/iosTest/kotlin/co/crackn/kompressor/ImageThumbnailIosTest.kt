@@ -171,6 +171,29 @@ class ImageThumbnailIosTest {
         CGImageGetHeight(cgImage).toInt() shouldBe SMALL_DIM
     }
 
+    @Test
+    fun thumbnail_bytesInput_exercisesNsDataShortCircuitDispatch() = runTest {
+        // CRA-95 Stream/Bytes short-circuit on iOS: `MediaSource.Local.Bytes` should route
+        // through `CGImageSourceCreateWithData` in `doThumbnailFromData` without a temp-file
+        // roundtrip. Mirrors the Android Bytes dispatch test so the short-circuit is exercised
+        // end-to-end on both platforms, not just `MediaSource.Local.FilePath`.
+        val srcPath = createTestImage(testDir, 800, 600)
+        val srcBytes = readBytes(srcPath)
+        val output = testDir + "thumb_bytes.jpg"
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.Bytes(srcBytes),
+            MediaDestination.Local.FilePath(output),
+            maxDimension = MAX_DIMENSION,
+        )
+
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        OutputValidators.isValidJpeg(readBytes(output)) shouldBe true
+        val uiImage = UIImage(contentsOfFile = output)
+        val cgImage = uiImage.CGImage!!
+        max(CGImageGetWidth(cgImage).toInt(), CGImageGetHeight(cgImage).toInt()) shouldBeLessThanOrEqualTo MAX_DIMENSION
+    }
+
     private companion object {
         const val LARGE_WIDTH = 4_000
         const val LARGE_HEIGHT = 3_000

@@ -19,11 +19,18 @@ import io.kotest.assertions.withClue
 import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 /**
@@ -84,9 +91,15 @@ class ImageThumbnailDeviceTest {
         // Sampled decode keeps peak heap bounded regardless of source pixel count. A full decode
         // of a 4000×3000 RGBA bitmap would hold ~48 MB; the `inSampleSize`-driven pipeline caps
         // allocations near the sample-sized decode (~1–2 MB for 500×375) plus the exact-resize
-        // output (~120 KB for 200×150). The 10 MB envelope below is the DoD ceiling — it's
-        // generous enough to absorb Bitmap.compress's internal buffer + normal GC noise, tight
-        // enough to flag a regression that flips the decoder back to full resolution.
+        // output (~120 KB for 200×150). The 10 MB envelope below is the DoD ceiling — generous
+        // enough to absorb Bitmap.compress's internal buffer + normal GC noise, tight enough to
+        // flag a regression that flips the decoder back to full resolution.
+        //
+        // A concurrent 5 ms sampler runs alongside the thumbnail() call and records the peak heap
+        // delta observed across the decode window. A post-execution snapshot would miss the
+        // transient 48 MB allocation of a regressed full-resolution decode if ART released the
+        // bitmap during the pipeline's internal `finally { bitmap.recycle() }` step before the
+        // snapshot. The sampler observes the true peak regardless of GC timing.
         val input = createTestImage(tempDir, LARGE_WIDTH, LARGE_HEIGHT)
         val output = File(tempDir, "thumb_memory.jpg")
 
@@ -96,21 +109,39 @@ class ImageThumbnailDeviceTest {
         repeat(GC_ROUNDS) { runtime.gc() }
         val baseline = runtime.totalMemory() - runtime.freeMemory()
 
-        val result = compressor.thumbnail(
-            MediaSource.Local.FilePath(input.absolutePath),
-            MediaDestination.Local.FilePath(output.absolutePath),
-            maxDimension = MAX_DIMENSION,
-        )
-        // Measure peak BEFORE the post-thumbnail GC — any recycled bitmap bytes would otherwise
-        // disappear from the measurement and hide a regression.
-        val peak = runtime.totalMemory() - runtime.freeMemory()
-        val deltaBytes = peak - baseline
+        // AtomicLong for cross-dispatcher visibility: the sampler runs on Dispatchers.IO while
+        // the test body runs on the test dispatcher. `cancelAndJoin()` establishes the needed
+        // happens-before for the final read below.
+        val peakUsed = AtomicLong(baseline)
+        val samplerScope = CoroutineScope(Dispatchers.IO)
+        val sampler = samplerScope.launch {
+            while (isActive) {
+                val used = runtime.totalMemory() - runtime.freeMemory()
+                peakUsed.updateAndGet { if (used > it) used else it }
+                delay(SAMPLER_INTERVAL_MS)
+            }
+        }
+
+        val result = try {
+            compressor.thumbnail(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+                maxDimension = MAX_DIMENSION,
+            )
+        } finally {
+            sampler.cancelAndJoin()
+        }
+        // Final snapshot after the sampler has stopped so a regression that spikes immediately
+        // before the return still lands in `peakUsed` even if it missed the last 5 ms window.
+        val finalUsed = runtime.totalMemory() - runtime.freeMemory()
+        peakUsed.updateAndGet { if (finalUsed > it) finalUsed else it }
+        val deltaBytes = peakUsed.get() - baseline
 
         withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         withClue(
             "Peak heap delta $deltaBytes B exceeds sampled-decode envelope $MAX_PEAK_DELTA_BYTES B — " +
                 "possible regression to full-resolution decode",
-        ) { (deltaBytes <= MAX_PEAK_DELTA_BYTES) shouldBe true }
+        ) { deltaBytes shouldBeLessThanOrEqualTo MAX_PEAK_DELTA_BYTES }
     }
 
     @Test
@@ -198,6 +229,29 @@ class ImageThumbnailDeviceTest {
         options.outHeight shouldBe SMALL_DIM
     }
 
+    @Test
+    fun thumbnail_bytesInput_exercisesShortCircuitDispatch() = runTest {
+        // CRA-95 Stream/Bytes short-circuit: `MediaSource.Local.Bytes` should route through
+        // `BitmapFactory.decodeByteArray` without materialising a temp file on the input side.
+        // Parallels the iOS Stream/Bytes dispatch test so both platforms exercise the short-
+        // circuit end-to-end, not just `MediaSource.Local.FilePath`.
+        val srcFile = createTestImage(tempDir, 800, 600)
+        val input = MediaSource.Local.Bytes(srcFile.readBytes())
+        val output = File(tempDir, "thumb_bytes.jpg")
+
+        val result = compressor.thumbnail(
+            input,
+            MediaDestination.Local.FilePath(output.absolutePath),
+            maxDimension = MAX_DIMENSION,
+        )
+
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        OutputValidators.isValidJpeg(output.readBytes()) shouldBe true
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(output.absolutePath, options)
+        max(options.outWidth, options.outHeight) shouldBeLessThanOrEqualTo MAX_DIMENSION
+    }
+
     private companion object {
         const val LARGE_WIDTH = 4_000
         const val LARGE_HEIGHT = 3_000
@@ -207,6 +261,9 @@ class ImageThumbnailDeviceTest {
         const val EXIF_SRC_HEIGHT = 100
         const val SMALL_DIM = 100
         const val GC_ROUNDS = 3
+        // Sampler cadence: 5 ms polls the heap frequently enough to catch a transient
+        // full-resolution allocation that would otherwise disappear between snapshots.
+        const val SAMPLER_INTERVAL_MS = 5L
         // 10 MB envelope — full 4000×3000 RGBA decode would hit ~48 MB so this is a ~5× safety
         // margin over the expected ~1–2 MB peak of the sampled-decode pipeline.
         const val MAX_PEAK_DELTA_BYTES = 10L * 1024 * 1024
