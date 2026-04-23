@@ -125,11 +125,11 @@ kotlin {
             // `api` so consumers constructing `Stream` variants get the symbols on their
             // classpath without manually re-declaring the dependency — otherwise a caller
             // discovering `Stream` via IDE autocomplete hits a surprising
-            // `unresolved reference: okio.Source`. The original plan (`tmp/tier1-1-io-model.md`
-            // §9.2 / Q1) leaned toward `implementation` to avoid forcing okio on `FilePath`-only
-            // callers, but the UX cost of broken autocomplete outweighs a ~320 KB transitive
+            // `unresolved reference: okio.Source`. The M10 CRA-89 design discussion initially
+            // considered `implementation` to avoid forcing okio onto `FilePath`-only callers,
+            // but the UX cost of broken autocomplete outweighs the ~320 KB transitive
             // dependency [CRA-90 review]. If the transitive cost ever becomes a real concern,
-            // the proper fix is to hide okio behind an internal adapter rather than leak it via
+            // the proper fix is to hide okio behind an internal adapter rather than flip to
             // `implementation`.
             api(libs.okio)
         }

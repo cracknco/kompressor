@@ -41,7 +41,8 @@ import java.io.OutputStream
  * **Failure semantics** — if the write block throws, the strategy does NOT clear `IS_PENDING`.
  * The URI stays pending/invisible and the caller can drop it via `contentResolver.delete(uri)`.
  * This protects gallery integrity: a half-written file is never gallery-visible on a failure
- * path. See `tmp/tier1-1-io-model.md §14 R3` and PR #141 review (2026-04-22).
+ * path (this invariant was tightened in PR #141 review on 2026-04-22 — previously the clear was
+ * issued unconditionally, exposing half-written files to the gallery on write failures).
  *
  * **Graceful fallback** — a custom `ContentProvider` that aliases [MediaStore.AUTHORITY] without
  * implementing the `IS_PENDING` contract will reject the `update(...)` calls with

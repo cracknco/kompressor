@@ -21,7 +21,8 @@ import okio.sink
  * that mimics the MediaStore authority but does not implement the `IS_PENDING` contract,
  * Kompressor logs a WARN and still returns success — the compressed output is written correctly,
  * only the pending flag could not be cleared. See [MediaStoreOutputStrategy] for the full
- * contract, and `tmp/tier1-1-io-model.md` §14 R3 for the design rationale.
+ * contract. The "best-effort, don't crash on a misbehaving provider" stance is deliberate: we
+ * cannot fix a broken custom provider, but we must not fail a compression because of one.
  *
  * For non-MediaStore `content://` URIs (SAF documents, custom providers), Kompressor uses
  * `ContentResolver.openOutputStream(uri)` directly — no `IS_PENDING` dance is attempted.
