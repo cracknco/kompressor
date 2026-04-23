@@ -21,8 +21,6 @@ import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
-import io.kotest.matchers.shouldBe
-import kotlin.math.abs
 import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
 import kotlin.test.AfterTest
@@ -48,14 +46,16 @@ import platform.Foundation.create
  * **Equivalence model.** For images (JPEG) the outputs are bitwise-identical because
  * `UIImage(data:)` / `UIImage(contentsOfFile:)` share the same Core Graphics decode path
  * and JPEG re-encoding is deterministic. For audio (M4A) and video (MP4) the legacy-vs-novel
- * outputs differ by a few bytes on every run — but the divergence is NOT wall-clock-timestamp
- * drift: [audio_twoConsecutiveCompressesProduceIdenticalBytes] demonstrates two back-to-back
- * legacy-overload compresses of the same input are byte-identical, so AVFoundation itself is
- * deterministic per-compress. The remaining divergence on legacy-vs-novel pairs is tracked
- * for root-cause investigation (CRA-98 follow-up — likely NSURL dispatch overhead or
- * `toIosInputPath` call-ordering stamping something into the AVAsset initialisation). The
- * stable invariant pinned here is *compression-outcome equivalence*: both paths succeed and
- * their output sizes agree within [AV_SIZE_TOLERANCE_BYTES]. Stream / Bytes / Stream-output
+ * outputs are byte-identical **within a single wall-clock second**, but AVFoundation stamps
+ * `mvhd` / `tkhd` / `mdhd` creation/modification timestamps from `NSDate()` at export start —
+ * so two compresses straddling a 1-second boundary flip a handful of byte-level bits in the
+ * moov-tail metadata while leaving the file length unchanged. Root-cause investigation
+ * (CRA-98, see [UrlInputNonDeterminismInvestigationTest]) confirmed H1 (wall-clock stamping)
+ * and refuted H3 (NSURL-path-specific non-determinism): the NSURL dispatch overload is as
+ * deterministic as the legacy path per-call; only cross-path timing jitter occasionally pushes
+ * the novel compress across a second boundary. The assertion below therefore enforces
+ * **sizes equal + differing bytes within the `mvhd`/`tkhd`/`mdhd` timestamp budget** instead
+ * of the coarser size-delta tolerance that shipped in PR #143. Stream / Bytes / Stream-output
  * end-to-end coverage (CRA-95) lives in `io.StreamAndBytesEndToEndTest`.
  */
 class UrlInputEndToEndTest {
@@ -119,7 +119,7 @@ class UrlInputEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertAvSizeEquivalent(novelPath, legacyPath)
+        assertAvOutputStructurallyEquivalent(novelPath, legacyPath)
     }
 
     @Test
@@ -141,7 +141,7 @@ class UrlInputEndToEndTest {
 
         legacy.isSuccess shouldBe true
         novel.isSuccess shouldBe true
-        assertAvSizeEquivalent(novelPath, legacyPath)
+        assertAvOutputStructurallyEquivalent(novelPath, legacyPath)
     }
 
     @Test
@@ -170,13 +170,12 @@ class UrlInputEndToEndTest {
         readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
     }
 
-    // Pins the actual determinism of AVFoundation exports under the legacy path-based
-    // `audio.compress(path, path, config)` entry: two consecutive compresses of the same
-    // input produce byte-identical output. This contradicts the class-KDoc's "wall-clock
-    // mvhd/mdhd stamping" hypothesis and suggests the remaining tolerance on the
-    // legacy-vs-novel pair tests is masking something OTHER than timestamps (possibly an
-    // NSURL-dispatch overhead or `toIosInputPath` call-ordering effect). Tracked for
-    // follow-up investigation in a CRA-95.1 ticket [PR #143 review, finding #7].
+    // Pins the *per-second* determinism of AVFoundation exports under the legacy path-based
+    // `audio.compress(path, path, config)` entry: two consecutive compresses complete in ms
+    // and reliably land in the same wall-clock second, so their outputs are byte-identical.
+    // The CRA-98 investigation ([UrlInputNonDeterminismInvestigationTest]) showed that a
+    // longer loop spanning ≥5 s produces multiple distinct byte-sets — i.e. AVFoundation IS
+    // wall-clock-stamping `mvhd` / `tkhd` / `mdhd`, just at seconds resolution.
     @Test
     fun audio_twoConsecutiveCompressesProduceIdenticalBytes() = runTest {
         val inputPath = createTestWav()
@@ -197,31 +196,43 @@ class UrlInputEndToEndTest {
         first.isSuccess shouldBe true
         second.isSuccess shouldBe true
         withClue(
-            "Two consecutive AVFoundation exports of the same input MUST produce byte-identical " +
-                "bytes. If this fails, AVFoundation became non-deterministic per-compress and the " +
-                "class-KDoc explanation (wall-clock mvhd timestamps) would finally be justified. " +
-                "If it still passes, the legacy-vs-novel relaxation on audio_nsurlInput / " +
-                "video_nsurlInput is masking a different divergence (dispatch overhead, call " +
-                "ordering, …) and should be investigated.",
+            "Two consecutive AVFoundation exports executed within milliseconds MUST produce " +
+                "byte-identical bytes — AVFoundation's `mvhd` / `tkhd` / `mdhd` wall-clock " +
+                "stamping is per-second, not sub-second, so a fast back-to-back pair lands in " +
+                "the same second. See [UrlInputNonDeterminismInvestigationTest] for the " +
+                "experimental confirmation (CRA-98).",
         ) {
             readBytes(firstOut).contentEquals(readBytes(secondOut)) shouldBe true
         }
     }
 
     /**
-     * Assert two audio/video outputs have sizes within [AV_SIZE_TOLERANCE_BYTES] — used in
-     * place of bitwise comparison because AVFoundation embeds wall-clock-derived timestamps
-     * in `mvhd` / `mdhd` boxes. See class KDoc for the full rationale.
+     * Assert two audio/video outputs are *structurally* equivalent despite AVFoundation's
+     * wall-clock `mvhd` / `tkhd` / `mdhd` timestamp stamping (confirmed as H1 root cause by
+     * CRA-98 — see `docs/investigations/avfoundation-nsurl-divergence.md`).
+     *
+     * The file length MUST match — timestamp drift never resizes the container. The count of
+     * differing bytes MUST fit inside the per-box timestamp budget tracked by
+     * [AV_TIMESTAMP_BYTE_TOLERANCE]. This catches any real compression regression far earlier
+     * than the previous PR #143 size-delta tolerance (which accepted up to 1 KB of silent byte
+     * difference).
      */
-    private fun assertAvSizeEquivalent(novelPath: String, legacyPath: String) {
-        val novel = readBytes(novelPath).size.toLong()
-        val legacy = readBytes(legacyPath).size.toLong()
-        val delta = abs(novel - legacy)
+    private fun assertAvOutputStructurallyEquivalent(novelPath: String, legacyPath: String) {
+        val novel = readBytes(novelPath)
+        val legacy = readBytes(legacyPath)
         withClue(
-            "Expected novel/legacy output sizes within $AV_SIZE_TOLERANCE_BYTES bytes — " +
-                "novel=$novel legacy=$legacy delta=$delta",
+            "Output sizes must be equal (timestamp drift does not resize the container). " +
+                "novel=${novel.size} legacy=${legacy.size}",
         ) {
-            (novel > 0 && legacy > 0 && delta <= AV_SIZE_TOLERANCE_BYTES) shouldBe true
+            novel.size shouldBe legacy.size
+        }
+        var differing = 0
+        for (i in novel.indices) if (novel[i] != legacy[i]) differing++
+        withClue(
+            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation wall-clock " +
+                "`mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
+        ) {
+            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
         }
     }
 
@@ -247,11 +258,24 @@ class UrlInputEndToEndTest {
         const val WAV_CHANNELS = 2
 
         /**
-         * Max byte delta between two iOS audio/video outputs produced by successive
-         * AVFoundation exports of the same source. Covers `mvhd` / `mdhd` creation &
-         * modification timestamp drift (second-resolution, tens of bytes) without masking
-         * real regressions. Mirrored by the CRA-95 `StreamAndBytesEndToEndTest` tolerance.
+         * Max count of differing bytes between two iOS audio/video outputs produced by
+         * successive AVFoundation exports of the same source that straddle a 1-second
+         * wall-clock boundary. Derived from the ISOBMFF timestamp budget:
+         *
+         *  * `mvhd` (1 box) × {creation, modification} × 4 B = 8 B
+         *  * `tkhd` (1–2 tracks) × 2 timestamps × 4 B = 8–16 B
+         *  * `mdhd` (1–2 tracks) × 2 timestamps × 4 B = 8–16 B
+         *
+         * Total worst-case ≈ 40 B when every byte of every timestamp field flips on a carry
+         * cascade. In practice only LSBs flip on a 1-second rollover (observed 3 bytes on
+         * CRA-98 CI). We pick 64 as a 1.6× safety margin over the theoretical bound that
+         * still catches any real compression regression. Mirrored by the CRA-95
+         * `StreamAndBytesEndToEndTest` tolerance.
+         *
+         * Replaces the previous `AV_SIZE_TOLERANCE_BYTES = 1024L` (PR #143) — that bound
+         * was a *size*-delta tolerance even though AVFoundation timestamp drift never
+         * changes the file length, and it was an order of magnitude looser than necessary.
          */
-        const val AV_SIZE_TOLERANCE_BYTES: Long = 1024
+        const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
 }
