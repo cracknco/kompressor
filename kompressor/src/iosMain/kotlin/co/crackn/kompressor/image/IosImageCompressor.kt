@@ -61,7 +61,9 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreFoundation.CFStringRef
 import platform.CoreFoundation.CFURLRef
 import platform.CoreFoundation.kCFAllocatorDefault
+import platform.CoreFoundation.kCFBooleanTrue
 import platform.CoreFoundation.kCFNumberDoubleType
+import platform.CoreFoundation.kCFNumberIntType
 import platform.CoreFoundation.kCFTypeDictionaryKeyCallBacks
 import platform.CoreFoundation.kCFTypeDictionaryValueCallBacks
 import platform.CoreGraphics.CGImageRef
@@ -80,7 +82,14 @@ import platform.ImageIO.CGImageDestinationAddImage
 import platform.ImageIO.CGImageDestinationCreateWithURL
 import platform.ImageIO.CGImageDestinationFinalize
 import platform.ImageIO.CGImageDestinationRef
+import platform.ImageIO.CGImageSourceCreateThumbnailAtIndex
+import platform.ImageIO.CGImageSourceCreateWithData
+import platform.ImageIO.CGImageSourceCreateWithURL
+import platform.ImageIO.CGImageSourceRef
 import platform.ImageIO.kCGImageDestinationLossyCompressionQuality
+import platform.ImageIO.kCGImageSourceCreateThumbnailFromImageAlways
+import platform.ImageIO.kCGImageSourceCreateThumbnailWithTransform
+import platform.ImageIO.kCGImageSourceThumbnailMaxPixelSize
 import platform.UIKit.UIDevice
 import platform.UIKit.UIGraphicsBeginImageContextWithOptions
 import platform.UIKit.UIGraphicsEndImageContext
@@ -181,6 +190,83 @@ internal class IosImageCompressor(
         }
     }
 
+    // LongMethod suppressed for the same reason as the [compress] override: the nested
+    // try/finally structure mirrors it line-for-line so the two entrypoints have identical
+    // lifecycle semantics (inHandle cleanup outer, outHandle cleanup inner). The argument
+    // validation + PHAsset/Stream/Bytes short-circuit + file-path fallback dispatch all live
+    // inline at this layer; extracting them again would add helpers to an already-at-threshold
+    // class without clarifying intent.
+    @Suppress("LongMethod")
+    override suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): Result<CompressionResult> {
+        // Fail-fast before entering suspendRunCatching so the IllegalArgumentException surfaces
+        // as Result.failure without opening any input/output handles. Sibling contract to the
+        // Android override; keeps the public API's validation behaviour symmetric.
+        if (maxDimension <= 0) {
+            return Result.failure(
+                IllegalArgumentException("maxDimension must be > 0, was $maxDimension"),
+            )
+        }
+        return suspendRunCatching {
+            try {
+                // Stream / Bytes short-circuit — mirror the compress() dispatch so thumbnail
+                // inherits the CRA-95 "no temp file for image inputs" invariant.
+                val streamOrBytesData: NSData? = when (input) {
+                    is MediaSource.Local.Bytes -> nsDataFromBytes(input.bytes)
+                    is MediaSource.Local.Stream -> nsDataFromStream(input)
+                    else -> null
+                }
+                val effectiveInput: MediaSource = when {
+                    streamOrBytesData != null -> IosDataMediaSource(streamOrBytesData)
+                    input is IosPHAssetMediaSource && input.asset.mediaType == PHAssetMediaTypeImage ->
+                        IosDataMediaSource(input.asset.resolveImageToData(input.allowNetworkAccess))
+                    else -> input
+                }
+
+                // NSData path: CGImageSourceCreateWithData (zero-copy for mmap-backed NSData)
+                // → CGImageSourceCreateThumbnailAtIndex, skipping the full-resolution decode
+                // that compress() would do via UIImage(data:).
+                if (effectiveInput is IosDataMediaSource) {
+                    val outHandle = output.toIosOutputHandle()
+                    return@suspendRunCatching try {
+                        val result = thumbnailFromData(
+                            effectiveInput.data, outHandle.tempPath, maxDimension, format, quality,
+                        )
+                        outHandle.commit()
+                        result
+                    } finally {
+                        outHandle.cleanup()
+                    }
+                }
+
+                val inHandle = effectiveInput.toIosInputPath(mediaType = MediaType.IMAGE, logger = logger)
+                try {
+                    val outHandle = output.toIosOutputHandle()
+                    try {
+                        val result = thumbnailFilePath(
+                            inHandle.path, outHandle.tempPath, maxDimension, format, quality,
+                        )
+                        outHandle.commit()
+                        result
+                    } finally {
+                        outHandle.cleanup()
+                    }
+                } finally {
+                    inHandle.cleanup()
+                }
+            } catch (e: PHAssetIcloudOnlyException) {
+                throw ImageCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+            } catch (e: PHAssetResolutionException) {
+                throw ImageCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+            }
+        }
+    }
+
     /**
      * Local-file → local-file compression with the CRA-47 [instrumentCompress] wrapper applied.
      * Throws the typed [ImageCompressionError] hierarchy on failure; the outer MediaSource
@@ -274,6 +360,221 @@ internal class IosImageCompressor(
             )
         } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
             throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
+    }
+
+    /**
+     * File-path thumbnail entrypoint — wraps the CGImageSource flow with [instrumentCompress]
+     * so the CRA-47 observability log lines fire for thumbnail calls too. Exception classification
+     * mirrors [compressFilePath] so callers see identical typed errors across the two APIs.
+     */
+    @Suppress("LongMethod")
+    private suspend fun thumbnailFilePath(
+        inputPath: String,
+        outputPath: String,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.IMAGE,
+        startMessage = {
+            "thumbnail() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
+                "fmt=$format quality=$quality maxDim=$maxDimension"
+        },
+        successMessage = { r ->
+            "thumbnail() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "thumbnail() failed in=${redactPath(inputPath)}" },
+    ) {
+        try {
+            doThumbnailFromPath(inputPath, outputPath, maxDimension, format, quality)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+            throw ImageCompressionError.DecodingFailed(
+                "Platform decoder failed (nil image): ${e.message ?: "CGImageSourceCreateWithURL"}",
+                e,
+            )
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
+    }
+
+    /**
+     * NSData thumbnail entrypoint — CGImageSource reads the samples directly from memory without
+     * a temp-file roundtrip. Observability + exception table parity with [thumbnailFilePath].
+     */
+    @Suppress("LongMethod")
+    private suspend fun thumbnailFromData(
+        data: NSData,
+        outputPath: String,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.IMAGE,
+        startMessage = {
+            "thumbnail(data) start len=${data.length} out=${redactPath(outputPath)} " +
+                "fmt=$format quality=$quality maxDim=$maxDimension"
+        },
+        successMessage = { r ->
+            "thumbnail(data) ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
+        },
+        failureMessage = { "thumbnail(data) failed len=${data.length}" },
+    ) {
+        try {
+            doThumbnailFromData(data, outputPath, maxDimension, format, quality)
+        } catch (e: ImageCompressionError) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: NullPointerException) {
+            throw ImageCompressionError.DecodingFailed(
+                "Platform decoder failed (nil image from NSData): " +
+                    "${e.message ?: "CGImageSourceCreateWithData"}",
+                e,
+            )
+        } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
+            throw ImageCompressionError.Unknown(e.message ?: e::class.simpleName.orEmpty(), e)
+        }
+    }
+
+    /**
+     * Sampled-decode path for a filesystem source. Creates a [CGImageSourceRef] pointed at the
+     * file, asks ImageIO for a thumbnail no larger than [maxDimension] on its long edge, and
+     * hands the resulting [platform.CoreGraphics.CGImageRef] to the shared [writeImage] encoder.
+     * ImageIO applies EXIF rotation inside its thumbnail pipeline when
+     * `kCGImageSourceCreateThumbnailWithTransform = true` so the caller never sees an un-rotated
+     * bitmap — no second transform pass required.
+     */
+    @Suppress("USELESS_ELVIS")
+    private suspend fun doThumbnailFromPath(
+        inputPath: String,
+        outputPath: String,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult {
+        val iosVersion = iosMajorVersion()
+        val startTime = CFAbsoluteTimeGetCurrent()
+        val inputSize = nsFileSize(inputPath)
+
+        if (!NSFileManager.defaultManager.fileExistsAtPath(inputPath)) {
+            throw ImageCompressionError.IoFailed("Input file not found: $inputPath")
+        }
+        val detectedFormat = detectInputImageFormat(readHeader(inputPath), fileExtension(inputPath))
+        throwIfIosIncompatible(format, detectedFormat, iosVersion)
+
+        val urlCF = bridgeUrl(inputPath)
+        val source: CGImageSourceRef = try {
+            CGImageSourceCreateWithURL(urlCF, options = null)
+                ?: throw ImageCompressionError.DecodingFailed("Cannot open CGImageSource for: $inputPath")
+        } finally {
+            CFRelease(urlCF)
+        }
+        currentCoroutineContext().ensureActive()
+        try {
+            val thumbnailImage = decodeThumbnailUIImage(source, maxDimension, "path=$inputPath")
+            currentCoroutineContext().ensureActive()
+            val thumbnailConfig = ImageCompressionConfig(format = format, quality = quality)
+            writeImage(thumbnailImage, outputPath, thumbnailConfig)
+        } finally {
+            CFRelease(source)
+        }
+
+        val outputSize = nsFileSize(outputPath)
+        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+        return CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * NSData variant of [doThumbnailFromPath]. Uses `CGImageSourceCreateWithData` which is
+     * zero-copy for mmap-backed NSData (typical of PhotoKit / `Data(contentsOf:)` inputs) —
+     * the sampled decode itself still avoids loading the full-resolution bitmap into RAM.
+     */
+    // LongMethod suppressed: mirrors [doThumbnailFromPath] structure — iOS-version/gate
+    // check, CFBridgingRetain lifecycle (CFRelease of dataCF after source creation, CFRelease
+    // of source after decode), cancellation yield points, and the shared writeImage call. The
+    // body is already minimal per step; extracting the CFDataRef dance into a helper would only
+    // shift line count at the cost of an extra closure that obscures the retain/release pairing.
+    @Suppress("USELESS_ELVIS", "UNCHECKED_CAST", "LongMethod")
+    private suspend fun doThumbnailFromData(
+        data: NSData,
+        outputPath: String,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult {
+        val iosVersion = iosMajorVersion()
+        val startTime = CFAbsoluteTimeGetCurrent()
+        val inputSize = data.length.toLong()
+
+        val detectedFormat = detectInputImageFormat(readHeaderFromData(data), extension = "")
+        throwIfIosIncompatible(format, detectedFormat, iosVersion)
+
+        // NSData → CFDataRef via CFBridgingRetain. CGImageSource retains its own reference
+        // for the lifetime of the source so we release ours immediately after construction;
+        // the source stays valid for thumbnail decode below.
+        val dataCF = CFBridgingRetain(data)
+            ?: throw ImageCompressionError.DecodingFailed("Failed to bridge NSData to CFDataRef")
+        val source: CGImageSourceRef = try {
+            @Suppress("UNCHECKED_CAST")
+            CGImageSourceCreateWithData(
+                dataCF as platform.CoreFoundation.CFDataRef?,
+                options = null,
+            ) ?: throw ImageCompressionError.DecodingFailed(
+                "Cannot open CGImageSource from NSData (length=${data.length})",
+            )
+        } finally {
+            CFRelease(dataCF)
+        }
+        currentCoroutineContext().ensureActive()
+        try {
+            val thumbnailImage = decodeThumbnailUIImage(source, maxDimension, "len=${data.length}")
+            currentCoroutineContext().ensureActive()
+            val thumbnailConfig = ImageCompressionConfig(format = format, quality = quality)
+            writeImage(thumbnailImage, outputPath, thumbnailConfig)
+        } finally {
+            CFRelease(source)
+        }
+
+        val outputSize = nsFileSize(outputPath)
+        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+        return CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Runs [CGImageSourceCreateThumbnailAtIndex] with options `ThumbnailFromImageAlways = true`,
+     * `ThumbnailWithTransform = true` (so EXIF orientation is baked into the pixel data), and
+     * `ThumbnailMaxPixelSize = maxDim`. Wraps the resulting [platform.CoreGraphics.CGImageRef]
+     * in a [UIImage] so the shared [writeImage] encoder can reuse the JPEG / HEIC / AVIF writers
+     * without a parallel code path.
+     *
+     * [diagnostic] is folded into the error message — the caller passes a path or a data length
+     * so debug logs pinpoint the failing input without the helper needing to know which.
+     */
+    @Suppress("USELESS_ELVIS")
+    private fun decodeThumbnailUIImage(
+        source: CGImageSourceRef,
+        maxDim: Int,
+        diagnostic: String,
+    ): UIImage = withThumbnailOptions(maxDim) { optionsCF ->
+        val cgImage = CGImageSourceCreateThumbnailAtIndex(source, index = 0u, options = optionsCF)
+            ?: throw ImageCompressionError.DecodingFailed(
+                "CGImageSourceCreateThumbnailAtIndex returned null (maxDim=$maxDim, $diagnostic)",
+            )
+        try {
+            UIImage(cGImage = cgImage)
+        } finally {
+            CFRelease(cgImage)
         }
     }
 
@@ -526,6 +827,58 @@ private inline fun <R> withQualityOptions(quality: Int, block: (CFDictionaryRef?
         }
     }
 }
+
+/**
+ * Builds the 3-entry thumbnail options CFDictionary and invokes [block] with it. Mirrors the
+ * shape of [withQualityOptions] above — CFDictionaryCreate + CFRelease in a finally — but with
+ * three entries: the integer `kCGImageSourceThumbnailMaxPixelSize`, and two boolean flags
+ * (`kCGImageSourceCreateThumbnailFromImageAlways` = true forces sampled decode even when the
+ * source has no embedded thumbnail at the requested size; `kCGImageSourceCreateThumbnailWithTransform`
+ * = true bakes EXIF orientation into the pixel data so the caller never sees an un-rotated
+ * bitmap). All CF references are released before [block] returns.
+ */
+// LongMethod suppressed: the body is a single CFDictionaryCreate with a 3-entry key/value
+// setup, wrapped in the mandatory `memScoped { try { ... } finally { CFRelease } }` lifecycle
+// boilerplate. Splitting out the key/value wiring or the dict finalize would only shuffle line
+// count at the cost of breaking the retain/release pairing the compiler currently verifies by
+// proximity. Mirrors the shape of [withQualityOptions] above.
+@Suppress("UNCHECKED_CAST", "LongMethod")
+private inline fun <R> withThumbnailOptions(maxDim: Int, block: (CFDictionaryRef?) -> R): R =
+    memScoped {
+        val maxDimVar = alloc<kotlinx.cinterop.IntVar>().apply { value = maxDim }
+        val maxDimNumber: CFNumberRef = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, maxDimVar.ptr)
+            ?: return@memScoped block(null)
+        try {
+            val keys = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
+            val values = allocArray<COpaquePointerVar>(THUMBNAIL_OPTION_COUNT)
+            keys[KEY_INDEX_MAX_PIXEL_SIZE] = kCGImageSourceThumbnailMaxPixelSize as COpaquePointer?
+            values[KEY_INDEX_MAX_PIXEL_SIZE] = maxDimNumber as COpaquePointer
+            keys[KEY_INDEX_CREATE_ALWAYS] = kCGImageSourceCreateThumbnailFromImageAlways as COpaquePointer?
+            values[KEY_INDEX_CREATE_ALWAYS] = kCFBooleanTrue as COpaquePointer?
+            keys[KEY_INDEX_WITH_TRANSFORM] = kCGImageSourceCreateThumbnailWithTransform as COpaquePointer?
+            values[KEY_INDEX_WITH_TRANSFORM] = kCFBooleanTrue as COpaquePointer?
+            val dict = CFDictionaryCreate(
+                kCFAllocatorDefault,
+                keys,
+                values,
+                THUMBNAIL_OPTION_COUNT.toLong(),
+                kCFTypeDictionaryKeyCallBacks.ptr,
+                kCFTypeDictionaryValueCallBacks.ptr,
+            )
+            try {
+                block(dict)
+            } finally {
+                if (dict != null) CFRelease(dict)
+            }
+        } finally {
+            CFRelease(maxDimNumber)
+        }
+    }
+
+private const val THUMBNAIL_OPTION_COUNT = 3
+private const val KEY_INDEX_MAX_PIXEL_SIZE = 0
+private const val KEY_INDEX_CREATE_ALWAYS = 1
+private const val KEY_INDEX_WITH_TRANSFORM = 2
 
 /**
  * File-scope gate that consolidates the input + output iOS-version checks into a single
