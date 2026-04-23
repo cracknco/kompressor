@@ -400,10 +400,7 @@ internal class IosImageCompressor(
         format: ImageFormat,
         quality: Int,
     ): CompressionResult = executeThumbnailWithSource(
-        outputPath = outputPath,
-        maxDimension = maxDimension,
-        format = format,
-        quality = quality,
+        spec = ThumbnailSpec(outputPath, maxDimension, format, quality),
         inputSize = nsFileSize(inputPath),
         detectedFormat = detectInputImageFormat(readHeader(inputPath), fileExtension(inputPath)),
         diagnostic = "path=$inputPath",
@@ -422,10 +419,7 @@ internal class IosImageCompressor(
         format: ImageFormat,
         quality: Int,
     ): CompressionResult = executeThumbnailWithSource(
-        outputPath = outputPath,
-        maxDimension = maxDimension,
-        format = format,
-        quality = quality,
+        spec = ThumbnailSpec(outputPath, maxDimension, format, quality),
         inputSize = data.length.toLong(),
         detectedFormat = detectInputImageFormat(readHeaderFromData(data), extension = ""),
         diagnostic = "len=${data.length}",
@@ -439,30 +433,40 @@ internal class IosImageCompressor(
      * CGImageSource lifecycle (including any CF bridging retain/release pairs).
      */
     private suspend fun executeThumbnailWithSource(
-        outputPath: String,
-        maxDimension: Int,
-        format: ImageFormat,
-        quality: Int,
+        spec: ThumbnailSpec,
         inputSize: Long,
         detectedFormat: InputImageFormat,
         diagnostic: String,
         openSource: () -> CGImageSourceRef,
     ): CompressionResult {
-        throwIfIosIncompatible(format, detectedFormat, iosMajorVersion())
+        throwIfIosIncompatible(spec.format, detectedFormat, iosMajorVersion())
         val startTime = CFAbsoluteTimeGetCurrent()
         val source = openSource()
         currentCoroutineContext().ensureActive()
         try {
-            val thumbnailImage = decodeThumbnailUIImage(source, maxDimension, diagnostic)
+            val thumbnailImage = decodeThumbnailUIImage(source, spec.maxDimension, diagnostic)
             currentCoroutineContext().ensureActive()
-            writeImage(thumbnailImage, outputPath, ImageCompressionConfig(format = format, quality = quality))
+            val thumbnailConfig = ImageCompressionConfig(format = spec.format, quality = spec.quality)
+            writeImage(thumbnailImage, spec.outputPath, thumbnailConfig)
         } finally {
             CFRelease(source)
         }
-        val outputSize = nsFileSize(outputPath)
+        val outputSize = nsFileSize(spec.outputPath)
         val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
         return CompressionResult(inputSize, outputSize, durationMs)
     }
+
+    /**
+     * Output + quality settings for a single thumbnail pass — collapses the four-parameter tail
+     * that both `doThumbnailFromPath` and `doThumbnailFromData` share into a single argument so
+     * `executeThumbnailWithSource` stays under Detekt's default `LongParameterList` ceiling.
+     */
+    private data class ThumbnailSpec(
+        val outputPath: String,
+        val maxDimension: Int,
+        val format: ImageFormat,
+        val quality: Int,
+    )
 
     @Suppress("USELESS_ELVIS")
     private fun openCGImageSourceFromPath(inputPath: String): CGImageSourceRef {
