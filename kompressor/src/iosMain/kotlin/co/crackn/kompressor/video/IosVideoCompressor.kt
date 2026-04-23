@@ -35,8 +35,14 @@ import co.crackn.kompressor.logging.instrumentCompress
 import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.useContents
+import kotlinx.cinterop.value
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -87,6 +93,7 @@ import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.CoreVideo.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+import platform.Foundation.NSError
 import platform.Foundation.NSURL
 import platform.UIKit.UIImage
 import platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
@@ -425,12 +432,13 @@ internal class IosVideoCompressor(
      * `getScaledFrameAtTime`). `requestedTimeToleranceBefore = 0` combined with a 100 ms
      * `requestedTimeToleranceAfter` matches the keyframe-approximation story in the common KDoc.
      */
+    @OptIn(BetaInteropApi::class)
     private fun extractThumbnailCGImage(
         asset: AVURLAsset,
         atMillis: Long,
         maxDimension: Int?,
         inputPath: String,
-    ): CGImageRef {
+    ): CGImageRef = memScoped {
         val generator = AVAssetImageGenerator(asset = asset).apply {
             appliesPreferredTrackTransform = true
             requestedTimeToleranceBefore = CMTimeMake(value = 0, timescale = TIMESCALE_MILLIS)
@@ -445,13 +453,23 @@ internal class IosVideoCompressor(
         // Use CMTimeMake with the millisecond timescale directly — avoids the double-to-CMTime
         // rounding round-trip that CMTimeMakeWithSeconds introduces for no gain here.
         val requestedTime = CMTimeMake(value = atMillis, timescale = TIMESCALE_MILLIS)
-        return generator.copyCGImageAtTime(
+        // Capture the NSError out-param so `DecodingFailed` carries AVFoundation's domain/code
+        // (e.g. AVFoundationErrorDomain / AVErrorNoImageAtTime). Passing `error = null` would
+        // silently drop that diagnostic context and mask codec- vs. container- vs. timestamp-
+        // specific failures behind a single generic message.
+        val errorRef = alloc<ObjCObjectVar<NSError?>>()
+        val cgImage = generator.copyCGImageAtTime(
             requestedTime = requestedTime,
             actualTime = null,
-            error = null,
-        ) ?: throw VideoCompressionError.DecodingFailed(
-            "Failed to extract frame at ${atMillis}ms from $inputPath",
+            error = errorRef.ptr,
         )
+        cgImage ?: run {
+            val nsError = errorRef.value
+            val detail = nsError?.let { " (${it.domain}:${it.code} ${it.localizedDescription})" }.orEmpty()
+            throw VideoCompressionError.DecodingFailed(
+                "Failed to extract frame at ${atMillis}ms from $inputPath$detail",
+            )
+        }
     }
 
     private fun encodeThumbnailCGImage(
@@ -460,10 +478,11 @@ internal class IosVideoCompressor(
         format: ImageFormat,
         quality: Int,
     ) {
-        // `UIImage.imageWithCGImage` preserves the already-oriented pixel buffer from the
+        // `UIImage.imageWithCGImage(_:)` preserves the already-oriented pixel buffer from the
         // generator (appliesPreferredTrackTransform = true baked orientation into the CGImage).
-        // scale = 1.0 avoids the Retina-doubling trap when the resulting UIImage flows into
-        // `UIImageJPEGRepresentation` on the JPEG branch.
+        // The single-arg overload implicitly uses scale=1.0 and orientation=.up, which avoids
+        // the Retina-doubling trap when the resulting UIImage flows into `UIImageJPEGRepresentation`
+        // on the JPEG branch.
         val uiImage = UIImage.imageWithCGImage(cgImage)
         try {
             writeUIImageToFile(uiImage, outputPath, format, quality)

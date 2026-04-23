@@ -546,6 +546,12 @@ internal class AndroidVideoCompressor(
             // Shared encoder surfaces ImageCompressionError; remap to the video hierarchy so
             // `thumbnail()` callers keep their single `when` on VideoCompressionError.
             throw VideoCompressionError.EncodingFailed(e.details, cause = e)
+        } catch (e: ImageCompressionError.UnsupportedOutputFormat) {
+            // `androidOutputGate` upstream already converted known gate failures, but
+            // `Bitmap.compress` can still refuse at runtime on eg. AVIF when the device ships
+            // an older-than-advertised encoder — remap defensively to keep the video `when`
+            // on `VideoCompressionError` (parity with iOS's `encodeThumbnailCGImage`).
+            throw remapImageOutputGate(e)
         }
     }
 
