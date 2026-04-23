@@ -5,11 +5,12 @@
 
 package co.crackn.kompressor.image
 
+import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
+import io.kotest.matchers.doubles.shouldBeLessThan
+import io.kotest.matchers.shouldBe
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Contract tests for the dimension-arithmetic invariants that [ImageCompressor.thumbnail]
@@ -41,8 +42,8 @@ class ImageThumbnailContractTest {
             maxHeight = LARGE_MAX_DIMENSION,
             keepAspectRatio = true,
         )
-        assertEquals(sourceWidth, result.width, "Width must not upscale")
-        assertEquals(sourceHeight, result.height, "Height must not upscale")
+        result.width shouldBe sourceWidth
+        result.height shouldBe sourceHeight
     }
 
     @Test
@@ -56,8 +57,8 @@ class ImageThumbnailContractTest {
             maxHeight = 640,
             keepAspectRatio = true,
         )
-        assertEquals(640, result.width)
-        assertEquals(480, result.height)
+        result.width shouldBe 640
+        result.height shouldBe 480
     }
 
     @Test
@@ -72,18 +73,11 @@ class ImageThumbnailContractTest {
             maxHeight = THUMBNAIL_MAX_DIMENSION,
             keepAspectRatio = true,
         )
-        assertTrue(
-            max(result.width, result.height) <= THUMBNAIL_MAX_DIMENSION,
-            "Long edge ${max(result.width, result.height)} must fit under $THUMBNAIL_MAX_DIMENSION",
-        )
+        max(result.width, result.height) shouldBeLessThanOrEqualTo THUMBNAIL_MAX_DIMENSION
         val sourceRatio = SOURCE_WIDTH.toDouble() / SOURCE_HEIGHT
         val resultRatio = result.width.toDouble() / result.height
         val tolerance = sourceRatio / result.height + ASPECT_RATIO_TOLERANCE
-        assertTrue(
-            abs(sourceRatio - resultRatio) < tolerance,
-            "Aspect ratio drift: source=$sourceRatio got=$resultRatio " +
-                "(${result.width}x${result.height})",
-        )
+        abs(sourceRatio - resultRatio) shouldBeLessThan tolerance
     }
 
     @Test
@@ -99,29 +93,41 @@ class ImageThumbnailContractTest {
             maxHeight = THUMBNAIL_MAX_DIMENSION,
             keepAspectRatio = true,
         )
-        assertTrue(max(result.width, result.height) <= THUMBNAIL_MAX_DIMENSION)
+        max(result.width, result.height) shouldBeLessThanOrEqualTo THUMBNAIL_MAX_DIMENSION
         // Long edge goes to the cap, short edge scales proportionally.
-        assertEquals(THUMBNAIL_MAX_DIMENSION, result.height)
-        assertEquals(150, result.width)
+        result.height shouldBe THUMBNAIL_MAX_DIMENSION
+        result.width shouldBe 150
     }
 
     @Test
     fun calculateInSampleSizePicksPowerOfTwoForLargeThumbnailReduction() {
-        // A 48 MP source (4000×3000) with maxDimension = 200 → the heuristic uses
-        // `halfDim / inSampleSize >= target` as its gate, which stops one step early of what a
-        // naive "decoded ≥ target" would pick. 3000/2/8 = 187 < 200 → loop exits, returns 8.
-        // Pass 2 (exact resize) then finishes the last mile from 500×375 down to 200×150.
+        // Mirrors the production dispatch exactly: `thumbnail()` → `doCompressDirect` runs
+        // `calculateTargetDimensions` first to get the aspect-ratio-preserved target, then
+        // feeds THAT into `calculateInSampleSize`. For a 4:3 source (4000×3000) at maxDim=200
+        // the real target is (200, 150) — NOT (200, 200) — so the sample-size heuristic loops
+        // one extra step: at n=16, halfHeight/n = 1500/16 = 93 < 150 → exits at 16.
+        val target = calculateTargetDimensions(
+            originalWidth = 4000,
+            originalHeight = 3000,
+            maxWidth = THUMBNAIL_MAX_DIMENSION,
+            maxHeight = THUMBNAIL_MAX_DIMENSION,
+            keepAspectRatio = true,
+        )
+        target.width shouldBe THUMBNAIL_MAX_DIMENSION
+        target.height shouldBe 150
         val sample = calculateInSampleSize(
             originalWidth = 4000,
             originalHeight = 3000,
-            targetWidth = THUMBNAIL_MAX_DIMENSION,
-            targetHeight = THUMBNAIL_MAX_DIMENSION,
+            targetWidth = target.width,
+            targetHeight = target.height,
         )
-        assertEquals(8, sample, "inSampleSize should be the largest power-of-2 with halfHeight/n ≥ target")
-        // Sanity: 3000 / 8 = 375 ≥ 200; at n = 16 the `halfHeight / n` gate (1500 / 16 = 93)
-        // falls below 200 so the heuristic stops at 8.
-        assertTrue(3000 / sample >= THUMBNAIL_MAX_DIMENSION)
-        assertTrue(1500 / (sample * 2) < THUMBNAIL_MAX_DIMENSION)
+        // Loop trace for target (200, 150): n=1 → halfH/1=1500 ≥ 150, advance to 2; n=2 → 750, 4;
+        // n=4 → 375, 8; n=8 → 187 ≥ 150, 16; n=16 → 93 < 150 → exit. Final inSampleSize = 16.
+        sample shouldBe 16
+        // Sanity: at n=16 the decoded dims are 250×187 — both ≥ their respective target edges
+        // (200, 150). Pass 2 (exact resize) finishes the last mile from 250×187 down to 200×150.
+        ((3000 / sample) >= target.height) shouldBe true
+        ((4000 / sample) >= target.width) shouldBe true
     }
 
     @Test
@@ -136,7 +142,7 @@ class ImageThumbnailContractTest {
             targetWidth = THUMBNAIL_MAX_DIMENSION,
             targetHeight = THUMBNAIL_MAX_DIMENSION,
         )
-        assertEquals(1, sample)
+        sample shouldBe 1
     }
 
     private companion object {

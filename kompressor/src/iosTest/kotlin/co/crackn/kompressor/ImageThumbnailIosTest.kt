@@ -12,6 +12,9 @@ import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createExifTaggedJpeg
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.readBytes
+import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.runTest
 import platform.CoreGraphics.CGImageGetHeight
@@ -24,8 +27,6 @@ import kotlin.math.max
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Simulator end-to-end tests for [IosImageCompressor.thumbnail]. Sibling of
@@ -69,22 +70,19 @@ class ImageThumbnailIosTest {
             maxDimension = MAX_DIMENSION,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidJpeg(readBytes(output)), "Output should be valid JPEG")
+        result.isSuccess shouldBe true
+        OutputValidators.isValidJpeg(readBytes(output)) shouldBe true
 
         val uiImage = UIImage(contentsOfFile = output)
         val cgImage = uiImage.CGImage!!
         val w = CGImageGetWidth(cgImage).toInt()
         val h = CGImageGetHeight(cgImage).toInt()
-        assertTrue(
-            max(w, h) <= MAX_DIMENSION,
-            "Long edge ${max(w, h)} must fit under $MAX_DIMENSION",
-        )
+        max(w, h) shouldBeLessThanOrEqualTo MAX_DIMENSION
         // 4000×3000 (4:3) capped at 200 → long edge 200, short edge 150 exactly. CGImageSource's
         // sampled-decode math rounds to integers the same way Android's Bitmap.createScaledBitmap
         // does at this ratio, so dimensions line up byte-for-byte between the two platforms.
-        assertEquals(MAX_DIMENSION, w)
-        assertEquals(MAX_SHORT_EDGE, h)
+        w shouldBe MAX_DIMENSION
+        h shouldBe MAX_SHORT_EDGE
     }
 
     @Test
@@ -104,19 +102,16 @@ class ImageThumbnailIosTest {
             maxDimension = MAX_DIMENSION,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
+        result.isSuccess shouldBe true
         val uiImage = UIImage(contentsOfFile = output)
         val cgImage = uiImage.CGImage!!
         val w = CGImageGetWidth(cgImage).toInt()
         val h = CGImageGetHeight(cgImage).toInt()
-        assertTrue(
-            max(w, h) <= MAX_DIMENSION,
-            "Long edge ${max(w, h)} must fit under $MAX_DIMENSION",
-        )
+        max(w, h) shouldBeLessThanOrEqualTo MAX_DIMENSION
         // Post-transform dims: 100×200. maxDim=200 caps the long edge but the source is already
         // at 200 on the long edge after orientation is applied, so no downscale fires.
-        assertEquals(EXIF_SRC_HEIGHT, w)
-        assertEquals(EXIF_SRC_WIDTH, h)
+        w shouldBe EXIF_SRC_HEIGHT
+        h shouldBe EXIF_SRC_WIDTH
     }
 
     @Test
@@ -130,15 +125,9 @@ class ImageThumbnailIosTest {
             maxDimension = 0,
         )
 
-        assertTrue(result.isFailure, "Expected failure for maxDimension=0")
-        assertTrue(
-            result.exceptionOrNull() is IllegalArgumentException,
-            "Expected IllegalArgumentException, got ${result.exceptionOrNull()}",
-        )
-        assertTrue(
-            !NSFileManager.defaultManager.fileExistsAtPath(output),
-            "No output file should be created when args fail validation",
-        )
+        result.isFailure shouldBe true
+        result.exceptionOrNull().shouldBeInstanceOf<IllegalArgumentException>()
+        NSFileManager.defaultManager.fileExistsAtPath(output) shouldBe false
     }
 
     @Test
@@ -152,9 +141,9 @@ class ImageThumbnailIosTest {
             maxDimension = -1,
         )
 
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(!NSFileManager.defaultManager.fileExistsAtPath(output))
+        result.isFailure shouldBe true
+        result.exceptionOrNull().shouldBeInstanceOf<IllegalArgumentException>()
+        NSFileManager.defaultManager.fileExistsAtPath(output) shouldBe false
     }
 
     @Test
@@ -171,12 +160,35 @@ class ImageThumbnailIosTest {
             maxDimension = MAX_DIMENSION,
         )
 
-        assertTrue(result.isSuccess, "thumbnail failed: ${result.exceptionOrNull()}")
-        assertTrue(OutputValidators.isValidJpeg(readBytes(output)))
+        result.isSuccess shouldBe true
+        OutputValidators.isValidJpeg(readBytes(output)) shouldBe true
         val uiImage = UIImage(contentsOfFile = output)
         val cgImage = uiImage.CGImage!!
-        assertEquals(SMALL_DIM, CGImageGetWidth(cgImage).toInt())
-        assertEquals(SMALL_DIM, CGImageGetHeight(cgImage).toInt())
+        CGImageGetWidth(cgImage).toInt() shouldBe SMALL_DIM
+        CGImageGetHeight(cgImage).toInt() shouldBe SMALL_DIM
+    }
+
+    @Test
+    fun thumbnail_bytesInput_exercisesNsDataShortCircuitDispatch() = runTest {
+        // CRA-95 Stream/Bytes short-circuit on iOS: `MediaSource.Local.Bytes` should route through
+        // `UIImage(data:)` → `CGImageSourceCreateWithData` in `doThumbnailFromData` without a
+        // temp-file roundtrip on the input side. Mirrors the Android Bytes dispatch test so the
+        // short-circuit is exercised end-to-end on both platforms.
+        val srcPath = createTestImage(testDir, 800, 600)
+        val srcBytes = readBytes(srcPath)
+        val output = testDir + "thumb_bytes.jpg"
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.Bytes(srcBytes),
+            MediaDestination.Local.FilePath(output),
+            maxDimension = MAX_DIMENSION,
+        )
+
+        result.isSuccess shouldBe true
+        OutputValidators.isValidJpeg(readBytes(output)) shouldBe true
+        val uiImage = UIImage(contentsOfFile = output)
+        val cgImage = uiImage.CGImage!!
+        max(CGImageGetWidth(cgImage).toInt(), CGImageGetHeight(cgImage).toInt()) shouldBeLessThanOrEqualTo MAX_DIMENSION
     }
 
     private companion object {
