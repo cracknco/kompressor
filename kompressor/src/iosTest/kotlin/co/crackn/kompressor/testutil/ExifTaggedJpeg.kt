@@ -36,12 +36,14 @@ import platform.CoreGraphics.CGColorSpaceCreateDeviceRGB
 import platform.CoreGraphics.CGColorSpaceRelease
 import platform.CoreGraphics.CGContextRelease
 import platform.CoreGraphics.CGImageAlphaInfo
+import platform.CoreGraphics.CGImageRef
 import platform.CoreGraphics.CGImageRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSURL
 import platform.ImageIO.CGImageDestinationAddImage
 import platform.ImageIO.CGImageDestinationCreateWithURL
 import platform.ImageIO.CGImageDestinationFinalize
+import platform.ImageIO.CGImageDestinationRef
 import platform.ImageIO.kCGImagePropertyOrientation
 
 /**
@@ -106,7 +108,7 @@ fun createExifTaggedJpeg(testDir: String, width: Int, height: Int, orientation: 
  */
 @Suppress("UNCHECKED_CAST")
 private fun writeJpegWithOrientation(
-    cgImage: kotlinx.cinterop.CPointer<platform.CoreGraphics.CGImage>,
+    cgImage: CGImageRef,
     outPath: String,
     orientation: Int,
 ) {
@@ -130,8 +132,8 @@ private fun writeJpegWithOrientation(
 
 @Suppress("UNCHECKED_CAST")
 private fun writeImageWithOrientationDict(
-    destination: platform.ImageIO.CGImageDestinationRef,
-    cgImage: kotlinx.cinterop.CPointer<platform.CoreGraphics.CGImage>,
+    destination: CGImageDestinationRef,
+    cgImage: CGImageRef,
     orientation: Int,
     outPath: String,
 ) = memScoped {
