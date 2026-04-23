@@ -37,6 +37,7 @@ import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
+import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
@@ -155,7 +156,7 @@ internal class AndroidVideoCompressor(
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.VIDEO,
         startMessage = {
-            "compress() start in=$inputPath out=$outputPath " +
+            "compress() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
                 "codec=${config.codec} dynamicRange=${config.dynamicRange} " +
                 "videoBitrate=${config.videoBitrate} maxRes=${config.maxResolution}"
         },
@@ -163,7 +164,7 @@ internal class AndroidVideoCompressor(
             "compress() ok durationMs=${r.durationMs} " +
                 "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
         },
-        failureMessage = { "compress() failed in=$inputPath" },
+        failureMessage = { "compress() failed in=${redactPath(inputPath)}" },
     ) {
         val startNanos = System.nanoTime()
         onProgress(0f)

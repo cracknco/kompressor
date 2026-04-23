@@ -25,6 +25,7 @@ import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
+import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.BetaInteropApi
@@ -161,7 +162,7 @@ internal class IosAudioCompressor(
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.AUDIO,
         startMessage = {
-            "compress() start in=$inputPath out=$outputPath " +
+            "compress() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
                 "bitrate=${config.bitrate} sampleRate=${config.sampleRate} " +
                 "channels=${config.channels} trackIndex=${config.audioTrackIndex}"
         },
@@ -169,7 +170,7 @@ internal class IosAudioCompressor(
             "compress() ok durationMs=${r.durationMs} " +
                 "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
         },
-        failureMessage = { "compress() failed in=$inputPath" },
+        failureMessage = { "compress() failed in=${redactPath(inputPath)}" },
     ) {
         val startTime = CFAbsoluteTimeGetCurrent()
         onProgress(0f)

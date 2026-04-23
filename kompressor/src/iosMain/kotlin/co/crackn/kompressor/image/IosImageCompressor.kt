@@ -31,6 +31,7 @@ import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
 import co.crackn.kompressor.logging.instrumentCompress
+import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.nsFileSize
 import co.crackn.kompressor.suspendRunCatching
 import kotlinx.cinterop.CPointed
@@ -196,7 +197,7 @@ internal class IosImageCompressor(
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.IMAGE,
         startMessage = {
-            "compress() start in=$inputPath out=$outputPath " +
+            "compress() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
                 "fmt=${config.format} quality=${config.quality} " +
                 "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
         },
@@ -204,7 +205,7 @@ internal class IosImageCompressor(
             "compress() ok durationMs=${r.durationMs} " +
                 "in=${r.inputSize}B out=${r.outputSize}B ratio=${r.compressionRatio}"
         },
-        failureMessage = { "compress() failed in=$inputPath" },
+        failureMessage = { "compress() failed in=${redactPath(inputPath)}" },
     ) {
         try {
             doCompress(inputPath, outputPath, config)
@@ -247,7 +248,7 @@ internal class IosImageCompressor(
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.IMAGE,
         startMessage = {
-            "compress(data) start len=${data.length} out=$outputPath " +
+            "compress(data) start len=${data.length} out=${redactPath(outputPath)} " +
                 "fmt=${config.format} quality=${config.quality} " +
                 "max=${config.maxWidth}x${config.maxHeight} aspect=${config.keepAspectRatio}"
         },
