@@ -405,6 +405,9 @@ class StreamAndBytesEndToEndTest {
     }
 
     private fun assertAvOutputStructurallyEquivalent(novelBytes: ByteArray, legacyBytes: ByteArray) {
+        withClue("Outputs must not be empty. novel=${novelBytes.size} legacy=${legacyBytes.size}") {
+            (novelBytes.isNotEmpty() && legacyBytes.isNotEmpty()) shouldBe true
+        }
         withClue(
             "Output sizes must be equal (AVFoundation timestamp drift does not resize the " +
                 "container). novel=${novelBytes.size} legacy=${legacyBytes.size}",
