@@ -225,7 +225,7 @@ private fun androidUriOutputHandle(dest: AndroidUriMediaDestination): AndroidOut
     // Single shared `cacheDir/kompressor-io` tree so PFD materialisation (via
     // `kompressorTempDir()` → `materializeToTempFile`) and URI-output temp files live under
     // one path — sweeping the directory reclaims both in one `rm -rf`.
-    val tempDir = File(kompressorTempDir().toString()).apply { mkdirs() }
+    val tempDir = kompressorTempDir().toFile().apply { mkdirs() }
     val tempFile = File(tempDir, "kmp_uri_out_${UUID.randomUUID()}.bin")
     return AndroidOutputHandle(
         tempPath = tempFile.absolutePath,
