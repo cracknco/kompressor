@@ -71,10 +71,14 @@ import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
+import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
+import platform.Foundation.closeFile
 import platform.Foundation.create
 import platform.Foundation.dataWithContentsOfFile
+import platform.Foundation.fileHandleForReadingAtPath
+import platform.Foundation.readDataOfLength
 import platform.Foundation.writeToURL
 import okio.buffer
 import platform.Photos.PHAssetMediaTypeImage
@@ -467,9 +471,11 @@ internal class IosImageCompressor(
         val startTime = CFAbsoluteTimeGetCurrent()
         val inputSize = nsFileSize(inputPath)
 
-        if (!NSFileManager.defaultManager.fileExistsAtPath(inputPath)) {
-            throw ImageCompressionError.IoFailed("Input file not found: $inputPath")
-        }
+        // No explicit fileExistsAtPath pre-check — `readHeader` returns an empty ByteArray for
+        // a missing/unreadable file (NSFileHandle fails to open), which `detectInputImageFormat`
+        // then classifies. The real existence gate is `CGImageSourceCreateWithURL` below, which
+        // returns null for a missing file and lets us throw `DecodingFailed` with the same error
+        // shape. Avoids a TOCTOU window between fileExistsAtPath and the open.
         val detectedFormat = detectInputImageFormat(readHeader(inputPath), fileExtension(inputPath))
         throwIfIosIncompatible(format, detectedFormat, iosVersion)
 
@@ -896,8 +902,17 @@ private fun throwIfIosIncompatible(
 }
 
 private fun readHeader(path: String): ByteArray {
-    val data: NSData = NSData.dataWithContentsOfFile(path) ?: return ByteArray(0)
-    return copyPrefixBytes(data)
+    // Read only IMAGE_SNIFF_BYTES — `NSData.dataWithContentsOfFile` would materialise the entire
+    // file (15–20 MB for a 48 MP JPEG) into RAM just to copy the first 32 bytes, defeating the
+    // memory-efficiency goal of the sampled-decode thumbnail path. NSFileHandle reads the exact
+    // prefix length via an `lseek`+`read` under the hood.
+    val handle: NSFileHandle = NSFileHandle.fileHandleForReadingAtPath(path) ?: return ByteArray(0)
+    return try {
+        val data: NSData = handle.readDataOfLength(IMAGE_SNIFF_BYTES.toULong())
+        copyPrefixBytes(data)
+    } finally {
+        handle.closeFile()
+    }
 }
 
 /**

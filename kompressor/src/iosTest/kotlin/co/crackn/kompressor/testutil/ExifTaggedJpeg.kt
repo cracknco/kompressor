@@ -33,6 +33,8 @@ import platform.CoreFoundation.kCFTypeDictionaryValueCallBacks
 import platform.CoreGraphics.CGBitmapContextCreate
 import platform.CoreGraphics.CGBitmapContextCreateImage
 import platform.CoreGraphics.CGColorSpaceCreateDeviceRGB
+import platform.CoreGraphics.CGColorSpaceRelease
+import platform.CoreGraphics.CGContextRelease
 import platform.CoreGraphics.CGImageAlphaInfo
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSURL
@@ -73,59 +75,74 @@ fun createExifTaggedJpeg(testDir: String, width: Int, height: Int, orientation: 
 
     val outPath = testDir + "exif_${orientation}_${width}x$height.jpg"
     pixels.usePinned { pinned ->
+        // Every CF/CG object below is "Create rule" — the caller owns one retain count and must
+        // pair it with a release. Structure the try/finally ladder to release in reverse of
+        // allocation order so partial failures during CGImageDestination setup still unwind the
+        // CGColorSpace / CGBitmapContext we created first.
         val colorSpace = CGColorSpaceCreateDeviceRGB()
-        val ctx = CGBitmapContextCreate(
-            data = pinned.addressOf(0) as kotlinx.cinterop.CValuesRef<kotlinx.cinterop.UByteVar>,
-            width = width.toULong(),
-            height = height.toULong(),
-            bitsPerComponent = BITS_PER_COMPONENT,
-            bytesPerRow = (width * BYTES_PER_PIXEL).toULong(),
-            space = colorSpace,
-            bitmapInfo = CGImageAlphaInfo.kCGImageAlphaPremultipliedLast.value,
-        )
-        val cgImage = checkNotNull(CGBitmapContextCreateImage(ctx)) { "CGBitmapContext failed" }
-
-        val urlCF = CFBridgingRetain(NSURL.fileURLWithPath(outPath)) as CFURLRef?
-            ?: error("Failed to bridge URL")
-        val utiCF = CFBridgingRetain(UTI_JPEG) as CFStringRef?
-            ?: error("Failed to bridge UTI")
+            ?: error("CGColorSpaceCreateDeviceRGB failed")
         try {
-            val destination = CGImageDestinationCreateWithURL(urlCF, utiCF, 1u, null)
-                ?: error("Failed to create CGImageDestination for $outPath")
+            val ctx = CGBitmapContextCreate(
+                data = pinned.addressOf(0) as kotlinx.cinterop.CValuesRef<kotlinx.cinterop.UByteVar>,
+                width = width.toULong(),
+                height = height.toULong(),
+                bitsPerComponent = BITS_PER_COMPONENT,
+                bytesPerRow = (width * BYTES_PER_PIXEL).toULong(),
+                space = colorSpace,
+                bitmapInfo = CGImageAlphaInfo.kCGImageAlphaPremultipliedLast.value,
+            ) ?: error("CGBitmapContextCreate failed")
             try {
-                val props = memScoped {
-                    val orientationVar = alloc<IntVar>().apply { value = orientation }
-                    val orientationNumber: CFNumberRef = checkNotNull(
-                        CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, orientationVar.ptr),
-                    ) { "CFNumberCreate failed" }
-                    val keys = allocArray<COpaquePointerVar>(1)
-                    val values = allocArray<COpaquePointerVar>(1)
-                    keys[0] = kCGImagePropertyOrientation as COpaquePointer?
-                    values[0] = orientationNumber as COpaquePointer
-                    // Build synchronously and let the destination retain; release our temporary
-                    // reference once finalize has run (handled in the outer finally).
-                    val dict = CFDictionaryCreate(
-                        kCFAllocatorDefault, keys, values, 1,
-                        kCFTypeDictionaryKeyCallBacks.ptr, kCFTypeDictionaryValueCallBacks.ptr,
-                    )
-                    dict to orientationNumber
-                }
+                val cgImage = checkNotNull(CGBitmapContextCreateImage(ctx)) { "CGBitmapContextCreateImage failed" }
                 try {
-                    CGImageDestinationAddImage(destination, cgImage, props.first)
-                    check(CGImageDestinationFinalize(destination)) {
-                        "CGImageDestinationFinalize returned false for $outPath"
+                    val urlCF = CFBridgingRetain(NSURL.fileURLWithPath(outPath)) as CFURLRef?
+                        ?: error("Failed to bridge URL")
+                    val utiCF = CFBridgingRetain(UTI_JPEG) as CFStringRef?
+                        ?: error("Failed to bridge UTI")
+                    try {
+                        val destination = CGImageDestinationCreateWithURL(urlCF, utiCF, 1u, null)
+                            ?: error("Failed to create CGImageDestination for $outPath")
+                        try {
+                            val props = memScoped {
+                                val orientationVar = alloc<IntVar>().apply { value = orientation }
+                                val orientationNumber: CFNumberRef = checkNotNull(
+                                    CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, orientationVar.ptr),
+                                ) { "CFNumberCreate failed" }
+                                val keys = allocArray<COpaquePointerVar>(1)
+                                val values = allocArray<COpaquePointerVar>(1)
+                                keys[0] = kCGImagePropertyOrientation as COpaquePointer?
+                                values[0] = orientationNumber as COpaquePointer
+                                // Build synchronously and let the destination retain; release our
+                                // temporary reference once finalize has run (outer finally).
+                                val dict = CFDictionaryCreate(
+                                    kCFAllocatorDefault, keys, values, 1,
+                                    kCFTypeDictionaryKeyCallBacks.ptr, kCFTypeDictionaryValueCallBacks.ptr,
+                                )
+                                dict to orientationNumber
+                            }
+                            try {
+                                CGImageDestinationAddImage(destination, cgImage, props.first)
+                                check(CGImageDestinationFinalize(destination)) {
+                                    "CGImageDestinationFinalize returned false for $outPath"
+                                }
+                            } finally {
+                                if (props.first != null) CFRelease(props.first)
+                                CFRelease(props.second)
+                            }
+                        } finally {
+                            CFRelease(destination)
+                        }
+                    } finally {
+                        CFRelease(utiCF)
+                        CFRelease(urlCF)
                     }
                 } finally {
-                    if (props.first != null) CFRelease(props.first)
-                    CFRelease(props.second)
+                    CFRelease(cgImage)
                 }
             } finally {
-                CFRelease(destination)
+                CGContextRelease(ctx)
             }
         } finally {
-            CFRelease(utiCF)
-            CFRelease(urlCF)
-            CFRelease(cgImage)
+            CGColorSpaceRelease(colorSpace)
         }
     }
     return outPath

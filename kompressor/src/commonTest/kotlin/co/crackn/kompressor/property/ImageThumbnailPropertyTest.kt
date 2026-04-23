@@ -8,13 +8,15 @@ package co.crackn.kompressor.property
 import co.crackn.kompressor.image.calculateInSampleSize
 import co.crackn.kompressor.image.calculateTargetDimensions
 import io.kotest.common.ExperimentalKotest
+import io.kotest.matchers.comparables.shouldBeGreaterThanOrEqualTo
+import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
+import io.kotest.matchers.shouldBe
 import io.kotest.property.Arb
 import io.kotest.property.PropTestConfig
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import kotlin.math.max
 import kotlin.test.Test
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -42,14 +44,10 @@ class ImageThumbnailPropertyTest {
                 w, h, maxDim ->
             val result = calculateTargetDimensions(w, h, maxDim, maxDim, keepAspectRatio = true)
             val longEdge = max(result.width, result.height)
-            val sourceLong = max(w, h)
             // If the source already fits under maxDim the pipeline must NOT upscale, so the
             // long edge stays bounded by the source. Otherwise it lands at or below maxDim.
-            val expectedBound = minOf(maxDim, sourceLong)
-            assertTrue(
-                longEdge <= expectedBound,
-                "Long edge $longEdge exceeds bound $expectedBound (source=${w}x$h, maxDim=$maxDim)",
-            )
+            val expectedBound = minOf(maxDim, max(w, h))
+            longEdge shouldBeLessThanOrEqualTo expectedBound
         }
     }
 
@@ -61,10 +59,8 @@ class ImageThumbnailPropertyTest {
         checkAll(config, Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(MAX_MIN..MAX_MAX)) {
                 w, h, maxDim ->
             val result = calculateTargetDimensions(w, h, maxDim, maxDim, keepAspectRatio = true)
-            assertTrue(
-                result.width >= 1 && result.height >= 1,
-                "Non-positive output ${result.width}x${result.height} for source=${w}x$h maxDim=$maxDim",
-            )
+            result.width shouldBeGreaterThanOrEqualTo 1
+            result.height shouldBeGreaterThanOrEqualTo 1
         }
     }
 
@@ -77,8 +73,8 @@ class ImageThumbnailPropertyTest {
         checkAll(config, Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(MAX_MIN..MAX_MAX)) {
                 w, h, maxDim ->
             val result = calculateTargetDimensions(w, h, maxDim, maxDim, keepAspectRatio = true)
-            assertTrue(result.width <= w, "Width ${result.width} > source $w (maxDim=$maxDim)")
-            assertTrue(result.height <= h, "Height ${result.height} > source $h (maxDim=$maxDim)")
+            result.width shouldBeLessThanOrEqualTo w
+            result.height shouldBeLessThanOrEqualTo h
         }
     }
 
@@ -87,39 +83,40 @@ class ImageThumbnailPropertyTest {
         // `calculateInSampleSize` feeds `BitmapFactory.Options.inSampleSize` on the Android path;
         // the platform API requires a power of two and clamps everything else to the nearest one
         // below. A regression that returns 0 (divides-by-zero downstream) or a non-power-of-two
-        // (silently clamped, hidden reduction shifts) must trip here.
+        // (silently clamped, hidden reduction shifts) must trip here. Mirror the production
+        // dispatch: the Android compressor computes an aspect-preserved `target` via
+        // `calculateTargetDimensions` FIRST, then passes `target.width × target.height` to
+        // `calculateInSampleSize` — not `maxDim × maxDim`.
         checkAll(config, Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(MAX_MIN..MAX_MAX)) {
                 w, h, maxDim ->
-            val sample = calculateInSampleSize(w, h, maxDim, maxDim)
-            assertTrue(sample >= 1, "inSampleSize $sample must be ≥ 1 (source=${w}x$h, maxDim=$maxDim)")
+            val target = calculateTargetDimensions(w, h, maxDim, maxDim, keepAspectRatio = true)
+            val sample = calculateInSampleSize(w, h, target.width, target.height)
+            sample shouldBeGreaterThanOrEqualTo 1
             // Power-of-two check: x & (x - 1) == 0 iff x is 0 or a power of two. Since we
             // already asserted sample ≥ 1, the 0 case is ruled out.
-            assertTrue(
-                (sample and (sample - 1)) == 0,
-                "inSampleSize $sample is not a power of 2 (source=${w}x$h, maxDim=$maxDim)",
-            )
+            (sample and (sample - 1)) shouldBe 0
         }
     }
 
     @Test
     fun sampleSizeKeepsDecodedDimensionsAtOrAboveTarget() = runTest {
         // Sampled-decode invariant: the chosen `inSampleSize` must leave decoded dimensions at
-        // or above the target on *both* axes. If the next power of two would drop a dimension
-        // below the target, the heuristic must stop at the current one. Pass 2 (exact resize)
-        // is responsible for the final downscale from "≥ target" to "= target".
+        // or above the aspect-preserved target on *both* axes. If the next power of two would
+        // drop a dimension below the target, the heuristic must stop at the current one. Pass 2
+        // (exact resize) is responsible for the final downscale from "≥ target" to "= target".
+        // Same production-path alignment as the companion test above — feed the real target, not
+        // the `maxDim × maxDim` square.
         checkAll(config, Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(SOURCE_MIN..SOURCE_MAX), Arb.int(MAX_MIN..MAX_MAX)) {
                 w, h, maxDim ->
-            val sample = calculateInSampleSize(w, h, maxDim, maxDim)
+            val target = calculateTargetDimensions(w, h, maxDim, maxDim, keepAspectRatio = true)
+            val sample = calculateInSampleSize(w, h, target.width, target.height)
             val decodedW = w / sample
             val decodedH = h / sample
             // Only meaningful when a reduction happens. When source is already smaller than
-            // maxDim the sample is 1, decoded==source, which may legitimately sit below maxDim.
+            // the target the sample is 1, decoded==source, which may legitimately sit at the
+            // source's pixel dimensions (no upscale).
             if (max(w, h) > maxDim) {
-                assertTrue(
-                    decodedW >= maxDim || decodedH >= maxDim,
-                    "Sample=$sample over-reduces: decoded=${decodedW}x$decodedH, target=$maxDim " +
-                        "(source=${w}x$h)",
-                )
+                (decodedW >= target.width || decodedH >= target.height) shouldBe true
             }
         }
     }
