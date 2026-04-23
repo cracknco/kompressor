@@ -49,6 +49,41 @@ internal class AndroidImageCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : ImageCompressor {
 
+    override suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        maxDimension: Int,
+        format: ImageFormat,
+        quality: Int,
+    ): Result<CompressionResult> {
+        // Fail-fast outside the suspendRunCatching so the IllegalArgumentException surfaces as
+        // Result.failure via the standard compress() argument-validation path. ImageCompressionConfig
+        // already validates `maxWidth > 0` / `maxHeight > 0`, but we intercept [maxDimension]
+        // ourselves to produce a message that names the public parameter the caller passed.
+        if (maxDimension <= 0) {
+            return Result.failure(
+                IllegalArgumentException("maxDimension must be > 0, was $maxDimension"),
+            )
+        }
+        // Sampled decode is already the default path in [compress]: `decodeSampledBitmap` uses
+        // `BitmapFactory.Options.inSampleSize` (Pass 1 bounds-only, Pass 2 power-of-2 sample)
+        // whenever `maxWidth`/`maxHeight` are set. The exact final resize is applied by
+        // `resizeBitmapIfNeeded` when `inSampleSize` can't hit the target edge exactly.
+        // Bounding both dimensions to [maxDimension] and keeping the aspect ratio gives the
+        // contractual "longer edge ≤ maxDimension" + "aspect preserved" + "no upscale" shape.
+        return compress(
+            input = input,
+            output = output,
+            config = ImageCompressionConfig(
+                format = format,
+                quality = quality,
+                maxWidth = maxDimension,
+                maxHeight = maxDimension,
+                keepAspectRatio = true,
+            ),
+        )
+    }
+
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,

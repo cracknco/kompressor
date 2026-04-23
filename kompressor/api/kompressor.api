@@ -612,10 +612,13 @@ public final class co/crackn/kompressor/image/ImageCompressionError$UnsupportedS
 public abstract interface class co/crackn/kompressor/image/ImageCompressor {
 	public abstract fun compress-BWLJW6A (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun thumbnail-hUnOzRk (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;ILco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun thumbnail-hUnOzRk$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;ILco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/image/ImageCompressor$DefaultImpls {
 	public static synthetic fun compress-BWLJW6A$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/image/ImageCompressionConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun thumbnail-hUnOzRk$default (Lco/crackn/kompressor/image/ImageCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;ILco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/image/ImageFormat : java/lang/Enum {
