@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import okio.source
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -206,6 +207,31 @@ class VideoThumbnailDeviceTest {
                 maxDimension = 0,
             )
         }
+    }
+
+    @Test
+    fun thumbnail_streamInput_bitwiseIdenticalToFilePath() = runTest {
+        // Locks the `Stream` → `materializeToTempFile` → `thumbnailFilePath` handoff so a
+        // regression in the materializer (e.g. early-EOF, wrong content-length) wouldn't ship
+        // silently behind the FilePath-only test matrix.
+        val legacyOut = File(tempDir, "legacy_stream.jpg")
+        val streamOut = File(tempDir, "stream_stream.jpg")
+
+        val legacy = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
+        )
+        val stream = compressor.thumbnail(
+            MediaSource.Local.Stream(inputFile.inputStream().source(), sizeHint = inputFile.length()),
+            MediaDestination.Local.FilePath(streamOut.absolutePath),
+        )
+
+        assertTrue(legacy.isSuccess, "legacy thumbnail() failed: ${legacy.exceptionOrNull()}")
+        assertTrue(stream.isSuccess, "stream thumbnail() failed: ${stream.exceptionOrNull()}")
+        assertTrue(
+            streamOut.readBytes().contentEquals(legacyOut.readBytes()),
+            "Stream input must produce byte-identical output to legacy FilePath",
+        )
     }
 
     private companion object {

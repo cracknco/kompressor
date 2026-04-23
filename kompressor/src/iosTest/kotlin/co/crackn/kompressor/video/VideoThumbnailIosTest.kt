@@ -23,6 +23,7 @@ import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.test.runTest
+import okio.Buffer
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
@@ -209,6 +210,37 @@ class VideoThumbnailIosTest {
             error is VideoCompressionError.EncodingFailed,
             "Expected EncodingFailed (remapped from UnsupportedOutputFormat), " +
                 "got ${error?.let { it::class.simpleName }}: $error",
+        )
+    }
+
+    @Test
+    fun thumbnail_streamInput_matchesFilePathOutcome() = runTest {
+        // Locks the `Stream` → `materializeToTempFile` → `thumbnailFilePath` handoff so a
+        // regression in the materializer (e.g. early-EOF, wrong content-length) wouldn't ship
+        // silently behind the FilePath-only test matrix. JPEG re-encode through
+        // `writeUIImageToFile` is deterministic, so bitwise comparison holds (no AVFoundation
+        // wall-clock timestamps in the still-image output, unlike the audio/video sibling).
+        val inputBytes = readBytes(inputPath)
+        val legacyPath = testDir + "legacy_stream.jpg"
+        val streamPath = testDir + "stream_stream.jpg"
+
+        val legacy = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+        )
+        val stream = compressor.thumbnail(
+            MediaSource.Local.Stream(
+                Buffer().apply { write(inputBytes) },
+                sizeHint = inputBytes.size.toLong(),
+            ),
+            MediaDestination.Local.FilePath(streamPath),
+        )
+
+        assertTrue(legacy.isSuccess, "legacy thumbnail() failed: ${legacy.exceptionOrNull()}")
+        assertTrue(stream.isSuccess, "stream thumbnail() failed: ${stream.exceptionOrNull()}")
+        assertTrue(
+            readBytes(streamPath).contentEquals(readBytes(legacyPath)),
+            "Stream input must produce byte-identical output to legacy FilePath",
         )
     }
 
