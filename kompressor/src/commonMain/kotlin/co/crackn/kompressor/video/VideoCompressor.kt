@@ -6,6 +6,8 @@
 package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.ExperimentalKompressorApi
+import co.crackn.kompressor.image.ImageFormat
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
@@ -86,5 +88,59 @@ public interface VideoCompressor {
         output: MediaDestination,
         config: VideoCompressionConfig = VideoCompressionConfig(),
         onProgress: suspend (CompressionProgress) -> Unit = {},
+    ): Result<CompressionResult>
+
+    /**
+     * Extract a still frame from [input] at [atMillis] offset and encode it to [output] as an
+     * image in the requested [format].
+     *
+     * **Rotation:** the source's natural orientation is preserved — a portrait recording
+     * produces a portrait thumbnail. Android applies the video track's rotation tag while
+     * decoding via `MediaMetadataRetriever`; iOS sets
+     * `AVAssetImageGenerator.appliesPreferredTrackTransform = true` so the generator honours
+     * the track's `preferredTransform`. Callers should assert on *displayed* dimensions
+     * (portrait → `height > width`) rather than on the raw decoder buffer.
+     *
+     * **Keyframe selection:** both platforms default to the nearest keyframe (Android's
+     * `OPTION_CLOSEST_SYNC`, iOS's 100 ms after-tolerance) — fast and memory-cheap. Exact
+     * frame-accurate extraction is out of scope for this release.
+     *
+     * **Error types.** Failures surface as [VideoCompressionError] subtypes in `Result.failure`:
+     *  - [VideoCompressionError.TimestampOutOfRange] when `atMillis > duration`,
+     *  - [VideoCompressionError.DecodingFailed] when the frame at the requested offset can't be
+     *    extracted (valid offset, codec / container issue),
+     *  - [VideoCompressionError.SourceNotFound] / [VideoCompressionError.IoFailed] for the
+     *    resolver and I/O paths shared with [compress].
+     *
+     * Requesting `atMillis < 0`, `quality !in 0..100`, or `maxDimension <= 0` is a programmer
+     * error and throws [IllegalArgumentException] synchronously — these aren't recoverable
+     * runtime states.
+     *
+     * @param input Source video — see [MediaSource] and platform-specific builders.
+     * @param output Destination for the still image — see [MediaDestination].
+     * @param atMillis Offset from the start of the video, in milliseconds. `0` extracts a frame
+     *   from the very beginning. Must be `>= 0` and `<= duration`.
+     * @param maxDimension Optional downscale target applied to the longer edge. `null` keeps
+     *   the frame's native (oriented) resolution. On Android API 27+ the downscale happens
+     *   during decode (`getScaledFrameAtTime`) so peak heap stays bounded on 1080p+ sources.
+     * @param format Output image format. Availability follows [ImageFormat] — HEIC is iOS-only,
+     *   AVIF requires Android API 34+ / iOS 16+, WebP is Android-only.
+     * @param quality Lossy encoder quality, 0..100.
+     * @return [Result] wrapping [CompressionResult] on success where `inputSize` is the source
+     *   video's byte count and `outputSize` is the encoded still's byte count.
+     */
+    @ExperimentalKompressorApi
+    // LongParameterList suppressed: every parameter is an orthogonal caller concern (source,
+    // destination, offset, downscale cap, encoder format, encoder quality) with well-defined
+    // defaults. Wrapping them in a config object would mirror the public API with no added
+    // type safety and diverge from `compress()`'s flat signature.
+    @Suppress("LongParameterList")
+    public suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        atMillis: Long = 0L,
+        maxDimension: Int? = null,
+        format: ImageFormat = ImageFormat.JPEG,
+        quality: Int = 80,
     ): Result<CompressionResult>
 }

@@ -146,4 +146,32 @@ class VideoCompressionErrorTest {
     fun tempFileFailedCauseDefaultsToNull() {
         VideoCompressionError.TempFileFailed("x").cause shouldBe null
     }
+
+    // ── CRA-109 M12 T2: thumbnail() timestamp-out-of-range variant ────────
+    //
+    // Same shape as the CRA-90 I/O variants: data class, `details + cause = null` defaults,
+    // message-contains-details, extends the sealed parent. Grouped in a block of three so a
+    // regression (rename, deleted default, moved message prefix) fails loudly.
+
+    @Test
+    fun timestampOutOfRangeCarriesDetailsAndCause() {
+        val cause = RuntimeException("boom")
+        val err = VideoCompressionError.TimestampOutOfRange("atMillis=5000 > duration=3000", cause)
+        err.details shouldBe "atMillis=5000 > duration=3000"
+        err.cause shouldBe cause
+        err shouldBe VideoCompressionError.TimestampOutOfRange("atMillis=5000 > duration=3000", cause)
+        checkNotNull(err.message) shouldContain "Timestamp out of range"
+        checkNotNull(err.message) shouldContain "atMillis=5000"
+    }
+
+    @Test
+    fun timestampOutOfRangeExtendsVideoCompressionError() {
+        val err: VideoCompressionError = VideoCompressionError.TimestampOutOfRange("x")
+        err.shouldBeInstanceOf<VideoCompressionError>()
+    }
+
+    @Test
+    fun timestampOutOfRangeCauseDefaultsToNull() {
+        VideoCompressionError.TimestampOutOfRange("x").cause shouldBe null
+    }
 }

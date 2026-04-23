@@ -961,6 +961,20 @@ public final class co/crackn/kompressor/video/VideoCompressionError$TempFileFail
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class co/crackn/kompressor/video/VideoCompressionError$TimestampOutOfRange : co/crackn/kompressor/video/VideoCompressionError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Lco/crackn/kompressor/video/VideoCompressionError$TimestampOutOfRange;
+	public static synthetic fun copy$default (Lco/crackn/kompressor/video/VideoCompressionError$TimestampOutOfRange;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Lco/crackn/kompressor/video/VideoCompressionError$TimestampOutOfRange;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCause ()Ljava/lang/Throwable;
+	public final fun getDetails ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class co/crackn/kompressor/video/VideoCompressionError$Unknown : co/crackn/kompressor/video/VideoCompressionError {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -994,12 +1008,15 @@ public abstract interface class co/crackn/kompressor/video/VideoCompressor {
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public fun getSupportedInputFormats ()Ljava/util/Set;
 	public fun getSupportedOutputFormats ()Ljava/util/Set;
+	public abstract fun thumbnail-bMdYcbs (Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;JLjava/lang/Integer;Lco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun thumbnail-bMdYcbs$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;JLjava/lang/Integer;Lco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/video/VideoCompressor$DefaultImpls {
 	public static synthetic fun compress-yxL6bBk$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;Lco/crackn/kompressor/video/VideoCompressionConfig;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static fun getSupportedInputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;
 	public static fun getSupportedOutputFormats (Lco/crackn/kompressor/video/VideoCompressor;)Ljava/util/Set;
+	public static synthetic fun thumbnail-bMdYcbs$default (Lco/crackn/kompressor/video/VideoCompressor;Lco/crackn/kompressor/io/MediaSource;Lco/crackn/kompressor/io/MediaDestination;JLjava/lang/Integer;Lco/crackn/kompressor/image/ImageFormat;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class co/crackn/kompressor/video/VideoPresets {

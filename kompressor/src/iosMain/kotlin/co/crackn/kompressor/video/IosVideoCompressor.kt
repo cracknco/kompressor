@@ -8,12 +8,18 @@
 package co.crackn.kompressor.video
 
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.awaitExportSession
 import co.crackn.kompressor.cinterop.KMP_safeCreateWriterInput
 import co.crackn.kompressor.awaitWriterFinish
 import co.crackn.kompressor.awaitWriterReady
 import co.crackn.kompressor.checkWriterCompleted
 import co.crackn.kompressor.deletingOutputOnFailure
+import co.crackn.kompressor.image.ImageCompressionError
+import co.crackn.kompressor.image.ImageFormat
+import co.crackn.kompressor.image.iosMajorVersion
+import co.crackn.kompressor.image.iosOutputGate
+import co.crackn.kompressor.image.writeUIImageToFile
 import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
@@ -40,6 +46,7 @@ import kotlinx.coroutines.launch
 import platform.AVFoundation.AVAssetExportPresetHEVCHighestQuality
 import platform.AVFoundation.AVAssetExportPresetMediumQuality
 import platform.AVFoundation.AVAssetExportSession
+import platform.AVFoundation.AVAssetImageGenerator
 import platform.AVFoundation.AVAssetReader
 import platform.AVFoundation.AVAssetReaderStatusFailed
 import platform.AVFoundation.AVAssetReaderTrackOutput
@@ -67,19 +74,24 @@ import platform.AVFoundation.AVVideoTransferFunction_SMPTE_ST_2084_PQ
 import platform.AVFoundation.AVVideoWidthKey
 import platform.AVFoundation.AVVideoYCbCrMatrixKey
 import platform.AVFoundation.AVVideoYCbCrMatrix_ITU_R_2020
+import platform.AVFoundation.duration
 import platform.AVFoundation.naturalSize
 import platform.AVFoundation.preferredTransform
 import platform.AVFoundation.setTransform
 import platform.AVFoundation.tracksWithMediaType
 import platform.CoreFoundation.CFAbsoluteTimeGetCurrent
 import platform.CoreFoundation.CFRelease
+import platform.CoreGraphics.CGImageRef
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
+import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.CoreVideo.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
 import platform.Foundation.NSURL
+import platform.UIKit.UIImage
 import platform.VideoToolbox.kVTProfileLevel_HEVC_Main10_AutoLevel
+import platform.CoreGraphics.CGSizeMake
 
 // Baseline input/output MIME coverage for AVFoundation on iOS 15+. VideoToolbox
 // can decode additional formats on newer chipsets (ProRes, VP9), but H.264 +
@@ -91,6 +103,12 @@ private val IOS_SUPPORTED_OUTPUT_MIMES: Set<String> = setOf("video/avc", "video/
 
 /** iOS video compressor backed by [AVAssetReader] and [AVAssetWriter]. */
 @OptIn(ExperimentalForeignApi::class)
+// TooManyFunctions suppressed: CRA-109 added the `thumbnail()` override plus
+// `thumbnailFilePath` / `extractThumbnailCGImage` / `encodeThumbnailCGImage` / `remapImageOutputGate`
+// helpers, which are tightly scoped to the frame-extraction pipeline that has no plausible
+// alternative host. Splitting into a separate file would fragment the shared typed-error /
+// instrumentation glue with the main compress path.
+@Suppress("TooManyFunctions")
 internal class IosVideoCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : VideoCompressor {
@@ -297,8 +315,183 @@ internal class IosVideoCompressor(
         }
     }
 
+    @ExperimentalKompressorApi
+    // LongMethod suppressed: body is dominated by the `require(...)` contract checks, the
+    // `suspendRunCatching` wrapper, and the nested try/finally pairs that own the input-handle
+    // (PHAsset remap) and output-handle (temp-path commit/cleanup) lifecycles. Splitting would
+    // fragment error remapping from the lifecycle it guards.
+    @Suppress("LongMethod")
+    override suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        atMillis: Long,
+        maxDimension: Int?,
+        format: ImageFormat,
+        quality: Int,
+    ): Result<CompressionResult> {
+        require(atMillis >= 0) { "atMillis must be >= 0 (was $atMillis)" }
+        require(quality in 0..MAX_QUALITY) { "quality must be in 0..100 (was $quality)" }
+        require(maxDimension == null || maxDimension > 0) {
+            "maxDimension must be > 0 or null (was $maxDimension)"
+        }
+        return suspendRunCatching {
+            // Gate the output format up front (AVIF on iOS 15, WEBP always). Remap the image
+            // hierarchy's typed error to the video hierarchy so consumers `when`-branch on
+            // VideoCompressionError.
+            iosOutputGate(format, iosMajorVersion())?.let { throw remapImageOutputGate(it) }
+            val inHandle = try {
+                input.toIosInputPath(mediaType = MediaType.VIDEO, logger = logger)
+            } catch (e: PHAssetIcloudOnlyException) {
+                throw VideoCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+            } catch (e: PHAssetResolutionException) {
+                throw VideoCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+            }
+            try {
+                val outHandle = output.toIosOutputHandle()
+                try {
+                    val result = thumbnailFilePath(
+                        inHandle.path, outHandle.tempPath,
+                        atMillis, maxDimension, format, quality,
+                    )
+                    outHandle.commit()
+                    result
+                } finally {
+                    outHandle.cleanup()
+                }
+            } finally {
+                inHandle.cleanup()
+            }
+        }
+    }
+
+    // LongMethod suppressed: the `instrumentCompress` block wraps observability around the
+    // duration probe, typed-error remapping, CGImage extraction, and CFRelease cleanup. These
+    // steps share the timing/size bookkeeping and cannot be split without leaking the
+    // instrumentation boundary.
+    @Suppress("LongParameterList", "LongMethod")
+    private suspend fun thumbnailFilePath(
+        inputPath: String,
+        outputPath: String,
+        atMillis: Long,
+        maxDimension: Int?,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult = logger.instrumentCompress(
+        tag = LogTags.VIDEO,
+        startMessage = {
+            "thumbnail() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
+                "atMillis=$atMillis max=$maxDimension fmt=$format quality=$quality"
+        },
+        successMessage = { r ->
+            "thumbnail() ok durationMs=${r.durationMs} " +
+                "in=${r.inputSize}B out=${r.outputSize}B"
+        },
+        failureMessage = { "thumbnail() failed in=${redactPath(inputPath)}" },
+    ) {
+        val startTime = CFAbsoluteTimeGetCurrent()
+        val inputSize = sizeOrTypedError(inputPath)
+        runPipelineWithTypedErrors(outputPath) {
+            val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+            val durationSec = CMTimeGetSeconds(asset.duration)
+            // AVURLAsset.duration is in seconds; convert to ms and treat negative/NaN (unreadable
+            // asset) as 0 so the comparison below still raises the caller-friendly typed error.
+            val durationMs = if (durationSec.isFinite() && durationSec > 0.0) {
+                (durationSec * MILLIS_PER_SEC).toLong()
+            } else {
+                0L
+            }
+            if (atMillis > durationMs) {
+                throw VideoCompressionError.TimestampOutOfRange(
+                    "atMillis=$atMillis > duration=$durationMs",
+                )
+            }
+            val cgImage = extractThumbnailCGImage(asset, atMillis, maxDimension, inputPath)
+            try {
+                encodeThumbnailCGImage(cgImage, outputPath, format, quality)
+            } finally {
+                CFRelease(cgImage)
+            }
+        }
+        val outputSize = sizeOrTypedError(outputPath)
+        val durationMs = ((CFAbsoluteTimeGetCurrent() - startTime) * MILLIS_PER_SEC).toLong()
+        CompressionResult(inputSize, outputSize, durationMs)
+    }
+
+    /**
+     * Extract a keyframe near [atMillis] via [AVAssetImageGenerator]. `appliesPreferredTrackTransform
+     * = true` honours the track's display orientation so portrait recordings stay portrait;
+     * `maximumSize` caps the longer edge via AVFoundation's own downscale (equivalent to Android's
+     * `getScaledFrameAtTime`). `requestedTimeToleranceBefore = 0` combined with a 100 ms
+     * `requestedTimeToleranceAfter` matches the keyframe-approximation story in the common KDoc.
+     */
+    private fun extractThumbnailCGImage(
+        asset: AVURLAsset,
+        atMillis: Long,
+        maxDimension: Int?,
+        inputPath: String,
+    ): CGImageRef {
+        val generator = AVAssetImageGenerator(asset = asset).apply {
+            appliesPreferredTrackTransform = true
+            requestedTimeToleranceBefore = CMTimeMake(value = 0, timescale = TIMESCALE_MILLIS)
+            requestedTimeToleranceAfter = CMTimeMake(
+                value = TOLERANCE_AFTER_MILLIS,
+                timescale = TIMESCALE_MILLIS,
+            )
+            if (maxDimension != null) {
+                maximumSize = CGSizeMake(maxDimension.toDouble(), maxDimension.toDouble())
+            }
+        }
+        val requestedTime = CMTimeMakeWithSeconds(
+            seconds = atMillis.toDouble() / MILLIS_PER_SEC,
+            preferredTimescale = TIMESCALE_MILLIS,
+        )
+        return generator.copyCGImageAtTime(
+            requestedTime = requestedTime,
+            actualTime = null,
+            error = null,
+        ) ?: throw VideoCompressionError.DecodingFailed(
+            "Failed to extract frame at ${atMillis}ms from $inputPath",
+        )
+    }
+
+    private fun encodeThumbnailCGImage(
+        cgImage: CGImageRef,
+        outputPath: String,
+        format: ImageFormat,
+        quality: Int,
+    ) {
+        // `UIImage.imageWithCGImage` preserves the already-oriented pixel buffer from the
+        // generator (appliesPreferredTrackTransform = true baked orientation into the CGImage).
+        // scale = 1.0 avoids the Retina-doubling trap when the resulting UIImage flows into
+        // `UIImageJPEGRepresentation` on the JPEG branch.
+        val uiImage = UIImage.imageWithCGImage(cgImage)
+        try {
+            writeUIImageToFile(uiImage, outputPath, format, quality)
+        } catch (e: ImageCompressionError.EncodingFailed) {
+            throw VideoCompressionError.EncodingFailed(e.details, cause = e)
+        } catch (e: ImageCompressionError.UnsupportedOutputFormat) {
+            // The iosOutputGate upstream already converted known gate failures, but
+            // CGImageDestinationCreateWithURL can still refuse at runtime on eg. AVIF over
+            // older SDKs than our matrix advertises — remap defensively.
+            throw remapImageOutputGate(e)
+        }
+    }
+
+    private fun remapImageOutputGate(
+        err: ImageCompressionError.UnsupportedOutputFormat,
+    ): VideoCompressionError.EncodingFailed = VideoCompressionError.EncodingFailed(
+        "Thumbnail output format '${err.format}' unsupported on iOS " +
+            "(requires iOS ${err.minApi}+)",
+        cause = err,
+    )
+
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
+        const val MAX_QUALITY = 100
+        // AVFoundation uses CMTime for timestamps; a 1 ms timescale lets us pass `atMillis`
+        // as the `value` component directly and keeps the 100 ms tolerance arithmetic obvious.
+        const val TIMESCALE_MILLIS = 1000
+        const val TOLERANCE_AFTER_MILLIS = 100L
 
         // Minimum probe dimension for `canApplyOutputSettings` HDR10 pre-flight.
         // 16×16 returns false on some devices; 64×64 matches the fixture and works reliably.
