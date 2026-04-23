@@ -15,6 +15,7 @@ import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
 import java.io.File
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -38,7 +39,12 @@ class VideoThumbnailDeviceTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        tempDir = File(context.cacheDir, "kompressor-video-thumbnail-test").apply { mkdirs() }
+        // UUID suffix mirrors the iOS sibling's `NSUUID().UUIDString` and future-proofs against
+        // parallel test-class sharding under `testInstrumentationRunnerArguments`.
+        tempDir = File(
+            context.cacheDir,
+            "kompressor-video-thumbnail-test-${UUID.randomUUID()}",
+        ).apply { mkdirs() }
         inputFile = Mp4Generator.generateMp4(
             output = File(tempDir, "input.mp4"),
             width = INPUT_WIDTH,

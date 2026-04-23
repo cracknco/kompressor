@@ -85,7 +85,6 @@ import platform.CoreGraphics.CGImageRef
 import platform.CoreMedia.CMSampleBufferGetPresentationTimeStamp
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMake
-import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.CoreVideo.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
 import platform.Foundation.NSURL
@@ -393,18 +392,20 @@ internal class IosVideoCompressor(
         runPipelineWithTypedErrors(outputPath) {
             val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
             val durationSec = CMTimeGetSeconds(asset.duration)
-            // AVURLAsset.duration is in seconds; convert to ms and treat negative/NaN (unreadable
-            // asset) as 0 so the comparison below still raises the caller-friendly typed error.
-            val durationMs = if (durationSec.isFinite() && durationSec > 0.0) {
-                (durationSec * MILLIS_PER_SEC).toLong()
-            } else {
-                0L
+            // Only enforce the out-of-range guard when the asset actually reported a positive
+            // duration. `NaN` / negative comes back from corrupted containers and some codec
+            // parser quirks — treating that as `duration=0` would surface a misleading
+            // `TimestampOutOfRange` for any non-zero `atMillis`, so defer classification to the
+            // decode path which fails with `DecodingFailed`.
+            if (durationSec.isFinite() && durationSec > 0.0) {
+                val durationMs = (durationSec * MILLIS_PER_SEC).toLong()
+                if (atMillis > durationMs) {
+                    throw VideoCompressionError.TimestampOutOfRange(
+                        "atMillis=$atMillis > duration=$durationMs",
+                    )
+                }
             }
-            if (atMillis > durationMs) {
-                throw VideoCompressionError.TimestampOutOfRange(
-                    "atMillis=$atMillis > duration=$durationMs",
-                )
-            }
+            currentCoroutineContext().ensureActive()
             val cgImage = extractThumbnailCGImage(asset, atMillis, maxDimension, inputPath)
             try {
                 encodeThumbnailCGImage(cgImage, outputPath, format, quality)
@@ -441,10 +442,9 @@ internal class IosVideoCompressor(
                 maximumSize = CGSizeMake(maxDimension.toDouble(), maxDimension.toDouble())
             }
         }
-        val requestedTime = CMTimeMakeWithSeconds(
-            seconds = atMillis.toDouble() / MILLIS_PER_SEC,
-            preferredTimescale = TIMESCALE_MILLIS,
-        )
+        // Use CMTimeMake with the millisecond timescale directly — avoids the double-to-CMTime
+        // rounding round-trip that CMTimeMakeWithSeconds introduces for no gain here.
+        val requestedTime = CMTimeMake(value = atMillis, timescale = TIMESCALE_MILLIS)
         return generator.copyCGImageAtTime(
             requestedTime = requestedTime,
             actualTime = null,

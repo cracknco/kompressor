@@ -49,7 +49,10 @@ import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -424,7 +427,7 @@ internal class AndroidVideoCompressor(
      * `null` for a valid offset (mid-stream corruption, OEM codec bug).
      */
     @Suppress("ThrowsCount")
-    private fun extractThumbnailBitmap(
+    private suspend fun extractThumbnailBitmap(
         inputPath: String,
         atMillis: Long,
         maxDimension: Int?,
@@ -433,16 +436,24 @@ internal class AndroidVideoCompressor(
         try {
             try {
                 mmr.applyDataSource(inputPath)
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
                 throw VideoCompressionError.SourceNotFound("Cannot open source: $inputPath", cause = t)
             }
+            // Only enforce the out-of-range guard when the retriever actually reported a
+            // positive duration. `null` / `0` comes back from fragmented MP4s, some MKVs, and
+            // buggy OEM retrievers on otherwise-playable files — falling back to `duration=0`
+            // would surface a misleading `TimestampOutOfRange` for any non-zero `atMillis`, so
+            // defer classification to the decode path which fails with `DecodingFailed`.
             val durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull() ?: 0L
-            if (atMillis > durationMs) {
+                ?.toLongOrNull()
+            if (durationMs != null && durationMs > 0L && atMillis > durationMs) {
                 throw VideoCompressionError.TimestampOutOfRange(
                     "atMillis=$atMillis > duration=$durationMs",
                 )
             }
+            currentCoroutineContext().ensureActive()
             val target = thumbnailTarget(mmr, maxDimension)
             val atMicros = atMillis * MICROS_PER_MILLI
             val raw = decodeFrame(mmr, atMicros, target)

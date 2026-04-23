@@ -119,10 +119,17 @@ public interface VideoCompressor {
      * @param input Source video — see [MediaSource] and platform-specific builders.
      * @param output Destination for the still image — see [MediaDestination].
      * @param atMillis Offset from the start of the video, in milliseconds. `0` extracts a frame
-     *   from the very beginning. Must be `>= 0` and `<= duration`.
-     * @param maxDimension Optional downscale target applied to the longer edge. `null` keeps
-     *   the frame's native (oriented) resolution. On Android API 27+ the downscale happens
-     *   during decode (`getScaledFrameAtTime`) so peak heap stays bounded on 1080p+ sources.
+     *   from the very beginning. Must be `>= 0`; the range `[0, duration]` is accepted
+     *   inclusive of `duration` itself (use `MediaMetadataRetriever.METADATA_KEY_DURATION` /
+     *   `AVURLAsset.duration` to pick a valid offset). `atMillis > duration` raises
+     *   [VideoCompressionError.TimestampOutOfRange]; when the platform probe cannot read a
+     *   positive duration (fragmented MP4, OEM retriever quirk, corrupted container), the
+     *   guard is skipped and frame extraction drives the error classification instead.
+     * @param maxDimension Optional downscale target applied to the longer edge of the oriented
+     *   frame. `null` keeps the frame's native (oriented) resolution. Equality
+     *   (`longer == maxDimension`) is a no-op — no downscale, no upscale. On Android API 27+
+     *   the downscale happens during decode (`getScaledFrameAtTime`) so peak heap stays bounded
+     *   on 1080p+ sources.
      * @param format Output image format. Availability follows [ImageFormat] — HEIC is iOS-only,
      *   AVIF requires Android API 34+ / iOS 16+, WebP is Android-only.
      * @param quality Lossy encoder quality, 0..100.
