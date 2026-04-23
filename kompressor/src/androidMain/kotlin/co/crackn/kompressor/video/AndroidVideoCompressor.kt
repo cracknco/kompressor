@@ -7,8 +7,10 @@
 
 package co.crackn.kompressor.video
 
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -22,7 +24,12 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import co.crackn.kompressor.CompressionResult
+import co.crackn.kompressor.ExperimentalKompressorApi
 import co.crackn.kompressor.KompressorContext
+import co.crackn.kompressor.image.ImageCompressionError
+import co.crackn.kompressor.image.ImageFormat
+import co.crackn.kompressor.image.androidOutputGate
+import co.crackn.kompressor.image.writeBitmapToFile
 import co.crackn.kompressor.awaitMedia3Export
 import co.crackn.kompressor.buildTightMp4MuxerFactory
 import co.crackn.kompressor.collectCodecMimeTypes
@@ -42,7 +49,10 @@ import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -60,6 +70,12 @@ import kotlinx.coroutines.withContext
  * (e.g. [VideoCompressionError.UnsupportedSourceFormat] for the "device can't decode HEVC 10-bit"
  * case) rather than a generic `ExportException`.
  */
+// TooManyFunctions suppressed: CRA-109 added `thumbnail()` plus the `thumbnailFilePath` /
+// `extractThumbnailBitmap` / `downscaleIfNeeded` / `thumbnailTarget` / `encodeThumbnail`
+// helpers. They're tightly scoped to the frame-extraction pipeline and share the typed-error /
+// instrumentation glue with the main compress path — splitting would fragment that shared
+// plumbing across files.
+@Suppress("TooManyFunctions")
 internal class AndroidVideoCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
     /**
@@ -324,8 +340,237 @@ internal class AndroidVideoCompressor(
         }
     }
 
+    @ExperimentalKompressorApi
+    override suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        atMillis: Long,
+        maxDimension: Int?,
+        format: ImageFormat,
+        quality: Int,
+    ): Result<CompressionResult> {
+        require(atMillis >= 0) { "atMillis must be >= 0 (was $atMillis)" }
+        require(quality in 0..MAX_QUALITY) { "quality must be in 0..100 (was $quality)" }
+        require(maxDimension == null || maxDimension > 0) {
+            "maxDimension must be > 0 or null (was $maxDimension)"
+        }
+        return suspendRunCatching {
+            // Gate up front so an invalid format (AVIF on API 33, HEIC on Android) surfaces as
+            // a typed error before we open a retriever or materialize the source. The image
+            // compressor's gate is the authoritative matrix — we remap its typed error to the
+            // video hierarchy so consumers of `thumbnail()` `when`-branch on `VideoCompressionError`.
+            androidOutputGate(format, Build.VERSION.SDK_INT)?.let { throw remapImageOutputGate(it) }
+            val inputHandle = input.toAndroidInputPath(mediaType = MediaType.VIDEO, logger = logger)
+            try {
+                val outputHandle = output.toAndroidOutputHandle()
+                try {
+                    val result = thumbnailFilePath(
+                        inputHandle.path, outputHandle.tempPath,
+                        atMillis, maxDimension, format, quality,
+                    )
+                    outputHandle.commit()
+                    result
+                } finally {
+                    outputHandle.cleanup()
+                }
+            } finally {
+                inputHandle.cleanup()
+            }
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private suspend fun thumbnailFilePath(
+        inputPath: String,
+        outputPath: String,
+        atMillis: Long,
+        maxDimension: Int?,
+        format: ImageFormat,
+        quality: Int,
+    ): CompressionResult = withContext(Dispatchers.IO) {
+        logger.instrumentCompress(
+            tag = LogTags.VIDEO,
+            startMessage = {
+                "thumbnail() start in=${redactPath(inputPath)} out=${redactPath(outputPath)} " +
+                    "atMillis=$atMillis max=$maxDimension fmt=$format quality=$quality"
+            },
+            successMessage = { r ->
+                "thumbnail() ok durationMs=${r.durationMs} " +
+                    "in=${r.inputSize}B out=${r.outputSize}B"
+            },
+            failureMessage = { "thumbnail() failed in=${redactPath(inputPath)}" },
+        ) {
+            val startNanos = System.nanoTime()
+            val inputSize = resolveMediaInputSize(inputPath)
+            deletingOutputOnFailure(outputPath) {
+                val bitmap = extractThumbnailBitmap(inputPath, atMillis, maxDimension)
+                try {
+                    encodeThumbnail(bitmap, outputPath, format, quality)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            val outputSize = File(outputPath).length()
+            val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
+            CompressionResult(inputSize, outputSize, durationMs)
+        }
+    }
+
+    /**
+     * Extract the frame at [atMillis] via [MediaMetadataRetriever], downscaled to fit
+     * [maxDimension] when set. On API 27+ the downscale happens during decode via
+     * [MediaMetadataRetriever.getScaledFrameAtTime] so peak heap stays bounded on 1080p+ sources;
+     * on API 24-26 we decode the full frame then [Bitmap.createScaledBitmap] it ourselves.
+     *
+     * Throws [VideoCompressionError.TimestampOutOfRange] when `atMillis` strictly exceeds the
+     * probed duration, and [VideoCompressionError.DecodingFailed] when the retriever returns
+     * `null` for a valid offset (mid-stream corruption, OEM codec bug).
+     */
+    @Suppress("ThrowsCount")
+    private suspend fun extractThumbnailBitmap(
+        inputPath: String,
+        atMillis: Long,
+        maxDimension: Int?,
+    ): Bitmap {
+        val mmr = MediaMetadataRetriever()
+        try {
+            try {
+                mmr.applyDataSource(inputPath)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (@Suppress("TooGenericExceptionCaught") t: Throwable) {
+                throw VideoCompressionError.SourceNotFound("Cannot open source: $inputPath", cause = t)
+            }
+            // Only enforce the out-of-range guard when the retriever actually reported a
+            // positive duration. `null` / `0` comes back from fragmented MP4s, some MKVs, and
+            // buggy OEM retrievers on otherwise-playable files — falling back to `duration=0`
+            // would surface a misleading `TimestampOutOfRange` for any non-zero `atMillis`, so
+            // defer classification to the decode path which fails with `DecodingFailed`.
+            val durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+            if (durationMs != null && durationMs > 0L && atMillis > durationMs) {
+                throw VideoCompressionError.TimestampOutOfRange(
+                    "atMillis=$atMillis > duration=$durationMs",
+                )
+            }
+            currentCoroutineContext().ensureActive()
+            val target = thumbnailTarget(mmr, maxDimension)
+            val atMicros = atMillis * MICROS_PER_MILLI
+            val raw = decodeFrame(mmr, atMicros, target)
+                ?: throw VideoCompressionError.DecodingFailed(
+                    "Failed to extract frame at ${atMillis}ms from $inputPath",
+                )
+            return downscaleIfNeeded(raw, target)
+        } finally {
+            mmr.release()
+        }
+    }
+
+    /**
+     * Decode the frame at [atMicros], downscaled during decode when API 27+ and [target] is set.
+     * Pre-API-27 `getScaledFrameAtTime` doesn't exist — we fall back to `getFrameAtTime` and
+     * resize post-decode in [downscaleIfNeeded] (extra heap pressure, acceptable at that API
+     * floor since the min supported device is already memory-constrained).
+     */
+    private fun decodeFrame(
+        mmr: MediaMetadataRetriever,
+        atMicros: Long,
+        target: ThumbnailSize?,
+    ): Bitmap? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && target != null) {
+            mmr.getScaledFrameAtTime(
+                atMicros,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                target.width,
+                target.height,
+            )
+        } else {
+            mmr.getFrameAtTime(atMicros, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        }
+
+    // ReturnCount suppressed: the two early returns ("no downscale target" and "already fits
+    // within target") are cheaper than nesting — the alternative is a pyramid that obscures the
+    // no-upscale invariant.
+    @Suppress("ReturnCount")
+    private fun downscaleIfNeeded(raw: Bitmap, target: ThumbnailSize?): Bitmap {
+        if (target == null) return raw
+        if (raw.width <= target.width && raw.height <= target.height) return raw
+        val scale = minOf(
+            target.width.toDouble() / raw.width,
+            target.height.toDouble() / raw.height,
+        )
+        val w = (raw.width * scale).toInt().coerceAtLeast(1)
+        val h = (raw.height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(raw, w, h, true)
+        if (scaled !== raw) raw.recycle()
+        return scaled
+    }
+
+    /**
+     * Compute a downscale target for the frame decoder, honouring the source's displayed
+     * orientation. `METADATA_KEY_VIDEO_ROTATION` of 90° / 270° swaps natural width/height, so a
+     * portrait recording with a 1920×1080 buffer reports 1080×1920 as the oriented size — which
+     * is what the caller's `maxDimension` targets.
+     *
+     * Returns `null` when no scaling is requested, when the probe can't read dimensions, or when
+     * the oriented longer edge already fits within [maxDimension] (we don't upscale).
+     */
+    // ReturnCount suppressed: each early return is a distinct "can't / shouldn't downscale"
+    // reason (no target, width unreadable, height unreadable, already fits). Folding them into
+    // a single expression would bury the rationale behind each guard.
+    @Suppress("ReturnCount")
+    private fun thumbnailTarget(mmr: MediaMetadataRetriever, maxDimension: Int?): ThumbnailSize? {
+        if (maxDimension == null) return null
+        val w = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val h = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val rotation = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            ?.toIntOrNull() ?: 0
+        val swap = rotation == ROT_90 || rotation == ROT_270
+        val orientedW = if (swap) h else w
+        val orientedH = if (swap) w else h
+        val longer = maxOf(orientedW, orientedH)
+        if (longer <= maxDimension) return null
+        val ratio = maxDimension.toDouble() / longer
+        return ThumbnailSize(
+            width = (orientedW * ratio).toInt().coerceAtLeast(1),
+            height = (orientedH * ratio).toInt().coerceAtLeast(1),
+        )
+    }
+
+    private fun encodeThumbnail(bitmap: Bitmap, outputPath: String, format: ImageFormat, quality: Int) {
+        try {
+            writeBitmapToFile(bitmap, outputPath, format, quality)
+        } catch (e: ImageCompressionError.EncodingFailed) {
+            // Shared encoder surfaces ImageCompressionError; remap to the video hierarchy so
+            // `thumbnail()` callers keep their single `when` on VideoCompressionError.
+            throw VideoCompressionError.EncodingFailed(e.details, cause = e)
+        } catch (e: ImageCompressionError.UnsupportedOutputFormat) {
+            // `androidOutputGate` upstream already converted known gate failures, but
+            // `Bitmap.compress` can still refuse at runtime on eg. AVIF when the device ships
+            // an older-than-advertised encoder — remap defensively to keep the video `when`
+            // on `VideoCompressionError` (parity with iOS's `encodeThumbnailCGImage`).
+            throw remapImageOutputGate(e)
+        }
+    }
+
+    private fun remapImageOutputGate(
+        err: ImageCompressionError.UnsupportedOutputFormat,
+    ): VideoCompressionError.EncodingFailed = VideoCompressionError.EncodingFailed(
+        "Thumbnail output format '${err.format}' unsupported on Android " +
+            "(requires API ${err.minApi}+)",
+        cause = err,
+    )
+
+    private data class ThumbnailSize(val width: Int, val height: Int)
+
     private companion object {
         const val NANOS_PER_MILLI = 1_000_000L
+        const val MICROS_PER_MILLI = 1_000L
+        const val MAX_QUALITY = 100
+        const val ROT_90 = 90
+        const val ROT_270 = 270
     }
 }
 

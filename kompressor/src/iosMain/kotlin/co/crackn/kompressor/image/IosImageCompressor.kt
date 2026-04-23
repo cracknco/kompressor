@@ -707,63 +707,84 @@ internal class IosImageCompressor(
         }
     }
 
-    private fun writeImage(image: UIImage, path: String, config: ImageCompressionConfig) = when (config.format) {
-        ImageFormat.JPEG -> writeJpeg(image, path, config.quality)
-        ImageFormat.HEIC -> writeViaImageIO(image, path, config.quality, UTI_HEIC, "heic")
-        ImageFormat.AVIF -> writeViaImageIO(image, path, config.quality, UTI_AVIF, "avif")
-        ImageFormat.WEBP -> error("WEBP output should be rejected by iosOutputGate before reaching here")
-    }
-
-    private fun writeJpeg(image: UIImage, path: String, quality: Int) {
-        val compressionQuality = quality.toDouble() / MAX_QUALITY
-        val data = UIImageJPEGRepresentation(image, compressionQuality)
-            ?: throw ImageCompressionError.EncodingFailed("UIImageJPEGRepresentation returned nil")
-        val url = NSURL.fileURLWithPath(path)
-        val written = data.writeToURL(url, atomically = true)
-        if (!written) {
-            throw ImageCompressionError.EncodingFailed(
-                "Failed to write JPEG to: $path (quality=$quality)",
-            )
-        }
-    }
-
-    /**
-     * Encodes [image] to [path] via ImageIO using the UTType [uti]. Used for HEIC and AVIF —
-     * both are ISOBMFF containers that Apple exposes through the same `CGImageDestination` API;
-     * only the destination UTI differs. When the platform lacks an encoder for [uti] (iOS < 16
-     * for AVIF on most devices), `CGImageDestinationCreateWithURL` returns `null`; we map that
-     * back to a typed [ImageCompressionError.UnsupportedOutputFormat] rather than letting the
-     * caller hit the generic `EncodingFailed` branch.
-     */
-    private fun writeViaImageIO(image: UIImage, path: String, quality: Int, uti: String, formatId: String) {
-        val cgImage = image.CGImage
-            ?: throw ImageCompressionError.EncodingFailed("UIImage has no backing CGImage for $formatId")
-        val utiCF = bridgeUti(uti)
-        val urlCF = bridgeUrl(path)
-        try {
-            val destination = CGImageDestinationCreateWithURL(urlCF, utiCF, count = 1u, options = null)
-                ?: throw ImageCompressionError.UnsupportedOutputFormat(
-                    format = formatId,
-                    platform = PLATFORM_IOS,
-                    minApi = minVersionForUti(uti),
-                )
-            try {
-                finalizeImageIODestination(destination, cgImage, quality, formatId, path)
-            } finally {
-                CFRelease(destination)
-            }
-        } finally {
-            CFRelease(utiCF)
-            CFRelease(urlCF)
-        }
-    }
+    private fun writeImage(image: UIImage, path: String, config: ImageCompressionConfig) =
+        writeUIImageToFile(image, path, config.format, config.quality)
 
     private companion object {
         const val MILLIS_PER_SEC = 1000.0
-        const val MAX_QUALITY = 100.0
         const val SCALE_PIXELS = 1.0
-        const val UTI_HEIC = "public.heic"
-        const val UTI_AVIF = "public.avif"
+    }
+}
+
+/**
+ * Shared UIImage → file encoder used by [IosImageCompressor] **and** the video-thumbnail path
+ * on [co.crackn.kompressor.video.IosVideoCompressor.thumbnail]. Both feed a [UIImage] (one
+ * decoded from an image source, the other wrapped around a [platform.CoreGraphics.CGImageRef]
+ * extracted by `AVAssetImageGenerator`) through the same encoder plumbing, so format/quality
+ * handling stays in one place.
+ *
+ * Throws [ImageCompressionError.EncodingFailed] when the platform encoder returns nil/false,
+ * or [ImageCompressionError.UnsupportedOutputFormat] when `CGImageDestinationCreateWithURL`
+ * rejects the UTI (e.g. AVIF on iOS 15). The video caller catches the former and remaps to
+ * [co.crackn.kompressor.video.VideoCompressionError.EncodingFailed]; the latter is remapped
+ * to a typed video error upstream via [iosOutputGate] before reaching this function.
+ */
+internal fun writeUIImageToFile(
+    image: UIImage,
+    outputPath: String,
+    format: ImageFormat,
+    quality: Int,
+) {
+    when (format) {
+        ImageFormat.JPEG -> writeJpeg(image, outputPath, quality)
+        ImageFormat.HEIC -> writeViaImageIO(image, outputPath, quality, "public.heic", "heic")
+        ImageFormat.AVIF -> writeViaImageIO(image, outputPath, quality, "public.avif", "avif")
+        ImageFormat.WEBP -> error("WEBP output should be rejected by iosOutputGate before reaching here")
+    }
+}
+
+private fun writeJpeg(image: UIImage, path: String, quality: Int) {
+    val compressionQuality = quality.toDouble() / IOS_MAX_QUALITY
+    val data = UIImageJPEGRepresentation(image, compressionQuality)
+        ?: throw ImageCompressionError.EncodingFailed("UIImageJPEGRepresentation returned nil")
+    val url = NSURL.fileURLWithPath(path)
+    val written = data.writeToURL(url, atomically = true)
+    if (!written) {
+        throw ImageCompressionError.EncodingFailed(
+            "Failed to write JPEG to: $path (quality=$quality)",
+        )
+    }
+}
+
+/**
+ * Encodes [image] to [path] via ImageIO using the UTType [uti]. Used for HEIC and AVIF —
+ * both are ISOBMFF containers that Apple exposes through the same `CGImageDestination` API;
+ * only the destination UTI differs. When the platform lacks an encoder for [uti] (iOS < 16
+ * for AVIF on most devices), `CGImageDestinationCreateWithURL` returns `null`; we map that
+ * back to a typed [ImageCompressionError.UnsupportedOutputFormat] rather than letting the
+ * caller hit the generic `EncodingFailed` branch.
+ */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun writeViaImageIO(image: UIImage, path: String, quality: Int, uti: String, formatId: String) {
+    val cgImage = image.CGImage
+        ?: throw ImageCompressionError.EncodingFailed("UIImage has no backing CGImage for $formatId")
+    val utiCF = bridgeUti(uti)
+    val urlCF = bridgeUrl(path)
+    try {
+        val destination = CGImageDestinationCreateWithURL(urlCF, utiCF, count = 1u, options = null)
+            ?: throw ImageCompressionError.UnsupportedOutputFormat(
+                format = formatId,
+                platform = PLATFORM_IOS,
+                minApi = minVersionForUti(uti),
+            )
+        try {
+            finalizeImageIODestination(destination, cgImage, quality, formatId, path)
+        } finally {
+            CFRelease(destination)
+        }
+    } finally {
+        CFRelease(utiCF)
+        CFRelease(urlCF)
     }
 }
 
@@ -932,7 +953,7 @@ private fun copyPrefixBytes(data: NSData): ByteArray {
     return bytes
 }
 
-private fun iosMajorVersion(): Int {
+internal fun iosMajorVersion(): Int {
     val major = UIDevice.currentDevice.systemVersion.substringBefore('.')
     return major.toIntOrNull() ?: 0
 }
