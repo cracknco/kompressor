@@ -283,19 +283,7 @@ internal class AndroidImageCompressor(
     }
 
     private fun writeBitmapToPath(bitmap: Bitmap, outputPath: String, config: ImageCompressionConfig) {
-        val compressFormat = androidCompressFormat(config.format)
-        // Capture the compress result inside `use { }` so the stream is closed before we throw.
-        // Returning the boolean and then throwing after close moves the error path to a point
-        // where the I/O resource is provably released — the Bitmap ownership contract lives with
-        // the caller (`resizeAndWrite` recycles `scaled`; the outer compress() recycles `bitmap`).
-        val success = FileOutputStream(outputPath).use { stream ->
-            bitmap.compress(compressFormat, config.quality, stream)
-        }
-        if (!success) {
-            throw ImageCompressionError.EncodingFailed(
-                "Bitmap.compress(${config.format}, quality=${config.quality}) returned false for: $outputPath",
-            )
-        }
+        writeBitmapToFile(bitmap, outputPath, config.format, config.quality)
     }
 
     /**
@@ -375,6 +363,44 @@ private class CountingOutputStream(private val delegate: OutputStream) : OutputS
 
     override fun flush() = delegate.flush()
     override fun close() = delegate.close()
+}
+
+/**
+ * Shared bitmap → file encoder used by [AndroidImageCompressor] *and* the video-thumbnail path
+ * on [co.crackn.kompressor.video.AndroidVideoCompressor.thumbnail]. Both feed a [Bitmap] (one
+ * decoded from an image source, the other extracted from a video frame) through the same
+ * `bitmap.compress(format, quality, FileOutputStream)` plumbing, so keeping this a single
+ * `internal` function means format/quality handling stays in one place.
+ *
+ * Throws [ImageCompressionError.EncodingFailed] when the platform encoder returns `false`. The
+ * video caller catches that and remaps it to [co.crackn.kompressor.video.VideoCompressionError.EncodingFailed]
+ * so the image-vs-video typed-error contract is preserved.
+ *
+ * Assumes the caller has already passed [androidOutputGate] — HEIC still throws a file-scope
+ * `error(...)` because `Bitmap.CompressFormat` has no stable HEIC entry; that path should be
+ * unreachable from gated call sites.
+ */
+@OptIn(ExperimentalKompressorApi::class)
+internal fun writeBitmapToFile(
+    bitmap: Bitmap,
+    outputPath: String,
+    format: ImageFormat,
+    quality: Int,
+) {
+    val compressFormat = androidCompressFormat(format)
+    // Capture the compress result inside `use { }` so the stream is closed before we throw.
+    // Returning the boolean and then throwing after close moves the error path to a point
+    // where the I/O resource is provably released — the Bitmap ownership contract lives with
+    // the caller (the image pipeline recycles the resized bitmap; the thumbnail path recycles
+    // the extracted frame).
+    val success = FileOutputStream(outputPath).use { stream ->
+        bitmap.compress(compressFormat, quality, stream)
+    }
+    if (!success) {
+        throw ImageCompressionError.EncodingFailed(
+            "Bitmap.compress($format, quality=$quality) returned false for: $outputPath",
+        )
+    }
 }
 
 /**

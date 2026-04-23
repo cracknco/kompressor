@@ -254,6 +254,15 @@ internal object ErrorTaxonomyRenderer {
                 consumerFix = "Report with `cause` attached.",
             ),
         )
+        put(
+            "VideoCompressionError.TimestampOutOfRange",
+            Guidance(
+                retrySafe = "yes (clamped offset)",
+                consumerFix = "Clamp `atMillis` to `[0, duration]` and retry \u2014 the requested offset " +
+                    "exceeds the video's duration. Read `AVURLAsset.duration` / " +
+                    "`MediaMetadataRetriever.METADATA_KEY_DURATION` upfront to pick a valid offset.",
+            ),
+        )
         putAll(ioGuidance("VideoCompressionError"))
     }
 

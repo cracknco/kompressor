@@ -146,4 +146,22 @@ public sealed class VideoCompressionError(
         public val details: String,
         override val cause: Throwable? = null,
     ) : VideoCompressionError("Temp file failed: $details", cause)
+
+    /**
+     * The requested `atMillis` offset for a video thumbnail / frame extraction exceeds the
+     * source's duration. Distinct from [DecodingFailed] (codec issue on a valid frame request)
+     * and [SourceNotFound] (source inaccessible) so callers can clamp the offset and retry
+     * rather than treating the request as unrecoverable.
+     *
+     * Raised by [VideoCompressor.thumbnail] when the caller's `atMillis` strictly exceeds the
+     * probed source duration. Callers should call the compressor's `probe`-equivalent metadata
+     * read upfront (or read `AVURLAsset.duration` / `MediaMetadataRetriever.METADATA_KEY_DURATION`
+     * directly) to clamp offsets into `[0, duration]` before invoking `thumbnail`.
+     *
+     * @property details Free-form diagnostic — typically `"atMillis=X > duration=Y"`.
+     */
+    public data class TimestampOutOfRange(
+        public val details: String,
+        override val cause: Throwable? = null,
+    ) : VideoCompressionError("Timestamp out of range: $details", cause)
 }

@@ -126,7 +126,8 @@ VideoCompressionError (sealed)
 ├── SourceNotFound
 ├── SourceReadFailed
 ├── DestinationWriteFailed
-└── TempFileFailed
+├── TempFileFailed
+└── TimestampOutOfRange
 ```
 
 ### Subtypes
@@ -143,6 +144,7 @@ VideoCompressionError (sealed)
 | `SourceReadFailed` | The source stream threw on read | maybe (transient) | Retry once if `cause` looks transient (e.g. a content-provider hiccup); otherwise surface the underlying `details` and let the user reacquire the source. PhotoKit resolution failures surface as `IoFailed` — see its row. |
 | `DestinationWriteFailed` | The destination sink threw on write, or the destination file / URI could not be opened for writing (missing `WRITE` permission, disk full before open, MediaStore provider rejected the `INSERT`, SAF document permissions revoked) | yes (after user fix) | Show storage / permission UI — disk full, missing `WRITE` permission, or a revoked SAF / MediaStore grant. Retry after the user resolves it. |
 | `TempFileFailed` | Temp file creation or write failed — disk full, cache directory inaccessible, or `ENOSPC` during chunked materialisation of a `Stream` / `Bytes` source | yes (after user fix) | Free device storage and retry — temp file allocation failed mid-pipeline. |
+| `TimestampOutOfRange` | The requested `atMillis` offset for a video thumbnail / frame extraction exceeds the source's duration | yes (clamped offset) | Clamp `atMillis` to `[0, duration]` and retry — the requested offset exceeds the video's duration. Read `AVURLAsset.duration` / `MediaMetadataRetriever.METADATA_KEY_DURATION` upfront to pick a valid offset. |
 
 ## Platform divergence
 
