@@ -23,19 +23,24 @@ package co.crackn.kompressor.logging
  * prevents `println` / `android.util.Log` / `NSLog` leaks; this rule prevents the same class of
  * leak through the pluggable-logger channel.
  *
- * @return `"<empty>"` when [path] is empty; otherwise the last path segment, truncated to 48
- *   characters followed by `…(N more)` when the segment exceeds 64 characters. The truncation
- *   threshold leaves room for typical timestamped / UUID-bearing filenames (e.g.
- *   `IMG_20260423_142501_12345.jpg`) while cutting off pathologically long names.
+ * @return `"<empty>"` when [path] is empty **or** the basename after
+ *   [kotlin.text.substringAfterLast] is empty (e.g. `"/some/dir/"` with a trailing separator);
+ *   otherwise the last path segment, truncated to 48 characters followed by `…(N more)` when the
+ *   segment exceeds 64 characters. The truncation threshold leaves room for typical
+ *   timestamped / UUID-bearing filenames (e.g. `IMG_20260423_142501_12345.jpg`) while cutting
+ *   off pathologically long names. Collapsing both empty cases onto the same `<empty>` sentinel
+ *   is deliberate: a blank field in a log line is less useful than an explicit
+ *   "basename unresolvable" marker.
  */
 internal fun redactPath(path: String): String = when {
     path.isEmpty() -> "<empty>"
     else -> path.substringAfterLast('/')
         .let { base ->
-            if (base.length > REDACT_MAX_LEN) {
-                "${base.take(REDACT_KEEP_LEN)}…(${base.length - REDACT_KEEP_LEN} more)"
-            } else {
-                base
+            when {
+                base.isEmpty() -> "<empty>"
+                base.length > REDACT_MAX_LEN ->
+                    "${base.take(REDACT_KEEP_LEN)}…(${base.length - REDACT_KEEP_LEN} more)"
+                else -> base
             }
         }
 }

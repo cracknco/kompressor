@@ -83,10 +83,12 @@ class LogRedactionTest {
     }
 
     @Test
-    fun trailingSlash_redactsToEmpty() {
+    fun trailingSlash_redactsToEmptyPlaceholder() {
         // Edge case: paths ending in '/'. `substringAfterLast('/')` returns "" — we surface that
-        // as "<empty>" to stay consistent with the top-level empty-path handling.
-        redactPath("/some/dir/") shouldBe ""
+        // as "<empty>" to stay consistent with the top-level empty-path handling (see also
+        // [emptyPath_returnsPlaceholder]). A blank field in a log line is strictly less useful
+        // than an explicit placeholder.
+        redactPath("/some/dir/") shouldBe "<empty>"
     }
 
     @Test

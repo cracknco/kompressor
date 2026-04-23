@@ -36,8 +36,8 @@ import co.crackn.kompressor.io.toAndroidOutputHandle
 import co.crackn.kompressor.logging.LogTags
 import co.crackn.kompressor.logging.NoOpLogger
 import co.crackn.kompressor.logging.SafeLogger
-import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.logging.instrumentCompress
+import co.crackn.kompressor.logging.redactPath
 import co.crackn.kompressor.resolveMediaInputSize
 import co.crackn.kompressor.suspendRunCatching
 import co.crackn.kompressor.toMediaItemUri
