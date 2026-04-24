@@ -101,6 +101,41 @@ Multichannel *input* (5.1, 7.1) is supported on Android: `AudioProcessorPlan` as
 
 Multichannel *output* (`AudioChannels.FIVE_POINT_ONE`, `AudioChannels.SEVEN_POINT_ONE`) is gated by `@ExperimentalKompressorApi` — per-device encoder coverage is still being validated pre-1.0 and platform rejections surface as `AudioCompressionError` at compress time. Only mono and stereo output are stable.
 
+## Waveform extraction
+
+`AudioCompressor.waveform` extracts a fixed-length `FloatArray` of normalized peak amplitudes from any audio source the platform can decode — ideal for rendering a static waveform next to a voice message or audio file in a list.
+
+```kotlin
+val peaks: FloatArray = kompressor.audio.waveform(
+    input = MediaSource.Local.FilePath("/path/to/recording.m4a"),
+    targetSamples = 200,
+).getOrThrow()
+
+// Each peak is in [0f, 1f] — the absolute peak of all samples that fell in that bucket,
+// divided by the full-scale 16-bit PCM range.
+```
+
+- **Target samples**: `targetSamples` buckets the source into equal time slices and returns one peak per slice. A mobile UI typically uses **100–300** for a thumbnail-sized bar, **800–1200** for a full-width editor. Defaults to `200`.
+- **Output range**: every value is in `[0f, 1f]` — `0f` = silence, `1f` = full-scale. No DC offset correction, no RMS — these are absolute peaks (the mobile-UI convention).
+- **Memory**: the entire algorithm is `O(targetSamples)` in memory regardless of source length. A 3-hour podcast bucketed into 200 peaks uses the same ~64 KB of PCM-chunk buffer as a 10-second voice note.
+- **Progress**: the `onProgress` callback emits `CompressionProgress.Phase.COMPRESSING` ticks only — there is no `FINALIZING_OUTPUT` phase because nothing is written to disk. Throttled to at most ~64 ticks per call.
+
+### Interop with [compose-audiowaveform](https://github.com/lincollincol/compose-audiowaveform)
+
+The popular Compose waveform library takes `IntArray` amplitudes. Scale in one line:
+
+```kotlin
+AudioWaveform(
+    amplitudes = peaks.map { (it * 1000).toInt() }.toIntArray(),
+)
+```
+
+### Errors
+
+`waveform` returns `Result.failure` with a typed [`AudioCompressionError`](/concepts/errors) when the source can't be decoded. The most common one is `AudioCompressionError.NoAudioTrack`, which fires when the input is a valid container (image, metadata file, video-only MP4) with zero audio tracks — surfaced before the decoder is opened, so there is no init cost on the wrong file.
+
+`targetSamples <= 0` returns `Result.failure(IllegalArgumentException)` (same validation style as the other compressors — the `IllegalArgumentException` is wrapped in the returned `Result`, not thrown).
+
 ## Progress and cancellation
 
 See [Cancellation](/concepts/cancellation). Cancelling the coroutine scope aborts the export and deletes the partial M4A.

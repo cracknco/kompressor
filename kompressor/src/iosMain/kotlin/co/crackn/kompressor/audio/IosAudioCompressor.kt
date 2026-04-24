@@ -83,6 +83,30 @@ internal class IosAudioCompressor(
     private val logger: SafeLogger = SafeLogger(NoOpLogger),
 ) : AudioCompressor {
 
+    override suspend fun waveform(
+        input: MediaSource,
+        targetSamples: Int,
+        onProgress: suspend (CompressionProgress) -> Unit,
+    ): Result<FloatArray> = suspendRunCatching {
+        require(targetSamples > 0) { "targetSamples must be positive, was $targetSamples" }
+        // Waveform streams PCM straight from the source — MATERIALIZING_INPUT is irrelevant
+        // here. The common dispatch path still copies Stream / Bytes / PHAsset sources to a
+        // local file behind the scenes, but we deliberately don't surface those ticks because
+        // the API's progress contract specifies COMPRESSING-phase emissions only.
+        val inHandle = try {
+            input.toIosInputPath(mediaType = MediaType.AUDIO, logger = logger)
+        } catch (e: PHAssetIcloudOnlyException) {
+            throw AudioCompressionError.SourceNotFound(e.message ?: "PHAsset iCloud-only", cause = e)
+        } catch (e: PHAssetResolutionException) {
+            throw AudioCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
+        }
+        try {
+            extractIosWaveform(inHandle.path, targetSamples, onProgress, logger)
+        } finally {
+            inHandle.cleanup()
+        }
+    }
+
     // LongMethod suppressed: the nested try/finally (inHandle outer, outHandle inner) is
     // mandated by lifecycle cleanup correctness — see the inline comment below. Extracting the
     // inner compress-with-progress block to a helper would fragment the lifecycle contract

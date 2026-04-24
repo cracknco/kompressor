@@ -84,6 +84,29 @@ internal class AndroidAudioCompressor(
             .intersect(setOf(MimeTypes.AUDIO_AAC))
     }
 
+    override suspend fun waveform(
+        input: MediaSource,
+        targetSamples: Int,
+        onProgress: suspend (CompressionProgress) -> Unit,
+    ): Result<FloatArray> = suspendRunCatching {
+        require(targetSamples > 0) { "targetSamples must be positive, was $targetSamples" }
+        // Waveform streams PCM straight from the source — MATERIALIZING_INPUT is irrelevant
+        // here. The common dispatch path still copies Stream / Bytes sources to a local file
+        // behind the scenes, but we deliberately don't surface those ticks because the API's
+        // progress contract specifies COMPRESSING-phase emissions only.
+        val inputHandle = input.toAndroidInputPath(
+            mediaType = MediaType.AUDIO,
+            logger = logger,
+        )
+        try {
+            withContext(Dispatchers.IO) {
+                extractAndroidWaveform(inputHandle.path, targetSamples, onProgress)
+            }
+        } finally {
+            inputHandle.cleanup()
+        }
+    }
+
     // LongMethod suppressed: see AndroidVideoCompressor. The nested try/finally lifecycle
     // around the input + output handle cleanup is the length driver; extracting it would
     // fragment the cleanup contract.
