@@ -126,7 +126,7 @@ The popular Compose waveform library takes `IntArray` amplitudes. Scale in one l
 
 ```kotlin
 AudioWaveform(
-    amplitudes = peaks.map { (it * 1000).toInt() },
+    amplitudes = peaks.map { (it * 1000).toInt() }.toIntArray(),
 )
 ```
 
@@ -134,7 +134,7 @@ AudioWaveform(
 
 `waveform` returns `Result.failure` with a typed [`AudioCompressionError`](/concepts/errors) when the source can't be decoded. The most common one is `AudioCompressionError.NoAudioTrack`, which fires when the input is a valid container (image, metadata file, video-only MP4) with zero audio tracks — surfaced before the decoder is opened, so there is no init cost on the wrong file.
 
-`targetSamples <= 0` throws `IllegalArgumentException` at call time (same validation style as the other compressors).
+`targetSamples <= 0` returns `Result.failure(IllegalArgumentException)` (same validation style as the other compressors — the `IllegalArgumentException` is wrapped in the returned `Result`, not thrown).
 
 ## Progress and cancellation
 

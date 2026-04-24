@@ -14,12 +14,19 @@ import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.writeBytes
+import io.kotest.assertions.withClue
+import io.kotest.matchers.booleans.shouldBeFalse
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.floats.shouldBeGreaterThan
+import io.kotest.matchers.floats.shouldBeGreaterThanOrEqual
+import io.kotest.matchers.floats.shouldBeLessThanOrEqual
+import io.kotest.matchers.result.shouldBeFailure
+import io.kotest.matchers.result.shouldBeSuccess
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,23 +71,22 @@ class IosWaveformTest {
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         )
-        assertTrue(result.isSuccess, "waveform failed: ${result.exceptionOrNull()}")
-        val peaks = result.getOrThrow()
-        assertEquals(TARGET_SAMPLES, peaks.size, "peak count should match target for a long source")
+        val peaks = result.shouldBeSuccess()
+        peaks.size shouldBe TARGET_SAMPLES
         peaks.forEach { peak ->
-            assertTrue(peak in 0f..1f, "peak out of range: $peak")
+            peak shouldBeGreaterThanOrEqual 0f
+            peak shouldBeLessThanOrEqual 1f
         }
         val meanPeak = peaks.average().toFloat()
-        assertTrue(meanPeak > MIN_MEAN_PEAK, "mean peak should exceed $MIN_MEAN_PEAK, was $meanPeak")
+        meanPeak shouldBeGreaterThan MIN_MEAN_PEAK
     }
 
     @Test
     fun waveform_onZeroTargetSamplesRejectsAsIllegalArgument() = runTest {
         val inputPath = writeTestWav(1, MONO)
         val result = compressor.waveform(MediaSource.Local.FilePath(inputPath), targetSamples = 0)
-        assertTrue(result.isFailure)
-        val err = result.exceptionOrNull()
-        assertTrue(err is IllegalArgumentException, "expected IllegalArgumentException, got $err")
+        val err = result.shouldBeFailure()
+        err.shouldBeInstanceOf<IllegalArgumentException>()
     }
 
     @Test
@@ -88,14 +94,14 @@ class IosWaveformTest {
         val path = testDir + "stub.bin"
         writeBytes(path, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte()))
         val result = compressor.waveform(MediaSource.Local.FilePath(path))
-        assertTrue(result.isFailure)
-        val err = result.exceptionOrNull()
-        assertTrue(
-            err is AudioCompressionError.NoAudioTrack ||
-                err is AudioCompressionError.IoFailed ||
-                err is AudioCompressionError.UnsupportedSourceFormat,
-            "expected typed AudioCompressionError, got $err",
-        )
+        val err = result.shouldBeFailure()
+        withClue("expected typed AudioCompressionError, got $err") {
+            (
+                err is AudioCompressionError.NoAudioTrack ||
+                    err is AudioCompressionError.IoFailed ||
+                    err is AudioCompressionError.UnsupportedSourceFormat
+                ).shouldBeTrue()
+        }
     }
 
     @Test
@@ -107,11 +113,12 @@ class IosWaveformTest {
             targetSamples = TARGET_SAMPLES,
         ) { progress ->
             phases += progress.phase
-            assertTrue(progress.fraction in 0f..1f)
+            progress.fraction shouldBeGreaterThanOrEqual 0f
+            progress.fraction shouldBeLessThanOrEqual 1f
         }
-        assertTrue(result.isSuccess)
-        assertTrue(CompressionProgress.Phase.COMPRESSING in phases)
-        assertFalse(CompressionProgress.Phase.FINALIZING_OUTPUT in phases)
+        result.shouldBeSuccess()
+        (CompressionProgress.Phase.COMPRESSING in phases).shouldBeTrue()
+        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases).shouldBeFalse()
     }
 
     @Test
@@ -125,21 +132,20 @@ class IosWaveformTest {
             MediaDestination.Local.FilePath(aacPath),
             AudioCompressionConfig(channels = AudioChannels.MONO),
         )
-        assertTrue(
-            encodeResult.isSuccess,
-            "pre-flight AAC encode failed: ${encodeResult.exceptionOrNull()}",
-        )
+        encodeResult.shouldBeSuccess()
 
         val result = compressor.waveform(
             MediaSource.Local.FilePath(aacPath),
             targetSamples = TARGET_SAMPLES,
         )
-        assertTrue(result.isSuccess, "waveform on AAC failed: ${result.exceptionOrNull()}")
-        val peaks = result.getOrThrow()
-        assertEquals(TARGET_SAMPLES, peaks.size, "peak count should match target")
-        peaks.forEach { peak -> assertTrue(peak in 0f..1f, "peak out of range: $peak") }
+        val peaks = result.shouldBeSuccess()
+        peaks.size shouldBe TARGET_SAMPLES
+        peaks.forEach { peak ->
+            peak shouldBeGreaterThanOrEqual 0f
+            peak shouldBeLessThanOrEqual 1f
+        }
         val meanPeak = peaks.average().toFloat()
-        assertTrue(meanPeak > MIN_AAC_MEAN_PEAK, "AAC mean peak should exceed $MIN_AAC_MEAN_PEAK, was $meanPeak")
+        meanPeak shouldBeGreaterThan MIN_AAC_MEAN_PEAK
     }
 
     @Test
@@ -150,8 +156,8 @@ class IosWaveformTest {
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         ) { progress -> lastFraction = progress.fraction }
-        assertTrue(result.isSuccess)
-        assertEquals(1f, lastFraction, "waveform must end with COMPRESSING(1f)")
+        result.shouldBeSuccess()
+        lastFraction shouldBe 1f
     }
 
     @Test
@@ -167,27 +173,27 @@ class IosWaveformTest {
         delay(100L)
         deferred.cancel()
         val err = runCatching { withTimeout(15_000L) { deferred.await() } }.exceptionOrNull()
-        assertTrue(err is CancellationException, "expected CancellationException, got $err")
+        err.shouldBeInstanceOf<CancellationException>()
 
         // Subsequent call on the same compressor must still succeed — proves no leaked AVAssetReader.
         val second = compressor.waveform(
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         )
-        assertTrue(second.isSuccess, "post-cancel waveform failed: ${second.exceptionOrNull()}")
+        second.shouldBeSuccess()
     }
 
     @Test
     fun waveform_onMissingFileReturnsSourceNotFound() = runTest {
         val missingPath = testDir + "does-not-exist.wav"
         val result = compressor.waveform(MediaSource.Local.FilePath(missingPath))
-        assertTrue(result.isFailure)
-        val err = result.exceptionOrNull()
-        assertTrue(
-            err is AudioCompressionError.SourceNotFound ||
-                err is AudioCompressionError.IoFailed,
-            "expected SourceNotFound or IoFailed for missing file, got $err",
-        )
+        val err = result.shouldBeFailure()
+        withClue("expected SourceNotFound or IoFailed for missing file, got $err") {
+            (
+                err is AudioCompressionError.SourceNotFound ||
+                    err is AudioCompressionError.IoFailed
+                ).shouldBeTrue()
+        }
     }
 
     private fun writeTestWav(durationSec: Int, channels: Int): String {

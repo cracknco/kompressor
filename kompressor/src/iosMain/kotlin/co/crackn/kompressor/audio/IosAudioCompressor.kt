@@ -101,7 +101,7 @@ internal class IosAudioCompressor(
             throw AudioCompressionError.IoFailed(e.message ?: "PHAsset resolution failed", cause = e)
         }
         try {
-            extractIosWaveform(inHandle.path, targetSamples, onProgress)
+            extractIosWaveform(inHandle.path, targetSamples, onProgress, logger)
         } finally {
             inHandle.cleanup()
         }

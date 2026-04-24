@@ -35,9 +35,10 @@ import kotlinx.coroutines.ensureActive
  *  - Throws [AudioCompressionError.NoAudioTrack] when the container opens cleanly but has
  *    zero tracks whose MIME starts with `audio/`. Surfaced BEFORE the codec is opened so
  *    callers don't pay the decoder init cost on an image / video-only input.
- *  - Throws [AudioCompressionError.UnsupportedSourceFormat] when the extractor reports an
- *    unusable [MediaFormat.KEY_DURATION] (missing or non-positive) — we can't bucket without
- *    a duration, and forcing callers to probe first would duplicate work.
+ *  - Throws [AudioCompressionError.UnsupportedSourceFormat] when the selected audio track is
+ *    missing a MIME type, or reports a non-positive [MediaFormat.KEY_DURATION],
+ *    [MediaFormat.KEY_SAMPLE_RATE], or [MediaFormat.KEY_CHANNEL_COUNT] — we can't bucket
+ *    without these, and forcing callers to probe first would duplicate work.
  *  - Wraps other decoder failures with [AudioCompressionError.DecodingFailed].
  *  - Always releases the decoder and the extractor via `try/finally`, even on cancellation.
  *  - Cancellation: checked before each input/output poll so the suspend scope's cancellation
@@ -123,11 +124,24 @@ internal suspend fun extractAndroidWaveform(
     }
 
     val decoder = try {
-        MediaCodec.createDecoderByType(mime).apply {
-            configure(format, null, null, 0)
-            start()
-        }
+        MediaCodec.createDecoderByType(mime)
     } catch (t: Throwable) {
+        extractor.release()
+        throw AudioCompressionError.DecodingFailed(
+            "Failed to create decoder for $mime: ${t.message}",
+            cause = t,
+        )
+    }
+    // `createDecoderByType` returns an allocated native instance — if `configure` / `start`
+    // subsequently throw (incompatible format, `CodecException`, hardware limits), we must
+    // release `decoder` explicitly. An inline `.apply { ... }` block would leak the native
+    // instance to `finalize()`, which is not guaranteed to run promptly under memory pressure
+    // and surfaces as a codec leak on repeat `waveform()` calls against edge-case sources.
+    try {
+        decoder.configure(format, null, null, 0)
+        decoder.start()
+    } catch (t: Throwable) {
+        decoder.safeRelease()
         extractor.release()
         throw AudioCompressionError.DecodingFailed(
             "Failed to initialise decoder for $mime: ${t.message}",

@@ -7,10 +7,17 @@ package co.crackn.kompressor.audio
 
 import co.crackn.kompressor.AVNSErrorException
 import co.crackn.kompressor.io.CompressionProgress
+import co.crackn.kompressor.logging.LogTags
+import co.crackn.kompressor.logging.SafeLogger
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import platform.AVFAudio.AVAudioFile
@@ -32,6 +39,7 @@ import platform.CoreMedia.CMBlockBufferCopyDataBytes
 import platform.CoreMedia.CMBlockBufferGetDataLength
 import platform.CoreMedia.CMSampleBufferGetDataBuffer
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 
@@ -88,6 +96,7 @@ internal suspend fun extractIosWaveform(
     inputPath: String,
     targetSamples: Int,
     onProgress: suspend (CompressionProgress) -> Unit,
+    logger: SafeLogger? = null,
 ): FloatArray {
     if (!NSFileManager.defaultManager.fileExistsAtPath(inputPath)) {
         throw AudioCompressionError.SourceNotFound(
@@ -109,7 +118,7 @@ internal suspend fun extractIosWaveform(
         )
     }
     val totalDurationUs = (totalDurationSec * MICROS_PER_SECOND).toLong()
-    val (sampleRate, channels) = readAudioFileFormat(inputPath)
+    val (sampleRate, channels) = readAudioFileFormat(inputPath, logger)
 
     // Decoding settings: interleaved 16-bit signed little-endian PCM. No AVSampleRateKey /
     // AVNumberOfChannelsKey — let AVFoundation pass through the native rate/channels so the
@@ -213,17 +222,35 @@ internal suspend fun extractIosWaveform(
  * less-accurate waveform — the bucket time-to-frame mapping drifts by the ratio of
  * real-to-assumed rate — but never a crash or typed error. The real decoder
  * ([AVAssetReader]) runs separately and surfaces its own errors through the pump loop.
+ *
+ * When [logger] is supplied, probe failures (populated [NSError] or thrown Kotlin exception)
+ * are emitted as `WARN` under [LogTags.AUDIO] so field-reported "the waveform has the wrong
+ * shape" cases can be traced back to an [AVAudioFile] open failure instead of silently
+ * slipping through.
  */
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 @Suppress("TooGenericExceptionCaught")
-private fun readAudioFileFormat(inputPath: String): Pair<Int, Int> {
+private fun readAudioFileFormat(inputPath: String, logger: SafeLogger?): Pair<Int, Int> {
     return try {
-        val format = AVAudioFile(forReading = NSURL.fileURLWithPath(inputPath), error = null)
-            .processingFormat
-        val rate = format.sampleRate.toInt().takeIf { it > 0 } ?: DEFAULT_SAMPLE_RATE
-        val channels = format.channelCount.toInt().takeIf { it > 0 } ?: DEFAULT_CHANNEL_COUNT
-        rate to channels
-    } catch (_: Throwable) {
+        memScoped {
+            val errorRef = alloc<ObjCObjectVar<NSError?>>()
+            val file = AVAudioFile(forReading = NSURL.fileURLWithPath(inputPath), error = errorRef.ptr)
+            errorRef.value?.let { err ->
+                logger?.warn(LogTags.AUDIO) {
+                    "AVAudioFile probe populated NSError (domain=${err.domain} code=${err.code}): " +
+                        (err.localizedDescription) +
+                        " — falling back to ${DEFAULT_SAMPLE_RATE} Hz / $DEFAULT_CHANNEL_COUNT ch"
+                }
+            }
+            val format = file.processingFormat
+            val rate = format.sampleRate.toInt().takeIf { it > 0 } ?: DEFAULT_SAMPLE_RATE
+            val channels = format.channelCount.toInt().takeIf { it > 0 } ?: DEFAULT_CHANNEL_COUNT
+            rate to channels
+        }
+    } catch (t: Throwable) {
+        logger?.warn(LogTags.AUDIO, throwable = t) {
+            "AVAudioFile probe threw — falling back to ${DEFAULT_SAMPLE_RATE} Hz / $DEFAULT_CHANNEL_COUNT ch"
+        }
         DEFAULT_SAMPLE_RATE to DEFAULT_CHANNEL_COUNT
     }
 }

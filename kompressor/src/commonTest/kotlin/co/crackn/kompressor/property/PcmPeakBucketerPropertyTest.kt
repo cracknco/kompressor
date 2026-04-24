@@ -7,6 +7,8 @@ package co.crackn.kompressor.property
 
 import co.crackn.kompressor.audio.PcmPeakBucketer
 import io.kotest.common.ExperimentalKotest
+import io.kotest.matchers.floats.shouldBeGreaterThanOrEqual
+import io.kotest.matchers.floats.shouldBeLessThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.property.Arb
 import io.kotest.property.PropTestConfig
@@ -45,8 +47,8 @@ class PcmPeakBucketerPropertyTest {
             bucketer.accept(bytes, 0, bytes.size)
             val peaks = bucketer.finish()
             peaks.forEach { p ->
-                (p >= 0f) shouldBe true
-                (p <= 1f) shouldBe true
+                p shouldBeGreaterThanOrEqual 0f
+                p shouldBeLessThanOrEqual 1f
             }
         }
     }
