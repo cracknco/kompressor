@@ -14,15 +14,12 @@ import co.crackn.kompressor.testutil.TestConstants.MONO
 import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.writeBytes
-import io.kotest.assertions.withClue
-import io.kotest.matchers.floats.shouldBeGreaterThanOrEqual
-import io.kotest.matchers.floats.shouldBeLessThanOrEqual
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.fail
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -66,22 +63,23 @@ class IosWaveformTest {
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         )
-        val peaks = result.successOrFail()
-        peaks.size shouldBe TARGET_SAMPLES
+        assertTrue(result.isSuccess, "waveform failed: ${result.exceptionOrNull()}")
+        val peaks = result.getOrThrow()
+        assertEquals(TARGET_SAMPLES, peaks.size, "peak count should match target for a long source")
         peaks.forEach { peak ->
-            peak shouldBeGreaterThanOrEqual 0f
-            peak shouldBeLessThanOrEqual 1f
+            assertTrue(peak in 0f..1f, "peak out of range: $peak")
         }
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqual MIN_MEAN_PEAK
+        assertTrue(meanPeak > MIN_MEAN_PEAK, "mean peak should exceed $MIN_MEAN_PEAK, was $meanPeak")
     }
 
     @Test
     fun waveform_onZeroTargetSamplesRejectsAsIllegalArgument() = runTest {
         val inputPath = writeTestWav(1, MONO)
         val result = compressor.waveform(MediaSource.Local.FilePath(inputPath), targetSamples = 0)
-        val err = result.failureOrFail()
-        err.shouldBeInstanceOf<IllegalArgumentException>()
+        assertTrue(result.isFailure)
+        val err = result.exceptionOrNull()
+        assertTrue(err is IllegalArgumentException, "expected IllegalArgumentException, got $err")
     }
 
     @Test
@@ -89,14 +87,14 @@ class IosWaveformTest {
         val path = testDir + "stub.bin"
         writeBytes(path, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte()))
         val result = compressor.waveform(MediaSource.Local.FilePath(path))
-        val err = result.failureOrFail()
-        withClue("expected typed AudioCompressionError, got $err") {
-            (
-                err is AudioCompressionError.NoAudioTrack ||
-                    err is AudioCompressionError.IoFailed ||
-                    err is AudioCompressionError.UnsupportedSourceFormat
-                ) shouldBe true
-        }
+        assertTrue(result.isFailure)
+        val err = result.exceptionOrNull()
+        assertTrue(
+            err is AudioCompressionError.NoAudioTrack ||
+                err is AudioCompressionError.IoFailed ||
+                err is AudioCompressionError.UnsupportedSourceFormat,
+            "expected typed AudioCompressionError, got $err",
+        )
     }
 
     @Test
@@ -108,12 +106,11 @@ class IosWaveformTest {
             targetSamples = TARGET_SAMPLES,
         ) { progress ->
             phases += progress.phase
-            progress.fraction shouldBeGreaterThanOrEqual 0f
-            progress.fraction shouldBeLessThanOrEqual 1f
+            assertTrue(progress.fraction in 0f..1f)
         }
-        result.successOrFail()
-        (CompressionProgress.Phase.COMPRESSING in phases) shouldBe true
-        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases) shouldBe false
+        assertTrue(result.isSuccess)
+        assertTrue(CompressionProgress.Phase.COMPRESSING in phases)
+        assertFalse(CompressionProgress.Phase.FINALIZING_OUTPUT in phases)
     }
 
     @Test
@@ -127,20 +124,21 @@ class IosWaveformTest {
             MediaDestination.Local.FilePath(aacPath),
             AudioCompressionConfig(channels = AudioChannels.MONO),
         )
-        encodeResult.successOrFail()
+        assertTrue(
+            encodeResult.isSuccess,
+            "pre-flight AAC encode failed: ${encodeResult.exceptionOrNull()}",
+        )
 
         val result = compressor.waveform(
             MediaSource.Local.FilePath(aacPath),
             targetSamples = TARGET_SAMPLES,
         )
-        val peaks = result.successOrFail()
-        peaks.size shouldBe TARGET_SAMPLES
-        peaks.forEach { peak ->
-            peak shouldBeGreaterThanOrEqual 0f
-            peak shouldBeLessThanOrEqual 1f
-        }
+        assertTrue(result.isSuccess, "waveform on AAC failed: ${result.exceptionOrNull()}")
+        val peaks = result.getOrThrow()
+        assertEquals(TARGET_SAMPLES, peaks.size, "peak count should match target")
+        peaks.forEach { peak -> assertTrue(peak in 0f..1f, "peak out of range: $peak") }
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqual MIN_AAC_MEAN_PEAK
+        assertTrue(meanPeak > MIN_AAC_MEAN_PEAK, "AAC mean peak should exceed $MIN_AAC_MEAN_PEAK, was $meanPeak")
     }
 
     @Test
@@ -151,17 +149,15 @@ class IosWaveformTest {
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         ) { progress -> lastFraction = progress.fraction }
-        result.successOrFail()
-        lastFraction shouldBe 1f
+        assertTrue(result.isSuccess)
+        assertEquals(1f, lastFraction, "waveform must end with COMPRESSING(1f)")
     }
 
     @Test
     fun waveform_cancellationPropagates() = runBlocking {
         // Mirror IosAudioCompressorTest.cancellation_deletesPartialOutput: `launch` + wait for
         // first progress via a `CompletableDeferred<Unit>` to guarantee the pump is inside the
-        // AVAssetReader loop before we cancel. This avoids a race where `cancel` fires before
-        // `extractIosWaveform` enters its `ensureActive()`-guarded loop, which would report
-        // the cancellation via await-rethrow but never actually exercise the pump's cancel path.
+        // AVAssetReader loop before we cancel.
         val inputPath = writeTestWav(LONG_DURATION_SEC, MONO)
         val scope = CoroutineScope(Dispatchers.Default + Job())
         val started = CompletableDeferred<Unit>()
@@ -176,27 +172,27 @@ class IosWaveformTest {
         withTimeout(10_000L) { started.await() }
         job.cancel()
         withTimeout(15_000L) { job.join() }
-        job.isCancelled shouldBe true
+        assertTrue(job.isCancelled, "Job must be cancelled to exercise the pump's cancel path")
 
         // Subsequent call on the same compressor must still succeed — proves no leaked AVAssetReader.
         val second = compressor.waveform(
             MediaSource.Local.FilePath(inputPath),
             targetSamples = TARGET_SAMPLES,
         )
-        second.successOrFail()
+        assertTrue(second.isSuccess, "post-cancel waveform failed: ${second.exceptionOrNull()}")
     }
 
     @Test
     fun waveform_onMissingFileReturnsSourceNotFound() = runTest {
         val missingPath = testDir + "does-not-exist.wav"
         val result = compressor.waveform(MediaSource.Local.FilePath(missingPath))
-        val err = result.failureOrFail()
-        withClue("expected SourceNotFound or IoFailed for missing file, got $err") {
-            (
-                err is AudioCompressionError.SourceNotFound ||
-                    err is AudioCompressionError.IoFailed
-                ) shouldBe true
-        }
+        assertTrue(result.isFailure)
+        val err = result.exceptionOrNull()
+        assertTrue(
+            err is AudioCompressionError.SourceNotFound ||
+                err is AudioCompressionError.IoFailed,
+            "expected SourceNotFound or IoFailed for missing file, got $err",
+        )
     }
 
     private fun writeTestWav(durationSec: Int, channels: Int): String {
@@ -219,14 +215,3 @@ class IosWaveformTest {
         const val MIN_AAC_MEAN_PEAK = 0.6f
     }
 }
-
-/**
- * Local helpers that avoid `io.kotest.matchers.result.shouldBeSuccess` / `shouldBeFailure`
- * because those matchers aren't consistently available across Kotlin/Native targets in the
- * kotest 6.1.11 artefact bundle. Asserting on `Result` via `getOrThrow` / `exceptionOrNull`
- * plus a Kotest-authored `fail(...)` keeps failure messages rich without the K/N gap.
- */
-private fun <T> Result<T>.successOrFail(): T = getOrElse { fail("expected success, got: $it") }
-
-private fun Result<*>.failureOrFail(): Throwable =
-    exceptionOrNull() ?: fail("expected failure, got success: ${getOrNull()}")
