@@ -48,4 +48,47 @@ public interface ImageCompressor {
         output: MediaDestination,
         config: ImageCompressionConfig = ImageCompressionConfig(),
     ): Result<CompressionResult>
+
+    /**
+     * Decode a thumbnail of [input] without loading the full-resolution bitmap into memory.
+     *
+     * Unlike [compress], which may decode the entire source and then downscale, `thumbnail`
+     * uses the platform's **sampled-decode** primitives so peak heap usage scales with the
+     * requested thumbnail size rather than the source's pixel count.
+     *
+     *  * Android — two-pass `BitmapFactory` with `inJustDecodeBounds = true` then
+     *    `inSampleSize` (power-of-2), followed by an exact final resize when the sample-sized
+     *    bitmap still exceeds [maxDimension].
+     *  * iOS — `CGImageSourceCreateThumbnailAtIndex` with `kCGImageSourceThumbnailMaxPixelSize
+     *    = maxDimension` and `kCGImageSourceCreateThumbnailWithTransform = true` so EXIF
+     *    rotation is applied by the decoder rather than via a second pass.
+     *
+     * A 48 MP photo (4000×3000) decoded to RGBA in full occupies ~48 MB. With
+     * `maxDimension = 200`, sampled decode holds <1 MB in RAM — the consumer-facing reason
+     * this method exists alongside [compress].
+     *
+     * Aspect ratio is preserved; the longer edge of the output never exceeds [maxDimension].
+     * The method never upscales — when [maxDimension] is larger than both source dimensions
+     * the output keeps the source pixel dimensions (re-encoded to [format] at [quality]).
+     *
+     * Inputs and outputs cover every platform-native form via the [MediaSource] /
+     * [MediaDestination] sealed hierarchies — see [compress] for the full list.
+     *
+     * @param input Source media — see [MediaSource] and platform-specific builders.
+     * @param output Destination — see [MediaDestination] and platform-specific builders.
+     * @param maxDimension Largest dimension (width or height) in pixels. Must be strictly
+     *   positive; `0` or negative values surface as `Result.failure(IllegalArgumentException)`
+     *   without touching the source.
+     * @param format Output image format.
+     * @param quality Encoding quality, 0..100.
+     * @return [Result] wrapping [CompressionResult] on success, or the same
+     *   [ImageCompressionError] subtypes as [compress] on failure.
+     */
+    public suspend fun thumbnail(
+        input: MediaSource,
+        output: MediaDestination,
+        maxDimension: Int,
+        format: ImageFormat = ImageFormat.JPEG,
+        quality: Int = 80,
+    ): Result<CompressionResult>
 }
