@@ -75,7 +75,7 @@ class IosWaveformTest {
             peak shouldBeLessThanOrEqual 1f
         }
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqualMIN_MEAN_PEAK
+        meanPeak shouldBeGreaterThanOrEqual MIN_MEAN_PEAK
     }
 
     @Test
@@ -142,7 +142,7 @@ class IosWaveformTest {
             peak shouldBeLessThanOrEqual 1f
         }
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqualMIN_AAC_MEAN_PEAK
+        meanPeak shouldBeGreaterThanOrEqual MIN_AAC_MEAN_PEAK
     }
 
     @Test

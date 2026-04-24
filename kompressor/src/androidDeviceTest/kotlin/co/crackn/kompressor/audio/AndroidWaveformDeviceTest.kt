@@ -80,7 +80,7 @@ class AndroidWaveformDeviceTest {
         }
         // 440 Hz at full amplitude must produce peaks near 1.0 in every bucket.
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqualMIN_MEAN_PEAK
+        meanPeak shouldBeGreaterThanOrEqual MIN_MEAN_PEAK
     }
 
     @Test
@@ -168,7 +168,7 @@ class AndroidWaveformDeviceTest {
         }
         // Lossy AAC shaves peaks slightly — relax the bound vs. the WAV case.
         val meanPeak = peaks.average().toFloat()
-        meanPeak shouldBeGreaterThanOrEqualMIN_AAC_MEAN_PEAK
+        meanPeak shouldBeGreaterThanOrEqual MIN_AAC_MEAN_PEAK
     }
 
     @Test
