@@ -196,7 +196,11 @@ class PcmPeakBucketerTest {
 
     @Test
     fun completedBucketCountTracksProgress() {
-        // Feed enough samples to complete at least a few buckets.
+        // Deterministic inputs: 44 100 frames over 1 000 000 µs into a 10-bucket bucketer. At
+        // frame F the computed bucket is `F * 1_000_000 / 44_100 * 10 / 1_000_000`, so bucket
+        // 9 is entered at frame 39 690 — by the time accept returns, buckets 0..8 are flushed
+        // and bucket 9 is still pending. `finish()` then flushes the last bucket, producing
+        // exactly 10 elements.
         val bucketer = PcmPeakBucketer(
             targetSamples = 10,
             totalDurationUs = 1_000_000,
@@ -206,10 +210,9 @@ class PcmPeakBucketerTest {
         bucketer.completedBucketCount shouldBe 0
         val samples = ByteArray(44_100 * 2)
         bucketer.accept(samples, 0, samples.size)
-        // Over a full second with 10 target buckets, we expect ~9 buckets to complete (the last
-        // one is pending until `finish()`).
-        (bucketer.completedBucketCount >= 1) shouldBe true
-        (bucketer.completedBucketCount <= 10) shouldBe true
+        bucketer.completedBucketCount shouldBe 9
+        val peaks = bucketer.finish()
+        peaks.size shouldBe 10
     }
 
     private companion object {

@@ -12,6 +12,8 @@ import co.crackn.kompressor.io.CompressionProgress
 import co.crackn.kompressor.safeInt
 import co.crackn.kompressor.safeLong
 import co.crackn.kompressor.safeRelease
+import java.io.FileNotFoundException
+import java.io.IOException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -26,9 +28,13 @@ import kotlinx.coroutines.ensureActive
  *
  * ## Contract
  *
- *  - Throws [AudioCompressionError.NoAudioTrack] when [inputPath] has zero tracks whose MIME
- *    starts with `audio/`. Surfaced BEFORE the codec is opened so callers don't pay the decoder
- *    init cost on an image / video-only input.
+ *  - Throws [AudioCompressionError.SourceNotFound] when [inputPath] can't be opened as a
+ *    container at all (file missing, permission denied, corrupt header) — the extractor's
+ *    `setDataSource` call is the first thing this routine does, so a typed error here keeps
+ *    the `AudioCompressionError` hierarchy exhaustive for callers.
+ *  - Throws [AudioCompressionError.NoAudioTrack] when the container opens cleanly but has
+ *    zero tracks whose MIME starts with `audio/`. Surfaced BEFORE the codec is opened so
+ *    callers don't pay the decoder init cost on an image / video-only input.
  *  - Throws [AudioCompressionError.UnsupportedSourceFormat] when the extractor reports an
  *    unusable [MediaFormat.KEY_DURATION] (missing or non-positive) — we can't bucket without
  *    a duration, and forcing callers to probe first would duplicate work.
@@ -36,6 +42,13 @@ import kotlinx.coroutines.ensureActive
  *  - Always releases the decoder and the extractor via `try/finally`, even on cancellation.
  *  - Cancellation: checked before each input/output poll so the suspend scope's cancellation
  *    propagates promptly.
+ *
+ * ## Concurrency
+ *
+ * This function holds no file-scope state — the PCM chunk buffer is a local var inside
+ * [pumpDecoderIntoBucketer], so two coroutines calling `waveform(a)` and `waveform(b)` in
+ * parallel on the same [AndroidAudioCompressor] instance do not race. Matches the
+ * call-scoped buffer the iOS sibling has used since day one.
  *
  * ## Memory footprint
  *
@@ -55,7 +68,25 @@ internal suspend fun extractAndroidWaveform(
     targetSamples: Int,
     onProgress: suspend (CompressionProgress) -> Unit,
 ): FloatArray {
-    val extractor = openAudioExtractor(inputPath)
+    val extractor = try {
+        openAudioExtractor(inputPath)
+    } catch (e: FileNotFoundException) {
+        throw AudioCompressionError.SourceNotFound(
+            "Source at $inputPath not found: ${e.message ?: "FileNotFoundException"}",
+            cause = e,
+        )
+    } catch (e: IOException) {
+        throw AudioCompressionError.IoFailed(
+            "Failed to open source at $inputPath: ${e.message ?: "IOException"}",
+            cause = e,
+        )
+    } catch (e: IllegalArgumentException) {
+        // MediaExtractor.setDataSource throws IAE for malformed URIs / unsupported schemes.
+        throw AudioCompressionError.SourceNotFound(
+            "Source at $inputPath is not a readable media container: ${e.message ?: "IllegalArgumentException"}",
+            cause = e,
+        )
+    }
     val trackIndex = findFirstAudioTrack(extractor)
     if (trackIndex == null) {
         extractor.release()
@@ -125,10 +156,10 @@ internal suspend fun extractAndroidWaveform(
                 val tick = completed / progressThrottle
                 if (tick > lastProgressTick) {
                     lastProgressTick = tick
-                    // Cap at 0.9999f so the 1f terminal is the caller's to emit (or absent,
-                    // since waveform has no FINALIZING_OUTPUT phase — the "done" signal is
-                    // simply `Result.success`).
-                    val fraction = (completed.toFloat() / targetSamples).coerceIn(0f, TERMINAL_CAP)
+                    // Cap intermediate ticks just under 1f — a terminal COMPRESSING(1f) is
+                    // emitted after the pump returns successfully so consumer progress UIs
+                    // can reach 100% before the Result.success lands.
+                    val fraction = (completed.toFloat() / targetSamples).coerceIn(0f, INTERMEDIATE_CAP)
                     onProgress(CompressionProgress(CompressionProgress.Phase.COMPRESSING, fraction))
                 }
             },
@@ -147,6 +178,10 @@ internal suspend fun extractAndroidWaveform(
         extractor.release()
     }
 
+    // Pump completed without throwing — emit the terminal 100% tick so consumer progress
+    // bars don't visibly stall at 99.99% between the last intermediate tick and the
+    // Result.success return.
+    onProgress(CompressionProgress(CompressionProgress.Phase.COMPRESSING, 1f))
     return bucketer.finish()
 }
 
@@ -177,6 +212,9 @@ private suspend fun pumpDecoderIntoBucketer(
     val bufferInfo = MediaCodec.BufferInfo()
     var inputEos = false
     var outputEos = false
+    // Call-scoped PCM chunk buffer: grown on demand, no shared state across concurrent
+    // waveform() calls. Matches the iOS sibling's `reusableChunk` local.
+    var reusableChunk = ByteArray(INITIAL_CHUNK_SIZE)
 
     while (!outputEos) {
         currentCoroutineContext().ensureActive()
@@ -224,7 +262,7 @@ private suspend fun pumpDecoderIntoBucketer(
                 if (outputIndex >= 0) {
                     val outputBuffer = decoder.getOutputBuffer(outputIndex)
                     if (outputBuffer != null && bufferInfo.size > 0) {
-                        feedBucketer(outputBuffer, bufferInfo, bucketer)
+                        reusableChunk = feedBucketer(outputBuffer, bufferInfo, bucketer, reusableChunk)
                         emitProgress(bucketer.completedBucketCount)
                     }
                     decoder.releaseOutputBuffer(outputIndex, false)
@@ -238,43 +276,30 @@ private suspend fun pumpDecoderIntoBucketer(
 }
 
 /**
- * Copy `bufferInfo.size` bytes out of [outputBuffer] (starting at [bufferInfo].offset) into a
- * reusable heap array and hand that slice to [bucketer]. Copying is unavoidable: the direct
- * buffer backing `outputBuffer` is owned by the codec and must be returned intact on
- * [MediaCodec.releaseOutputBuffer] — but we only allocate once via the `ThreadLocal`-style
- * reusable array, so steady-state runs stay GC-quiet.
+ * Copy `bufferInfo.size` bytes out of [outputBuffer] (starting at [bufferInfo].offset) into
+ * [reusableChunk], growing it when necessary, then hand the slice to [bucketer]. Copying is
+ * unavoidable: the direct buffer backing `outputBuffer` is owned by the codec and must be
+ * returned intact on [MediaCodec.releaseOutputBuffer] — but [reusableChunk] is scoped to the
+ * enclosing pump call, so steady-state runs stay GC-quiet and concurrent callers never share
+ * allocation state. Returns the (possibly grown) chunk array back to the caller.
  */
 private fun feedBucketer(
     outputBuffer: java.nio.ByteBuffer,
     bufferInfo: MediaCodec.BufferInfo,
     bucketer: PcmPeakBucketer,
-) {
+    reusableChunk: ByteArray,
+): ByteArray {
     outputBuffer.position(bufferInfo.offset)
     outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
-    val chunk = acquireChunkBuffer(bufferInfo.size)
+    val chunk = if (reusableChunk.size >= bufferInfo.size) {
+        reusableChunk
+    } else {
+        ByteArray(bufferInfo.size.takeHighestOneBit() shl 1)
+    }
     outputBuffer.get(chunk, 0, bufferInfo.size)
     bucketer.accept(chunk, 0, bufferInfo.size)
+    return chunk
 }
-
-/**
- * Return a `ByteArray` of at least [size] bytes, reusing the lazily-allocated field buffer
- * when possible. Grows monotonically (by doubling) so a single long waveform call re-uses
- * the same allocation across thousands of decoder-output cycles.
- */
-private fun acquireChunkBuffer(size: Int): ByteArray {
-    val current = chunkBufferRef
-    if (current != null && current.size >= size) return current
-    val grown = ByteArray(maxOf(INITIAL_CHUNK_SIZE, size.takeHighestOneBit() shl 1))
-    chunkBufferRef = grown
-    return grown
-}
-
-// Waveform extraction is expected to run one call at a time on a single suspend scope, so a
-// plain top-level var is safe. If this ever becomes multi-threaded a ThreadLocal would be the
-// right cure; the concurrent use-case is `kompressor.audio.waveform(a) + waveform(b)` from two
-// coroutines which is not a pattern we optimise for today.
-@Volatile
-private var chunkBufferRef: ByteArray? = null
 
 // Tuned for typical MediaCodec AAC/MP3 access-unit outputs (~4-16 KB) while amortising the
 // grow-to-max cost on the first big buffer. Not correctness-critical — the bucketer treats
@@ -283,4 +308,7 @@ private const val INITIAL_CHUNK_SIZE = 16 * 1024
 
 private const val DEQUEUE_TIMEOUT_US = 10_000L
 private const val MAX_PROGRESS_EMISSIONS = 64
-private const val TERMINAL_CAP = 0.9999f
+
+// Intermediate progress ticks cap just under 1f; the terminal COMPRESSING(1f) is emitted by
+// `extractAndroidWaveform` after the pump returns successfully.
+private const val INTERMEDIATE_CAP = 0.9999f

@@ -114,12 +114,18 @@ public interface AudioCompressor {
      * **Progress.** [onProgress] emits [CompressionProgress] with phase
      * [CompressionProgress.Phase.COMPRESSING] only — there is no `MATERIALIZING_INPUT` when
      * [input] is already a local file, and no `FINALIZING_OUTPUT` because the result is an
-     * in-memory [FloatArray] with no sink.
+     * in-memory [FloatArray] with no sink. A terminal `COMPRESSING(1f)` tick is emitted once
+     * the PCM pump completes successfully, so consumer progress UIs keying on `fraction == 1f`
+     * get a clean 100% before the `Result.success` lands.
      *
      * **Track selection.** Always operates on the **first** audio track of the source. Support
      * for an `audioTrackIndex` parameter is a future extension (see design doc §4.6).
      *
      * Cancel the calling coroutine scope to abort the extraction (structured concurrency).
+     *
+     * **Thread-safety:** implementations hold no call-external state. Concurrent `waveform()`
+     * calls from different coroutines on the same instance are safe — the PCM chunk buffer
+     * is scoped to each call, mirroring [compress]'s concurrent-safety guarantee.
      *
      * @param input Source media — see [MediaSource]. A source with no audio track (e.g. a
      *   video-only MP4 or an image file) surfaces as

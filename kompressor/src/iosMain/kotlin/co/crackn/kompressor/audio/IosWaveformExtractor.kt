@@ -32,6 +32,7 @@ import platform.CoreMedia.CMBlockBufferCopyDataBytes
 import platform.CoreMedia.CMBlockBufferGetDataLength
 import platform.CoreMedia.CMSampleBufferGetDataBuffer
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 
 /**
@@ -47,11 +48,20 @@ import platform.Foundation.NSURL
  * transparent conversion from MP3 / AAC / FLAC / Opus / WAV to PCM per the Apple AudioToolbox
  * documentation. No source sample rate is specified, so the reader emits PCM at the track's
  * native rate (e.g. 44.1 kHz for CD-quality sources). We read the sample rate and channel count
- * off the track's `formatDescriptions` path in a separate pre-flight.
+ * off [AVAudioFile.processingFormat] in a separate pre-flight — `AVAssetTrack.formatDescriptions`
+ * would be the canonical path but its K/N binding is the `CMFormatDescriptionRef`-list bridge
+ * that raises `ClassCastException` at runtime (see `IosFileUtils.readAudioMetadata` for the
+ * full analysis). `AVAudioFile.processingFormat` exposes the same numbers via `AVAudioFormat`
+ * without the bridge cast.
  *
  * ## Contract
  *
- *  - Throws [AudioCompressionError.NoAudioTrack] when the asset reports zero audio tracks.
+ *  - Throws [AudioCompressionError.SourceNotFound] when [inputPath] does not exist on-disk —
+ *    `AVURLAsset` is a permissive constructor that never validates the underlying file, so
+ *    we pre-check via [NSFileManager] to avoid the "file missing" case masquerading as
+ *    `NoAudioTrack`.
+ *  - Throws [AudioCompressionError.NoAudioTrack] when the asset opens but reports zero
+ *    audio tracks.
  *  - Throws [AudioCompressionError.UnsupportedSourceFormat] when the asset's duration is not
  *    readable or non-positive.
  *  - Wraps reader start / copy failures with [AudioCompressionError.DecodingFailed].
@@ -79,6 +89,11 @@ internal suspend fun extractIosWaveform(
     targetSamples: Int,
     onProgress: suspend (CompressionProgress) -> Unit,
 ): FloatArray {
+    if (!NSFileManager.defaultManager.fileExistsAtPath(inputPath)) {
+        throw AudioCompressionError.SourceNotFound(
+            "No file at $inputPath",
+        )
+    }
     val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
     @Suppress("UNCHECKED_CAST")
     val audioTracks = asset.tracksWithMediaType(AVMediaTypeAudio) as List<AVAssetTrack>
@@ -153,7 +168,7 @@ internal suspend fun extractIosWaveform(
                 val tick = completed / progressThrottle
                 if (tick > lastProgressTick) {
                     lastProgressTick = tick
-                    val fraction = (completed.toFloat() / targetSamples).coerceIn(0f, TERMINAL_CAP)
+                    val fraction = (completed.toFloat() / targetSamples).coerceIn(0f, INTERMEDIATE_CAP)
                     onProgress(CompressionProgress(CompressionProgress.Phase.COMPRESSING, fraction))
                 }
             } finally {
@@ -181,19 +196,22 @@ internal suspend fun extractIosWaveform(
         reader.cancelReading()
     }
 
+    // Pump completed without throwing — emit the terminal 100% tick so consumer progress
+    // bars don't visibly stall at 99.99% between the last intermediate tick and the
+    // Result.success return. Matches AndroidWaveformExtractor's behaviour.
+    onProgress(CompressionProgress(CompressionProgress.Phase.COMPRESSING, 1f))
     return bucketer.finish()
 }
 
 /**
- * Read the native sample rate and channel count for the file at [inputPath] via [AVAudioFile].
- * `AVAudioFile.processingFormat` is the canonical source for PCM sample rate / channel count
- * on iOS — the same probe [IosAudioCompressor.validateChannelConfiguration] uses for its
- * channel-mismatch pre-flight.
+ * Read the native sample rate and channel count for the file at [inputPath] via
+ * [AVAudioFile.processingFormat]. See the class-level KDoc for why this is preferred over
+ * `AVAssetTrack.formatDescriptions` on K/N.
  *
  * Falls back to common defaults (44100 Hz / 2 ch) when the probe fails (unreadable file,
- * K/N bridge surface that [AVAudioFile] can't stand up for an atypical container). A misread
- * here produces a less-accurate waveform — the bucket time-to-frame mapping drifts by the
- * ratio of real-to-assumed rate — but never a crash or typed error. The real decoder
+ * atypical container that [AVAudioFile] refuses to open). A misread here produces a
+ * less-accurate waveform — the bucket time-to-frame mapping drifts by the ratio of
+ * real-to-assumed rate — but never a crash or typed error. The real decoder
  * ([AVAssetReader]) runs separately and surfaces its own errors through the pump loop.
  */
 @OptIn(ExperimentalForeignApi::class)
@@ -219,5 +237,8 @@ private const val DEFAULT_CHANNEL_COUNT = 2
 private const val INITIAL_CHUNK_SIZE = 32 * 1024
 
 private const val MAX_PROGRESS_EMISSIONS = 64
-private const val TERMINAL_CAP = 0.9999f
+
+// Intermediate progress ticks cap just under 1f; the terminal COMPRESSING(1f) is emitted by
+// `extractIosWaveform` after the reader pump returns successfully.
+private const val INTERMEDIATE_CAP = 0.9999f
 private const val MICROS_PER_SECOND = 1_000_000.0
