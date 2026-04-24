@@ -15,8 +15,6 @@ import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
 import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.writeBytes
 import io.kotest.assertions.withClue
-import io.kotest.matchers.booleans.shouldBeFalse
-import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.floats.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.floats.shouldBeLessThanOrEqual
 import io.kotest.matchers.shouldBe
@@ -97,7 +95,7 @@ class IosWaveformTest {
                 err is AudioCompressionError.NoAudioTrack ||
                     err is AudioCompressionError.IoFailed ||
                     err is AudioCompressionError.UnsupportedSourceFormat
-                ).shouldBeTrue()
+                ) shouldBe true
         }
     }
 
@@ -114,8 +112,8 @@ class IosWaveformTest {
             progress.fraction shouldBeLessThanOrEqual 1f
         }
         result.successOrFail()
-        (CompressionProgress.Phase.COMPRESSING in phases).shouldBeTrue()
-        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases).shouldBeFalse()
+        (CompressionProgress.Phase.COMPRESSING in phases) shouldBe true
+        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases) shouldBe false
     }
 
     @Test
@@ -178,7 +176,7 @@ class IosWaveformTest {
         withTimeout(10_000L) { started.await() }
         job.cancel()
         withTimeout(15_000L) { job.join() }
-        job.isCancelled.shouldBeTrue()
+        job.isCancelled shouldBe true
 
         // Subsequent call on the same compressor must still succeed — proves no leaked AVAssetReader.
         val second = compressor.waveform(
@@ -197,7 +195,7 @@ class IosWaveformTest {
             (
                 err is AudioCompressionError.SourceNotFound ||
                     err is AudioCompressionError.IoFailed
-                ).shouldBeTrue()
+                ) shouldBe true
         }
     }
 

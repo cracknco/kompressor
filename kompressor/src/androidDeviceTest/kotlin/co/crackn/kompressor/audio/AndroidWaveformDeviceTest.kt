@@ -11,8 +11,6 @@ import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.testutil.WavGenerator
 import io.kotest.assertions.withClue
-import io.kotest.matchers.booleans.shouldBeFalse
-import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.floats.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.floats.shouldBeLessThanOrEqual
 import io.kotest.matchers.shouldBe
@@ -107,7 +105,7 @@ class AndroidWaveformDeviceTest {
                     err is AudioCompressionError.IoFailed ||
                     err is AudioCompressionError.SourceNotFound ||
                     err is AudioCompressionError.UnsupportedSourceFormat
-                ).shouldBeTrue()
+                ) shouldBe true
         }
     }
 
@@ -128,8 +126,8 @@ class AndroidWaveformDeviceTest {
             progress.fraction shouldBeLessThanOrEqual 1f
         }
         result.successOrFail()
-        (CompressionProgress.Phase.COMPRESSING in phases).shouldBeTrue()
-        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases).shouldBeFalse()
+        (CompressionProgress.Phase.COMPRESSING in phases) shouldBe true
+        (CompressionProgress.Phase.FINALIZING_OUTPUT in phases) shouldBe false
     }
 
     @Test
@@ -221,7 +219,7 @@ class AndroidWaveformDeviceTest {
         withTimeout(10_000L) { started.await() }
         job.cancel()
         withTimeout(15_000L) { job.join() }
-        job.isCancelled.shouldBeTrue()
+        job.isCancelled shouldBe true
 
         // Re-running waveform on the same compressor must still succeed — proves no leaked
         // codec or extractor from the cancelled call is blocking a subsequent one.
@@ -241,7 +239,7 @@ class AndroidWaveformDeviceTest {
             (
                 err is AudioCompressionError.SourceNotFound ||
                     err is AudioCompressionError.IoFailed
-                ).shouldBeTrue()
+                ) shouldBe true
         }
     }
 
