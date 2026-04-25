@@ -14,10 +14,13 @@ for CRA-98. Linear issue: [CRA-98](https://linear.app/crackn/issue/CRA-98).
 - PR [#143](https://github.com/cracknco/kompressor/pull/143) (CRA-95) saw those tests
   flake and relaxed them to a **size-delta tolerance of 1024 bytes**
   (`AV_SIZE_TOLERANCE_BYTES`). A class-KDoc hypothesis blamed
-  second-resolution `mvhd` / `mdhd` timestamps, but an additional determinism test
-  (`audio_twoConsecutiveCompressesProduceIdenticalBytes`) passed, neither confirming nor
-  refuting the hypothesis because two back-to-back calls typically land in the same
-  wall-clock second.
+  second-resolution `mvhd` / `mdhd` timestamps, but at the time an additional determinism
+  test (`audio_twoConsecutiveCompresses_staysWithinTimestampBudget` —
+  formerly `audio_twoConsecutiveCompressesProduceIdenticalBytes`) passed with a strict
+  bitwise assertion — neither confirming nor refuting the hypothesis because two
+  back-to-back calls typically land in the same wall-clock second. (That legacy twin
+  was later relaxed in the [PR #157](https://github.com/cracknco/kompressor/pull/157)
+  follow-up, after the same straddle hit the NSURL twin under heavy CI load.)
 
 ## Competing hypotheses (pre-investigation)
 
@@ -61,10 +64,10 @@ sizes=[27537] firstDivergentOffsets=[26370, 26486, 26586]
 H1 is therefore **confirmed**: the legacy path alone, re-run across a second boundary,
 produces byte differences in exactly the positions where the wall-clock timestamps live.
 
-### Step 2 — `audio/video_novelOverloadTwice_producesIdenticalBytes`
+### Step 2 — `audio/video_novelOverloadTwice_staysWithinTimestampBudget`
 
 Two back-to-back NSURL-overload compresses of the same input, executed within
-milliseconds of each other, compared bitwise.
+milliseconds of each other, compared structurally.
 
 **Observed**:
 
@@ -73,10 +76,23 @@ milliseconds of each other, compared bitwise.
 [CRA-98 Step 2 video] novelA.size=2858  novelB.size=2858  firstDivergentOffsets=[]
 ```
 
-Both audio and video produce **bitwise-identical** output. The NSURL overload is not
-introducing any per-call non-determinism. This eliminates H3: there is nothing in
-`toIosInputPath` / coroutine dispatch that stamps a non-timestamp value differently on
-successive runs.
+Both audio and video produce **bitwise-identical** output (when both calls land in
+the same wall-clock second). The NSURL overload is not introducing any per-call
+non-determinism. This eliminates H3: there is nothing in `toIosInputPath` /
+coroutine dispatch that stamps a non-timestamp value differently on successive runs.
+
+**Slow-runner caveat (added post-conclusion).** The original Step 2 assertion was
+`a.contentEquals(b)`, which assumed the two back-to-back compresses always finish
+within the same wall-clock second. On a slow `macos-latest` runner under load the
+release pipeline observed the pair straddle a second tick and produce an H1-flavoured
+3-byte divergence at the moov-tail timestamp offsets — see GitHub Actions run
+[24935723437](https://github.com/cracknco/kompressor/actions/runs/24935723437). Because
+H3 has already been refuted (whatever that run produced was an H1 straddle, not new
+NSURL non-determinism), Step 2 was relaxed to the same `assertAvOutputStructurallyEquivalent`
+check the production-grade tests use (sizes equal + ≤ `AV_TIMESTAMP_BYTE_TOLERANCE = 64`
+differing bytes). The test now serves as an **ongoing sentinel for non-determinism
+*beyond* the timestamp budget** — any size mismatch or ≥65 differing bytes between two
+back-to-back NSURL compresses would still fail.
 
 ### Step 3 — `audio/video_legacyVsNovel_captureDivergentByteOffsets`
 
@@ -148,6 +164,23 @@ The new assertion enforces:
    if sizes disagree there is a real regression).
 2. Differing bytes ≤ 64 (1.6× safety margin over the 40 B worst-case multi-track
    timestamp budget, still 16× tighter than the former 1024-byte size tolerance).
+
+**Follow-up extensions** (PR [#157](https://github.com/cracknco/kompressor/pull/157)):
+
+- The Step-2 NSURL-twice tests (`audio/video_novelOverloadTwice_staysWithinTimestampBudget`,
+  renamed from the original `…_producesIdenticalBytes` to reflect the new assertion)
+  switched from strict `contentEquals` to the same structural-equivalence tolerance
+  after the assumed-deterministic NSURL pair straddled a wall-clock second on a slow
+  `macos-latest` runner (release run 24935723437). The Step-2 tests now serve as
+  ongoing sentinels for non-determinism *beyond* the timestamp budget rather than
+  H2-vs-H3 discriminators.
+- The legacy-twin determinism test (`audio_twoConsecutiveCompresses_staysWithinTimestampBudget`,
+  renamed from `audio_twoConsecutiveCompressesProduceIdenticalBytes` for the same reason
+  in `UrlInputEndToEndTest`) was relaxed alongside the Step-2 fix for symmetry: even
+  the legacy path can in principle straddle a second under heavy CI load (the NSURL
+  failure proved the runner was capable of pushing two back-to-back AVFoundation
+  exports across a tick), so keeping that test on strict `contentEquals` while Step 2
+  was relaxed would have been an arbitrary inconsistency — not a meaningful pin.
 
 ## Why not tighten to bitwise-identical?
 

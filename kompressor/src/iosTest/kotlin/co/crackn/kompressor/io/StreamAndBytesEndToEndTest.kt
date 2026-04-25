@@ -16,8 +16,10 @@ import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.logging.KompressorLogger
 import co.crackn.kompressor.logging.LogLevel
 import co.crackn.kompressor.logging.SafeLogger
+import co.crackn.kompressor.testutil.AV_TIMESTAMP_BYTE_TOLERANCE
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.assertAvOutputStructurallyEquivalent
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
@@ -392,38 +394,6 @@ class StreamAndBytesEndToEndTest {
 
     // --- helpers --------------------------------------------------------------
 
-    /**
-     * Assert two audio/video outputs are *structurally* equivalent: sizes match exactly and
-     * the count of differing bytes fits inside the AVFoundation wall-clock timestamp budget
-     * ([AV_TIMESTAMP_BYTE_TOLERANCE]). See the class KDoc and CRA-98 for the derivation.
-     */
-    private fun assertAvOutputStructurallyEquivalent(novelPath: String, legacyPath: String) {
-        assertAvOutputStructurallyEquivalent(
-            novelBytes = readBytes(novelPath),
-            legacyBytes = readBytes(legacyPath),
-        )
-    }
-
-    private fun assertAvOutputStructurallyEquivalent(novelBytes: ByteArray, legacyBytes: ByteArray) {
-        withClue("Outputs must not be empty. novel=${novelBytes.size} legacy=${legacyBytes.size}") {
-            (novelBytes.isNotEmpty() && legacyBytes.isNotEmpty()) shouldBe true
-        }
-        withClue(
-            "Output sizes must be equal (AVFoundation timestamp drift does not resize the " +
-                "container). novel=${novelBytes.size} legacy=${legacyBytes.size}",
-        ) {
-            novelBytes.size shouldBe legacyBytes.size
-        }
-        var differing = 0
-        for (i in novelBytes.indices) if (novelBytes[i] != legacyBytes[i]) differing++
-        withClue(
-            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation wall-clock " +
-                "`mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
-        ) {
-            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
-        }
-    }
-
     private fun createTestWav(): String {
         val bytes = WavGenerator.generateWavBytes(AUDIO_DURATION_S, WAV_SAMPLE_RATE, WAV_CHANNELS)
         val path = testDir + "in.wav"
@@ -507,16 +477,5 @@ class StreamAndBytesEndToEndTest {
         const val WAV_HEADER_SIZE = 44
         const val RIFF_SIZE_OFFSET = 4
         const val DATA_SIZE_OFFSET = 40
-
-        /**
-         * Max count of differing bytes between the legacy FilePath path and the novel
-         * Stream/Bytes path for audio / video outputs on iOS. Derived from the ISOBMFF
-         * `mvhd` + `tkhd` + `mdhd` timestamp budget (~40 B worst case) with a 1.6× safety
-         * margin. Mirror of
-         * [co.crackn.kompressor.UrlInputEndToEndTest.AV_TIMESTAMP_BYTE_TOLERANCE]; see
-         * `docs/investigations/avfoundation-nsurl-divergence.md` for the CRA-98 derivation
-         * that replaces the former `AV_SIZE_TOLERANCE_BYTES = 1024L`.
-         */
-        const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
 }
