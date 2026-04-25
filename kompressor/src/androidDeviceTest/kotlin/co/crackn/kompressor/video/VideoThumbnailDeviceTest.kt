@@ -8,12 +8,18 @@
 package co.crackn.kompressor.video
 
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
 import co.crackn.kompressor.image.ImageFormat
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.of
+import co.crackn.kompressor.testutil.AudioInputFixtures
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.TestConstants.SAMPLE_RATE_44K
+import co.crackn.kompressor.testutil.TestConstants.STEREO
 import java.io.File
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -234,6 +240,186 @@ class VideoThumbnailDeviceTest {
         )
     }
 
+    @Test
+    fun thumbnail_bytesInput_bitwiseIdenticalToFilePath() = runTest {
+        // Mirrors the Stream sibling above for the `MediaSource.Local.Bytes` materialization
+        // path. `Bytes` flows through the same `materializeToTempFile` resolver as `Stream`,
+        // but distinct test exercise guards against a code-path-specific regression (e.g. the
+        // resolver dispatching Bytes to a different temp-name strategy that breaks reads).
+        val legacyOut = File(tempDir, "legacy_bytes.jpg")
+        val bytesOut = File(tempDir, "bytes_bytes.jpg")
+
+        val legacy = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(legacyOut.absolutePath),
+        )
+        val bytes = compressor.thumbnail(
+            MediaSource.Local.Bytes(inputFile.readBytes()),
+            MediaDestination.Local.FilePath(bytesOut.absolutePath),
+        )
+
+        assertTrue(legacy.isSuccess, "legacy thumbnail() failed: ${legacy.exceptionOrNull()}")
+        assertTrue(bytes.isSuccess, "bytes thumbnail() failed: ${bytes.exceptionOrNull()}")
+        assertTrue(
+            bytesOut.readBytes().contentEquals(legacyOut.readBytes()),
+            "Bytes input must produce byte-identical output to legacy FilePath",
+        )
+    }
+
+    @Test
+    fun thumbnail_fileUriInput_producesValidJpegFrame() = runTest {
+        // Exercises the `MediaSource.of(Uri)` builder with a `file://` Uri — the
+        // `AndroidUriMediaSource` resolver hands the fixture's filesystem path back through
+        // `Context.contentResolver.openInputStream(uri)` (no temp materialization for `file://`).
+        // Locks the file-Uri → `thumbnailFilePath` handoff so a regression in the URI resolver
+        // wouldn't ship silently behind the FilePath-only test matrix.
+        val output = File(tempDir, "thumb_uri.jpg")
+        val fileUri = Uri.fromFile(inputFile)
+
+        val result = compressor.thumbnail(
+            MediaSource.of(fileUri),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
+
+        assertTrue(result.isSuccess, "thumbnail(file://) failed: ${result.exceptionOrNull()}")
+        assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be a valid JPEG")
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(output.absolutePath, opts)
+        assertEquals(INPUT_WIDTH, opts.outWidth, "Thumbnail must keep source width by default")
+        assertEquals(INPUT_HEIGHT, opts.outHeight, "Thumbnail must keep source height by default")
+    }
+
+    @Test
+    fun thumbnail_audioOnlyMp4_returnsUnsupportedSourceFormat() = runTest {
+        // Parity with `compress()`'s `videoOnlyNoAudioTrack_compressesSuccessfully` sibling:
+        // audio-only MP4s must surface the same `VideoCompressionError.UnsupportedSourceFormat`
+        // through both `compress()` and `thumbnail()`. Without the pre-flight guard the call
+        // surfaces `DecodingFailed` from `getScaledFrameAtTime` instead — invisible to
+        // consumers `when`-branching on the typed hierarchy.
+        val audioOnly = File(tempDir, "audio_only.mp4")
+        AudioInputFixtures.createAacM4a(
+            audioOnly,
+            durationSeconds = 1,
+            sampleRate = SAMPLE_RATE_44K,
+            channels = STEREO,
+            bitrate = 96_000,
+        )
+        val output = File(tempDir, "thumb_audio_only.jpg")
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(audioOnly.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+        )
+
+        assertTrue(result.isFailure, "Audio-only MP4 must be rejected")
+        val error = result.exceptionOrNull()
+        assertTrue(
+            error is VideoCompressionError.UnsupportedSourceFormat,
+            "Expected UnsupportedSourceFormat, got ${error?.let { it::class.simpleName }}: $error",
+        )
+        assertTrue(!output.exists(), "No partial output should leak on failure")
+    }
+
+    @Test
+    fun thumbnail_atMillisEqualsDuration_succeeds() = runTest {
+        // Boundary check: the implementation uses strict `>` comparison, so `atMillis == duration`
+        // must succeed (last frame of a 1s fixture is at the duration boundary). Reading the
+        // fixture's actual probed duration keeps the test self-contained — the encoder's
+        // 30-frames-at-30fps doesn't always produce exactly 1000 ms in the container.
+        val durationMs = readDurationMillis(inputFile)
+        val output = File(tempDir, "thumb_boundary.jpg")
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            atMillis = durationMs,
+        )
+
+        assertTrue(
+            result.isSuccess,
+            "atMillis == duration ($durationMs) must succeed: ${result.exceptionOrNull()}",
+        )
+        assertTrue(OutputValidators.isValidJpeg(output.readBytes()), "Output must be a valid JPEG")
+    }
+
+    @Test
+    fun thumbnail_atMillisEqualsDurationPlusOne_returnsTimestampOutOfRange() = runTest {
+        // Boundary check: `duration + 1` must trip the `>` guard and produce
+        // `TimestampOutOfRange`. Pairs with the equal-to-duration test above to lock the
+        // strict-inequality contract against off-by-one regressions.
+        val durationMs = readDurationMillis(inputFile)
+        val output = File(tempDir, "thumb_boundary_overshoot.jpg")
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputFile.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            atMillis = durationMs + 1,
+        )
+
+        assertTrue(result.isFailure, "atMillis == duration + 1 must fail")
+        val error = result.exceptionOrNull()
+        assertTrue(
+            error is VideoCompressionError.TimestampOutOfRange,
+            "Expected TimestampOutOfRange, got ${error?.let { it::class.simpleName }}: $error",
+        )
+        assertTrue(!output.exists(), "No partial output should leak on failure")
+    }
+
+    @Test
+    fun thumbnail_1080pSource_keepsHeapDeltaUnderBound() = runTest {
+        // Verifies that `getScaledFrameAtTime` (API 27+) actually bounds memory during decode —
+        // a regression to the `getFrameAtTime` + post-decode resize path would allocate the
+        // full 1080p frame (~8 MB / Bitmap.Config.ARGB_8888) plus the downscaled copy on the
+        // heap simultaneously. The bound is intentionally generous (75 MB) so noisy CI runners
+        // don't false-fail; an unbounded full-frame allocation on a 4K source would burn ≥30 MB
+        // and is the actual regression class we're guarding against.
+        val source1080p = Mp4Generator.generateMp4(
+            output = File(tempDir, "1080p.mp4"),
+            width = WIDTH_1080P,
+            height = HEIGHT_1080P,
+            frameCount = INPUT_FPS,
+            fps = INPUT_FPS,
+        )
+        val output = File(tempDir, "thumb_1080p.jpg")
+
+        // Drain finalizers + GC twice before sampling to settle the JVM baseline. Single GC is
+        // documented unreliable for this use case (Hotspot may defer reclamation).
+        val runtime = Runtime.getRuntime()
+        repeat(2) {
+            runtime.gc()
+            runtime.runFinalization()
+        }
+        val baselineUsed = runtime.totalMemory() - runtime.freeMemory()
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(source1080p.absolutePath),
+            MediaDestination.Local.FilePath(output.absolutePath),
+            maxDimension = THUMB_MAX_DIM,
+        )
+
+        assertTrue(result.isSuccess, "1080p thumbnail() failed: ${result.exceptionOrNull()}")
+        val peakUsed = runtime.totalMemory() - runtime.freeMemory()
+        val deltaBytes = (peakUsed - baselineUsed).coerceAtLeast(0)
+        val deltaMb = deltaBytes / BYTES_PER_MB
+        assertTrue(
+            deltaMb < MAX_HEAP_DELTA_MB,
+            "Heap delta ${deltaMb}MB must be under ${MAX_HEAP_DELTA_MB}MB (baseline=" +
+                "${baselineUsed / BYTES_PER_MB}MB peak=${peakUsed / BYTES_PER_MB}MB)",
+        )
+    }
+
+    private fun readDurationMillis(file: File): Long {
+        val mmr = MediaMetadataRetriever()
+        try {
+            mmr.setDataSource(file.absolutePath)
+            return checkNotNull(
+                mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull(),
+            ) { "Fixture has no readable duration: $file" }
+        } finally {
+            mmr.release()
+        }
+    }
+
     private companion object {
         const val INPUT_WIDTH = 640
         const val INPUT_HEIGHT = 480
@@ -245,5 +431,10 @@ class VideoThumbnailDeviceTest {
         const val OVERSHOOT_MILLIS = 10_000L
         const val INVALID_QUALITY = 150
         const val WEBP_MAGIC_OFFSET = 8
+        const val WIDTH_1080P = 1920
+        const val HEIGHT_1080P = 1080
+        const val THUMB_MAX_DIM = 256
+        const val BYTES_PER_MB = 1024L * 1024L
+        const val MAX_HEAP_DELTA_MB = 75L
     }
 }

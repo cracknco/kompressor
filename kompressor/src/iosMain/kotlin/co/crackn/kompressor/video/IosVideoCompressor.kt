@@ -396,6 +396,11 @@ internal class IosVideoCompressor(
     ) {
         val startTime = CFAbsoluteTimeGetCurrent()
         val inputSize = sizeOrTypedError(inputPath)
+        // Pre-flight: reject audio-only inputs upfront so consumers see the same
+        // `UnsupportedSourceFormat` subtype `compress()` produces — without this guard the
+        // failure surfaces deeper in `AVAssetImageGenerator.copyCGImageAtTime` as a
+        // `DecodingFailed`, which breaks the "single `when` branch covers both APIs" contract.
+        validateHasVideoTrack(inputPath)
         runPipelineWithTypedErrors(outputPath) {
             val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
             val durationSec = CMTimeGetSeconds(asset.duration)

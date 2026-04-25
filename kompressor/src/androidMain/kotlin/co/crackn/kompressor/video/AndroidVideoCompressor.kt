@@ -402,6 +402,7 @@ internal class AndroidVideoCompressor(
         ) {
             val startNanos = System.nanoTime()
             val inputSize = resolveMediaInputSize(inputPath)
+            validateHasVideoTrack(inputPath)
             deletingOutputOnFailure(outputPath) {
                 val bitmap = extractThumbnailBitmap(inputPath, atMillis, maxDimension)
                 try {
@@ -413,6 +414,21 @@ internal class AndroidVideoCompressor(
             val outputSize = File(outputPath).length()
             val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
             CompressionResult(inputSize, outputSize, durationMs)
+        }
+    }
+
+    /**
+     * Reject audio-only inputs upfront with a typed [VideoCompressionError.UnsupportedSourceFormat]
+     * — without this guard the failure surfaces deeper in `getScaledFrameAtTime` as a
+     * `DecodingFailed`, which breaks the "single `when` branch covers both APIs" contract that
+     * `compress()` already honours via the same probe in [compressFilePath]. Probe failures are
+     * treated as "unknown" — the extractor's typed errors will surface their own diagnosis.
+     */
+    private fun validateHasVideoTrack(inputPath: String) {
+        probeVideo(inputPath)?.takeIf { !it.hasVideoTrack }?.let {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "Input has no video track (only audio): $inputPath",
+            )
         }
     }
 

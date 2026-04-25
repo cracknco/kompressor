@@ -220,7 +220,7 @@ internal object ErrorTaxonomyRenderer {
             Guidance(
                 retrySafe = "no",
                 consumerFix = "Offer a \"convert first\" flow \u2014 the codec / profile / level isn't " +
-                    "decodable on this device.",
+                    "decodable on this device, or pick a source that actually contains a video track.",
             ),
         )
         put(

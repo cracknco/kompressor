@@ -7,13 +7,18 @@
 
 package co.crackn.kompressor.video
 
+import co.crackn.kompressor.audio.AudioCompressionConfig
+import co.crackn.kompressor.audio.IosAudioCompressor
 import co.crackn.kompressor.image.ImageFormat
 import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
+import co.crackn.kompressor.io.of
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.OutputValidators
+import co.crackn.kompressor.testutil.WavGenerator
 import co.crackn.kompressor.testutil.fileSize
 import co.crackn.kompressor.testutil.readBytes
+import co.crackn.kompressor.testutil.writeBytes
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,8 +29,12 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
+import platform.AVFoundation.AVURLAsset
+import platform.AVFoundation.duration
+import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.UIKit.UIImage
 
@@ -214,6 +223,133 @@ class VideoThumbnailIosTest {
     }
 
     @Test
+    fun thumbnail_audioOnlyM4a_returnsUnsupportedSourceFormat() = runTest {
+        // Parity with `compress()`'s `validateHasVideoTrack` pre-flight: audio-only inputs must
+        // surface the same `VideoCompressionError.UnsupportedSourceFormat` through both
+        // `compress()` and `thumbnail()`. Without the pre-flight guard the call surfaces
+        // `DecodingFailed` from `AVAssetImageGenerator.copyCGImageAtTime` instead — invisible
+        // to consumers `when`-branching on the typed hierarchy.
+        val audioOnly = createAudioOnlyM4a()
+        val output = testDir + "thumb_audio_only.jpg"
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(audioOnly),
+            MediaDestination.Local.FilePath(output),
+        )
+
+        assertTrue(result.isFailure, "Audio-only m4a must be rejected")
+        val error = result.exceptionOrNull()
+        assertTrue(
+            error is VideoCompressionError.UnsupportedSourceFormat,
+            "Expected UnsupportedSourceFormat, got ${error?.let { it::class.simpleName }}: $error",
+        )
+        assertTrue(
+            !NSFileManager.defaultManager.fileExistsAtPath(output),
+            "No partial output should leak on failure",
+        )
+    }
+
+    @Test
+    fun thumbnail_atMillisEqualsDuration_succeeds() = runTest {
+        // Boundary check: the implementation uses strict `>` comparison, so `atMillis == duration`
+        // must succeed (last frame of a 1s fixture is at the duration boundary). Reading the
+        // fixture's actual probed duration via `CMTimeGetSeconds(asset.duration)` keeps the
+        // test self-contained — the encoder's 30-frames-at-30fps doesn't always produce
+        // exactly 1000 ms in the container.
+        val durationMs = readDurationMillis(inputPath)
+        val output = testDir + "thumb_boundary.jpg"
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(output),
+            atMillis = durationMs,
+        )
+
+        assertTrue(
+            result.isSuccess,
+            "atMillis == duration ($durationMs) must succeed: ${result.exceptionOrNull()}",
+        )
+        assertTrue(OutputValidators.isValidJpeg(readBytes(output)), "Output must be a valid JPEG")
+    }
+
+    @Test
+    fun thumbnail_atMillisEqualsDurationPlusOne_returnsTimestampOutOfRange() = runTest {
+        // Boundary check: `duration + 1` must trip the `>` guard and produce
+        // `TimestampOutOfRange`. Pairs with the equal-to-duration test above to lock the
+        // strict-inequality contract against off-by-one regressions.
+        val durationMs = readDurationMillis(inputPath)
+        val output = testDir + "thumb_boundary_overshoot.jpg"
+
+        val result = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(output),
+            atMillis = durationMs + 1,
+        )
+
+        assertTrue(result.isFailure, "atMillis == duration + 1 must fail")
+        val error = result.exceptionOrNull()
+        assertTrue(
+            error is VideoCompressionError.TimestampOutOfRange,
+            "Expected TimestampOutOfRange, got ${error?.let { it::class.simpleName }}: $error",
+        )
+        assertTrue(
+            !NSFileManager.defaultManager.fileExistsAtPath(output),
+            "No partial output should leak on failure",
+        )
+    }
+
+    @Test
+    fun thumbnail_bytesInput_matchesFilePathOutcome() = runTest {
+        // Mirrors the Stream sibling below for the `MediaSource.Local.Bytes` materialization
+        // path. `Bytes` flows through `resolveStreamOrBytesToTempFile` to a temp file, then
+        // through the same `thumbnailFilePath` pipeline as the FilePath-based call. Bitwise
+        // equality holds because the JPEG re-encode through `writeUIImageToFile` is
+        // deterministic (no AVFoundation wall-clock timestamps in the still-image output).
+        val inputBytes = readBytes(inputPath)
+        val legacyPath = testDir + "legacy_bytes.jpg"
+        val bytesPath = testDir + "bytes_bytes.jpg"
+
+        val legacy = compressor.thumbnail(
+            MediaSource.Local.FilePath(inputPath),
+            MediaDestination.Local.FilePath(legacyPath),
+        )
+        val bytes = compressor.thumbnail(
+            MediaSource.Local.Bytes(inputBytes),
+            MediaDestination.Local.FilePath(bytesPath),
+        )
+
+        assertTrue(legacy.isSuccess, "legacy thumbnail() failed: ${legacy.exceptionOrNull()}")
+        assertTrue(bytes.isSuccess, "bytes thumbnail() failed: ${bytes.exceptionOrNull()}")
+        assertTrue(
+            readBytes(bytesPath).contentEquals(readBytes(legacyPath)),
+            "Bytes input must produce byte-identical output to legacy FilePath",
+        )
+    }
+
+    @Test
+    fun thumbnail_fileUrlInput_producesValidJpegFrame() = runTest {
+        // Exercises the `MediaSource.of(NSURL)` builder with a `file://` URL — the
+        // `IosUrlMediaSource` resolver unwraps to `NSURL.path` (no temp materialization for
+        // `file://`). Locks the file-URL → `thumbnailFilePath` handoff so a regression in the
+        // URL resolver wouldn't ship silently behind the FilePath-only test matrix.
+        val output = testDir + "thumb_url.jpg"
+        val fileUrl = NSURL.fileURLWithPath(inputPath)
+
+        val result = compressor.thumbnail(
+            MediaSource.of(fileUrl),
+            MediaDestination.Local.FilePath(output),
+        )
+
+        assertTrue(result.isSuccess, "thumbnail(file://) failed: ${result.exceptionOrNull()}")
+        assertTrue(OutputValidators.isValidJpeg(readBytes(output)), "Output must be a valid JPEG")
+        val image = checkNotNull(UIImage.imageWithContentsOfFile(output))
+        image.size.useContents {
+            assertEquals(INPUT_WIDTH, width.toInt(), "Thumbnail must keep source width by default")
+            assertEquals(INPUT_HEIGHT, height.toInt(), "Thumbnail must keep source height by default")
+        }
+    }
+
+    @Test
     fun thumbnail_streamInput_matchesFilePathOutcome() = runTest {
         // Locks the `Stream` → `materializeToTempFile` → `thumbnailFilePath` handoff so a
         // regression in the materializer (e.g. early-EOF, wrong content-length) wouldn't ship
@@ -244,6 +380,44 @@ class VideoThumbnailIosTest {
         )
     }
 
+    /**
+     * Builds an audio-only m4a fixture by round-tripping a generated WAV through
+     * [IosAudioCompressor]. Round-trip avoids shipping a binary asset and keeps the test
+     * self-contained — the resulting m4a has an audio track only, which is what the audio-only
+     * thumbnail rejection test needs to exercise the `validateHasVideoTrack` pre-flight.
+     */
+    private suspend fun createAudioOnlyM4a(): String {
+        val wavPath = testDir + "audio_in.wav"
+        writeBytes(
+            wavPath,
+            WavGenerator.generateWavBytes(
+                durationSeconds = AUDIO_FIXTURE_SECONDS,
+                sampleRate = WAV_SAMPLE_RATE,
+                channels = WAV_CHANNELS,
+            ),
+        )
+        val m4aPath = testDir + "audio_only.m4a"
+        val res = IosAudioCompressor().compress(
+            MediaSource.Local.FilePath(wavPath),
+            MediaDestination.Local.FilePath(m4aPath),
+            AudioCompressionConfig(),
+        )
+        check(res.isSuccess) { "audio fixture generation failed: ${res.exceptionOrNull()}" }
+        return m4aPath
+    }
+
+    /**
+     * Reads the fixture's actual container duration via `CMTimeGetSeconds(asset.duration)` so the
+     * boundary tests can probe `atMillis == duration` without relying on encoder math
+     * (frames × fps doesn't always equal exact container duration).
+     */
+    private fun readDurationMillis(path: String): Long {
+        val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
+        val durationSec = CMTimeGetSeconds(asset.duration)
+        check(durationSec.isFinite() && durationSec > 0) { "Fixture has no readable duration: $path" }
+        return (durationSec * MILLIS_PER_SECOND).toLong()
+    }
+
     private companion object {
         const val INPUT_WIDTH = 320
         const val INPUT_HEIGHT = 240
@@ -254,5 +428,9 @@ class VideoThumbnailIosTest {
         const val PORTRAIT_ROTATION = 90
         const val OVERSHOOT_MILLIS = 10_000L
         const val INVALID_QUALITY = 150
+        const val AUDIO_FIXTURE_SECONDS = 1
+        const val WAV_SAMPLE_RATE = 44_100
+        const val WAV_CHANNELS = 2
+        const val MILLIS_PER_SECOND = 1000.0
     }
 }
