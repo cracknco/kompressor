@@ -35,10 +35,13 @@ import platform.posix.usleep
  * [UrlInputEndToEndTest.audio_nsurlInput_matchesFilePathCompressionOutcome] /
  * [UrlInputEndToEndTest.video_nsurlInput_matchesFilePathCompressionOutcome], where PR #142 shipped
  * bitwise-identical then PR #143 relaxed to a 1024-byte size tolerance. The class KDoc of
- * [UrlInputEndToEndTest] blamed second-resolution `mvhd`/`mdhd` stamping but the existing
- * `audio_twoConsecutiveCompressesProduceIdenticalBytes` on the legacy overload passes — neither
- * confirming nor refuting the hypothesis since two back-to-back calls of ~100 ms each usually land
- * in the same wall-clock second.
+ * [UrlInputEndToEndTest] blamed second-resolution `mvhd`/`mdhd` stamping but at the time the
+ * legacy-twin determinism test (`audio_twoConsecutiveCompressesProduceIdenticalBytes`) passed
+ * with a strict bitwise assertion — neither confirming nor refuting the hypothesis since two
+ * back-to-back calls of ~100 ms each usually land in the same wall-clock second. (That legacy
+ * twin was later relaxed to the same structural tolerance Step 2 uses, after the same straddle
+ * was observed on the NSURL twin under heavy CI load — see release run 24935723437 and the
+ * test's own KDoc.)
  *
  * Observed results (iOS Simulator arm64, run on CRA-98 branch):
  *

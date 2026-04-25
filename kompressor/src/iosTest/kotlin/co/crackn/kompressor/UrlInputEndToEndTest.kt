@@ -170,12 +170,23 @@ class UrlInputEndToEndTest {
         readBytes(novelPath).contentEquals(readBytes(legacyPath)) shouldBe true
     }
 
-    // Pins the *per-second* determinism of AVFoundation exports under the legacy path-based
-    // `audio.compress(path, path, config)` entry: two consecutive compresses complete in ms
-    // and reliably land in the same wall-clock second, so their outputs are byte-identical.
-    // The CRA-98 investigation ([UrlInputNonDeterminismInvestigationTest]) showed that a
-    // longer loop spanning ≥5 s produces multiple distinct byte-sets — i.e. AVFoundation IS
-    // wall-clock-stamping `mvhd` / `tkhd` / `mdhd`, just at seconds resolution.
+    /**
+     * Pins the **per-second determinism** of AVFoundation exports under the legacy path-based
+     * `audio.compress(path, path, config)` entry: two consecutive compresses typically complete
+     * in milliseconds and land in the same wall-clock second, so their outputs are byte-identical
+     * — but on a heavily loaded `macos-latest` runner the pair can straddle a second tick (the
+     * CRA-98 investigation observed exactly this on the NSURL-overload twin in
+     * [UrlInputNonDeterminismInvestigationTest], release run 24935723437). The assertion is
+     * therefore the same structural-equivalence used elsewhere on this class
+     * ([assertAvOutputStructurallyEquivalent]'s logic, inlined here for clarity since this is
+     * the one symmetric back-to-back call site): sizes MUST match exactly (timestamp drift never
+     * resizes the container) and differing bytes MUST fit inside [AV_TIMESTAMP_BYTE_TOLERANCE].
+     *
+     * The test still serves as a sentinel for non-determinism *beyond* the AVFoundation
+     * wall-clock timestamp budget — any size mismatch or ≥ `AV_TIMESTAMP_BYTE_TOLERANCE + 1`
+     * differing bytes between the two consecutive compresses would still fail, catching any
+     * real regression in the legacy-path encoder pipeline.
+     */
     @Test
     fun audio_twoConsecutiveCompressesProduceIdenticalBytes() = runTest {
         val inputPath = createTestWav()
@@ -195,14 +206,31 @@ class UrlInputEndToEndTest {
 
         first.isSuccess shouldBe true
         second.isSuccess shouldBe true
+
+        // Both outputs come from the same legacy path — there is no "novel" / "legacy" role to
+        // distinguish, so the inlined check uses neutral `a`/`b` naming rather than calling
+        // [assertAvOutputStructurallyEquivalent] (whose `withClue` strings would mislead with
+        // `novel=… legacy=…` for two-legacy compresses).
+        val a = readBytes(firstOut)
+        val b = readBytes(secondOut)
+        withClue("Both outputs must be non-empty. a=${a.size} b=${b.size}") {
+            (a.isNotEmpty() && b.isNotEmpty()) shouldBe true
+        }
         withClue(
-            "Two consecutive AVFoundation exports executed within milliseconds MUST produce " +
-                "byte-identical bytes — AVFoundation's `mvhd` / `tkhd` / `mdhd` wall-clock " +
-                "stamping is per-second, not sub-second, so a fast back-to-back pair lands in " +
-                "the same second. See [UrlInputNonDeterminismInvestigationTest] for the " +
-                "experimental confirmation (CRA-98).",
+            "Two consecutive AVFoundation legacy-path exports must produce equal-size outputs " +
+                "(timestamp drift does not resize the container). a=${a.size} b=${b.size}",
         ) {
-            readBytes(firstOut).contentEquals(readBytes(secondOut)) shouldBe true
+            a.size shouldBe b.size
+        }
+        var differing = 0
+        for (i in a.indices) if (a[i] != b[i]) differing++
+        withClue(
+            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes between two consecutive " +
+                "legacy-path compresses (AVFoundation `mvhd`/`tkhd`/`mdhd` second rollover " +
+                "under heavy CI load — see [UrlInputNonDeterminismInvestigationTest] for the " +
+                "CRA-98 confirmation on the NSURL twin); actual=$differing",
+        ) {
+            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
         }
     }
 

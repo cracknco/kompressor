@@ -14,10 +14,12 @@ for CRA-98. Linear issue: [CRA-98](https://linear.app/crackn/issue/CRA-98).
 - PR [#143](https://github.com/cracknco/kompressor/pull/143) (CRA-95) saw those tests
   flake and relaxed them to a **size-delta tolerance of 1024 bytes**
   (`AV_SIZE_TOLERANCE_BYTES`). A class-KDoc hypothesis blamed
-  second-resolution `mvhd` / `mdhd` timestamps, but an additional determinism test
-  (`audio_twoConsecutiveCompressesProduceIdenticalBytes`) passed, neither confirming nor
-  refuting the hypothesis because two back-to-back calls typically land in the same
-  wall-clock second.
+  second-resolution `mvhd` / `mdhd` timestamps, but at the time an additional determinism
+  test (`audio_twoConsecutiveCompressesProduceIdenticalBytes`) passed with a strict
+  bitwise assertion — neither confirming nor refuting the hypothesis because two
+  back-to-back calls typically land in the same wall-clock second. (That legacy twin
+  was later relaxed in the [PR #157](https://github.com/cracknco/kompressor/pull/157)
+  follow-up, after the same straddle hit the NSURL twin under heavy CI load.)
 
 ## Competing hypotheses (pre-investigation)
 
@@ -64,7 +66,7 @@ produces byte differences in exactly the positions where the wall-clock timestam
 ### Step 2 — `audio/video_novelOverloadTwice_producesIdenticalBytes`
 
 Two back-to-back NSURL-overload compresses of the same input, executed within
- milliseconds of each other, compared structurally.
+milliseconds of each other, compared structurally.
 
 **Observed**:
 
@@ -161,6 +163,21 @@ The new assertion enforces:
    if sizes disagree there is a real regression).
 2. Differing bytes ≤ 64 (1.6× safety margin over the 40 B worst-case multi-track
    timestamp budget, still 16× tighter than the former 1024-byte size tolerance).
+
+**Follow-up extensions** (PR [#157](https://github.com/cracknco/kompressor/pull/157)):
+
+- The Step-2 NSURL-twice tests (`audio/video_novelOverloadTwice_producesIdenticalBytes`)
+  switched from strict `contentEquals` to the same structural-equivalence tolerance
+  after the assumed-deterministic NSURL pair straddled a wall-clock second on a slow
+  `macos-latest` runner (release run 24935723437). The Step-2 tests now serve as
+  ongoing sentinels for non-determinism *beyond* the timestamp budget rather than
+  H2-vs-H3 discriminators.
+- The legacy-twin determinism test (`audio_twoConsecutiveCompressesProduceIdenticalBytes`
+  in `UrlInputEndToEndTest`) was relaxed alongside the Step-2 fix for symmetry: even
+  the legacy path can in principle straddle a second under heavy CI load (the NSURL
+  failure proved the runner was capable of pushing two back-to-back AVFoundation
+  exports across a tick), so keeping that test on strict `contentEquals` while Step 2
+  was relaxed would have been an arbitrary inconsistency — not a meaningful pin.
 
 ## Why not tighten to bitwise-identical?
 
