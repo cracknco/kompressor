@@ -96,49 +96,23 @@ class ImageThumbnailDeviceTest {
         // enough to absorb Bitmap.compress's internal buffer + normal GC noise, tight enough to
         // flag a regression that flips the decoder back to full resolution.
         //
-        // A concurrent 5 ms sampler runs alongside the thumbnail() call and records the peak heap
-        // delta observed across the decode window. A post-execution snapshot would miss the
-        // transient 48 MB allocation of a regressed full-resolution decode if ART released the
-        // bitmap during the pipeline's internal `finally { bitmap.recycle() }` step before the
-        // snapshot. The sampler observes the true peak regardless of GC timing.
+        // [measurePeakHeapDelta] runs a concurrent 5 ms sampler alongside the thumbnail() call
+        // and records the peak heap delta across the decode window. A post-execution snapshot
+        // would miss the transient 48 MB allocation of a regressed full-resolution decode if ART
+        // released the bitmap during the pipeline's internal `finally { bitmap.recycle() }` step
+        // before the snapshot. The sampler observes the true peak regardless of GC timing.
         val input = createTestImage(tempDir, LARGE_WIDTH, LARGE_HEIGHT)
-        val output = File(tempDir, "thumb_memory.jpg")
 
-        val runtime = Runtime.getRuntime()
-        // Drain soft references / cached allocations so the baseline reflects the quiescent
-        // post-fixture heap, not any transient spikes from the PNG writer.
-        repeat(GC_ROUNDS) { runtime.gc() }
-        val baseline = runtime.totalMemory() - runtime.freeMemory()
+        // Default thumbnail format is JPEG, which now decodes through RGB_565 — the envelope
+        // below was originally sized for ARGB_8888 (4 B/px), so it has a comfortable ~10× margin
+        // for the post-CRA-114 RGB_565 path (2 B/px) too.
+        val deltaBytes = measurePeakHeapDelta(
+            input = input,
+            outputName = "thumb_memory.jpg",
+            format = ImageFormat.JPEG,
+            maxDimension = MAX_DIMENSION,
+        )
 
-        // AtomicLong for cross-dispatcher visibility: the sampler runs on Dispatchers.IO while
-        // the test body runs on the test dispatcher. `cancelAndJoin()` establishes the needed
-        // happens-before for the final read below.
-        val peakUsed = AtomicLong(baseline)
-        val samplerScope = CoroutineScope(Dispatchers.IO)
-        val sampler = samplerScope.launch {
-            while (isActive) {
-                val used = runtime.totalMemory() - runtime.freeMemory()
-                peakUsed.updateAndGet { if (used > it) used else it }
-                delay(SAMPLER_INTERVAL_MS)
-            }
-        }
-
-        val result = try {
-            compressor.thumbnail(
-                MediaSource.Local.FilePath(input.absolutePath),
-                MediaDestination.Local.FilePath(output.absolutePath),
-                maxDimension = MAX_DIMENSION,
-            )
-        } finally {
-            sampler.cancelAndJoin()
-        }
-        // Final snapshot after the sampler has stopped so a regression that spikes immediately
-        // before the return still lands in `peakUsed` even if it missed the last 5 ms window.
-        val finalUsed = runtime.totalMemory() - runtime.freeMemory()
-        peakUsed.updateAndGet { if (finalUsed > it) finalUsed else it }
-        val deltaBytes = peakUsed.get() - baseline
-
-        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
         withClue(
             "Peak heap delta $deltaBytes B exceeds sampled-decode envelope $MAX_PEAK_DELTA_BYTES B — " +
                 "possible regression to full-resolution decode",
@@ -164,8 +138,18 @@ class ImageThumbnailDeviceTest {
         // by design (`preferredBitmapConfigFor` in AndroidImageCompressor.kt).
         val input = createTestImage(tempDir, LARGE_WIDTH, LARGE_HEIGHT)
 
-        val jpegPeak = measurePeakHeapDelta(input, "thumb_jpeg.jpg", ImageFormat.JPEG)
-        val webpPeak = measurePeakHeapDelta(input, "thumb_webp.webp", ImageFormat.WEBP)
+        val jpegPeak = measurePeakHeapDelta(
+            input = input,
+            outputName = "thumb_jpeg.jpg",
+            format = ImageFormat.JPEG,
+            maxDimension = LARGE_THUMB_MAX_DIMENSION,
+        )
+        val webpPeak = measurePeakHeapDelta(
+            input = input,
+            outputName = "thumb_webp.webp",
+            format = ImageFormat.WEBP,
+            maxDimension = LARGE_THUMB_MAX_DIMENSION,
+        )
 
         // Guard against a degenerate WEBP measurement (e.g. baseline drift on a noisy emulator
         // pushed the delta near 0). Without this the ratio assertion below would pass vacuously.
@@ -185,16 +169,22 @@ class ImageThumbnailDeviceTest {
     }
 
     /**
-     * Runs `thumbnail()` once for [format] at [LARGE_THUMB_MAX_DIMENSION] and returns the peak
-     * Java heap usage delta observed during the call. Mirrors the sampling strategy of
-     * [thumbnail_peakMemoryStaysUnderSampledDecodeEnvelope] — concurrent `Dispatchers.IO`
-     * sampler at [SAMPLER_INTERVAL_MS] cadence so a transient allocation that would be
-     * collected before a post-call snapshot still lands in `peakUsed`.
+     * Runs `thumbnail()` once for [format] at [maxDimension] and returns the peak Java heap
+     * usage delta observed during the call. A concurrent `Dispatchers.IO` sampler at
+     * [SAMPLER_INTERVAL_MS] cadence catches transient allocations that would be collected before
+     * a post-call snapshot. Used both for the absolute-envelope check
+     * ([thumbnail_peakMemoryStaysUnderSampledDecodeEnvelope]) and the cross-format ratio check
+     * ([thumbnail_jpegOutputUsesAtLeastThirtyPercentLessHeapThanWebp]).
+     *
+     * `AtomicLong` for cross-dispatcher visibility: the sampler runs on `Dispatchers.IO` while
+     * the test body runs on the test dispatcher. `cancelAndJoin()` establishes the
+     * happens-before for the final read.
      */
     private suspend fun measurePeakHeapDelta(
         input: File,
         outputName: String,
         format: ImageFormat,
+        maxDimension: Int,
     ): Long {
         val output = File(tempDir, outputName)
         val runtime = Runtime.getRuntime()
@@ -218,12 +208,14 @@ class ImageThumbnailDeviceTest {
             compressor.thumbnail(
                 MediaSource.Local.FilePath(input.absolutePath),
                 MediaDestination.Local.FilePath(output.absolutePath),
-                maxDimension = LARGE_THUMB_MAX_DIMENSION,
+                maxDimension = maxDimension,
                 format = format,
             )
         } finally {
             sampler.cancelAndJoin()
         }
+        // Final snapshot after the sampler has stopped so a regression that spikes immediately
+        // before the return still lands in `peakUsed` even if it missed the last 5 ms window.
         val finalUsed = runtime.totalMemory() - runtime.freeMemory()
         peakUsed.updateAndGet { if (finalUsed > it) finalUsed else it }
 
