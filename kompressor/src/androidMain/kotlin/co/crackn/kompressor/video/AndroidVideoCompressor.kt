@@ -211,13 +211,10 @@ internal class AndroidVideoCompressor(
         // sessions on the same source was doing the same native setDataSource work twice.
         // `probeVideo` folds the "has video track?" and "what's the shortest edge?" questions
         // into one MediaMetadataRetriever pass so SAF content:// and file:// URIs are handled
-        // uniformly (both via the Context + Uri overload).
-        val probe = withContext(Dispatchers.IO) { probeVideo(inputPath) }
-        if (probe != null && !probe.hasVideoTrack) {
-            throw VideoCompressionError.UnsupportedSourceFormat(
-                "Input has no video track (only audio): $inputPath",
-            )
-        }
+        // uniformly (both via the Context + Uri overload). `validateHasVideoTrack` runs the same
+        // probe and throws `UnsupportedSourceFormat` for audio-only inputs, returning the probe
+        // so we don't need a second `probeVideo` call to read `shortSide` / `hasAudioTrack`.
+        val probe = withContext(Dispatchers.IO) { validateHasVideoTrack(inputPath) }
         val sourceShortSide = probe?.shortSide
         // When the probe fails we default to "probably has audio" so the sequence is permissive
         // — declaring TRACK_TYPE_AUDIO for a track that's actually absent just causes Media3 to
@@ -402,6 +399,7 @@ internal class AndroidVideoCompressor(
         ) {
             val startNanos = System.nanoTime()
             val inputSize = resolveMediaInputSize(inputPath)
+            validateHasVideoTrack(inputPath)
             deletingOutputOnFailure(outputPath) {
                 val bitmap = extractThumbnailBitmap(inputPath, atMillis, maxDimension)
                 try {
@@ -414,6 +412,26 @@ internal class AndroidVideoCompressor(
             val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
             CompressionResult(inputSize, outputSize, durationMs)
         }
+    }
+
+    /**
+     * Reject audio-only inputs upfront with a typed [VideoCompressionError.UnsupportedSourceFormat]
+     * — without this guard the failure surfaces deeper in `getScaledFrameAtTime` as a
+     * `DecodingFailed`, which breaks the "single `when` branch covers both APIs" contract.
+     *
+     * Returns the [VideoProbe] so callers can reuse it instead of opening a second
+     * `MediaMetadataRetriever` session (`compressFilePath` reads `shortSide` / `hasAudioTrack`
+     * off the same probe). Probe failures are treated as "unknown" — `null` is returned and the
+     * extractor's typed errors will surface their own diagnosis.
+     */
+    private fun validateHasVideoTrack(inputPath: String): VideoProbe? {
+        val probe = probeVideo(inputPath)
+        if (probe != null && !probe.hasVideoTrack) {
+            throw VideoCompressionError.UnsupportedSourceFormat(
+                "Input has no video track (only audio): $inputPath",
+            )
+        }
+        return probe
     }
 
     /**

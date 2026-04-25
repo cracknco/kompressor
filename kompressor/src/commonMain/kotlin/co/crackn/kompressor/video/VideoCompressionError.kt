@@ -19,9 +19,11 @@ public sealed class VideoCompressionError(
 
     /**
      * No decoder on this device supports the source file's codec/profile/level
-     * (e.g. HEVC Main 10 on a device that only ships HEVC Main), or the container
-     * format is not recognised. Irrecoverable on-device — users should convert
-     * the file first.
+     * (e.g. HEVC Main 10 on a device that only ships HEVC Main), the container
+     * format is not recognised, or the source has no video track at all (e.g. an
+     * audio-only `.m4a` passed to `thumbnail()` / `compress()`). Irrecoverable
+     * on-device — users should convert the file first or pick a source that
+     * actually contains a video track.
      */
     public data class UnsupportedSourceFormat(
         /** Free-form diagnostic — codec/profile/level and source dimensions when known. */
