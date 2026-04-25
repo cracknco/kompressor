@@ -16,7 +16,21 @@ import io.kotest.assertions.withClue
 import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.UIntVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.value
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
@@ -24,6 +38,12 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import platform.UIKit.UIImage
+import platform.darwin.KERN_SUCCESS
+import platform.darwin.TASK_VM_INFO
+import platform.darwin.TASK_VM_INFO_COUNT
+import platform.darwin.mach_task_self_
+import platform.darwin.task_info
+import platform.darwin.task_vm_info_data_t
 import kotlin.math.max
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -36,12 +56,17 @@ import kotlin.test.Test
  *
  * Properties verified:
  *  * 4000×3000 PNG → ≤ 200×200 JPEG, 4:3 aspect preserved to the pixel.
+ *  * Peak `phys_footprint` delta during sampled decode stays bounded — a regression that flips the
+ *    decoder back to full-resolution (~48 MB) would blow past the 10 MB envelope. Sibling of the
+ *    Android Java-heap peak guard in [ImageThumbnailDeviceTest].
  *  * `maxDimension ≤ 0` → `Result.failure(IllegalArgumentException)`.
  *  * Source already smaller than `maxDimension` → output keeps source pixel dimensions.
  *  * Fixture with embedded `kCGImagePropertyOrientation = 6` → thumbnail applies the transform
  *    because the iOS impl passes `kCGImageSourceCreateThumbnailWithTransform = true`.
+ *  * `MediaSource.Local.Bytes` short-circuit covered alongside `Local.FilePath` so the NSData
+ *    fast path in `doThumbnailFromData` is exercised end-to-end.
  */
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
 class ImageThumbnailIosTest {
 
     private lateinit var testDir: String
@@ -84,6 +109,108 @@ class ImageThumbnailIosTest {
         // does at this ratio, so dimensions line up byte-for-byte between the two platforms.
         w shouldBe MAX_DIMENSION
         h shouldBe MAX_SHORT_EDGE
+    }
+
+    @Test
+    fun thumbnail_peakMemoryStaysUnderSampledDecodeEnvelope() = runTest {
+        // Sibling of `ImageThumbnailDeviceTest.thumbnail_peakMemoryStaysUnderSampledDecodeEnvelope`
+        // on Android. CGImageSource's sampled-decode path keeps process resident memory bounded
+        // regardless of source pixel count: a 4000×3000 source decoded at maxDim=200 produces a
+        // 200×150 ARGB CGImage (≈ 117 KB) plus encoder + IO scratch buffers. A regression that
+        // flips the decoder back to full-resolution (e.g. dropping `kCGImageSourceCreateThumbnail
+        // FromImageAlways` or `kCGImageSourceShouldCacheImmediately = false`) would briefly
+        // resident the 4000×3000 ARGB bitmap (~48 MB) and blow past the 10 MB envelope.
+        //
+        // [measurePeakPhysFootprintDelta] runs a concurrent ~5 ms sampler alongside `thumbnail()`
+        // and tracks the peak `phys_footprint` delta across the decode window. A post-call
+        // snapshot would miss the transient spike if CoreGraphics released the decoded CGImage
+        // before the snapshot fired — the sampler observes the true peak regardless of when the
+        // autorelease pool drains.
+        //
+        // `phys_footprint` is what Apple recommends for "RAM the process is using right now":
+        // it's the same counter shown in Xcode's memory gauge and used by jetsam telemetry. The
+        // DoD names `mach_task_basic_info.phys_footprint`, but `phys_footprint` actually lives on
+        // `task_vm_info_data_t` (TASK_VM_INFO flavor) — `mach_task_basic_info` only exposes
+        // `resident_size` / `virtual_size`. We use the correct flavor to read the same metric the
+        // DoD intends.
+        val input = createTestImage(testDir, LARGE_WIDTH, LARGE_HEIGHT)
+        val output = testDir + "thumb_memory.jpg"
+
+        val deltaBytes = measurePeakPhysFootprintDelta {
+            compressor.thumbnail(
+                MediaSource.Local.FilePath(input),
+                MediaDestination.Local.FilePath(output),
+                maxDimension = MAX_DIMENSION,
+            )
+        }
+
+        withClue(
+            "Peak phys_footprint delta $deltaBytes B exceeds sampled-decode envelope " +
+                "$MAX_PEAK_DELTA_BYTES B — possible regression to full-resolution decode",
+        ) { deltaBytes shouldBeLessThanOrEqualTo MAX_PEAK_DELTA_BYTES }
+    }
+
+    /**
+     * Invokes [block] (a `thumbnail()` call) while a concurrent [SAMPLER_INTERVAL_MS]-cadence
+     * sampler on `Dispatchers.Default` records the peak `phys_footprint` observed during the
+     * call. Returns the delta from the pre-call baseline. Mirrors
+     * [ImageThumbnailDeviceTest.measurePeakHeapDelta] on Android — same sampler shape, different
+     * underlying counter (process resident memory via Mach `task_info` instead of Java heap usage
+     * via `Runtime.totalMemory() - Runtime.freeMemory()`).
+     *
+     * [AtomicLong] for cross-thread visibility: the sampler runs on a worker thread under
+     * `Dispatchers.Default` while the test body runs on the test dispatcher.
+     * [kotlinx.coroutines.cancelAndJoin] establishes the happens-before for the final read.
+     */
+    private suspend fun measurePeakPhysFootprintDelta(
+        block: suspend () -> Result<*>,
+    ): Long {
+        val baseline = physFootprintBytes()
+        val peak = AtomicLong(baseline)
+        val samplerScope = CoroutineScope(Dispatchers.Default)
+        val sampler = samplerScope.launch {
+            while (isActive) {
+                val now = physFootprintBytes()
+                while (true) {
+                    val current = peak.load()
+                    if (now <= current || peak.compareAndSet(current, now)) break
+                }
+                delay(SAMPLER_INTERVAL_MS)
+            }
+        }
+
+        val result = try {
+            block()
+        } finally {
+            sampler.cancelAndJoin()
+        }
+        // Final snapshot after the sampler stops so a regression that spikes immediately before
+        // the return still lands in `peak` even if it missed the last 5 ms window.
+        val finalUsed = physFootprintBytes()
+        while (true) {
+            val current = peak.load()
+            if (finalUsed <= current || peak.compareAndSet(current, finalUsed)) break
+        }
+
+        withClue("thumbnail failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        return peak.load() - baseline
+    }
+
+    /**
+     * Reads the current process `phys_footprint` via `task_info(TASK_VM_INFO, …)`. Returns 0 if
+     * the Mach call fails — a 0 reading can never replace an earlier real reading in `peak`'s
+     * monotonic-max accumulator, so transient kernel failures don't distort the measurement.
+     */
+    private fun physFootprintBytes(): Long = memScoped {
+        val info = alloc<task_vm_info_data_t>()
+        val count = alloc<UIntVar>().apply { value = TASK_VM_INFO_COUNT }
+        val kr = task_info(
+            mach_task_self_,
+            TASK_VM_INFO.toUInt(),
+            info.ptr.reinterpret(),
+            count.ptr,
+        )
+        if (kr == KERN_SUCCESS) info.phys_footprint.toLong() else 0L
     }
 
     @Test
@@ -204,5 +331,15 @@ class ImageThumbnailIosTest {
         const val EXIF_SRC_HEIGHT = 100
         const val EXIF_RIGHT = 6
         const val SMALL_DIM = 100
+        // Sampler cadence: 5 ms polls `phys_footprint` frequently enough to catch a transient
+        // full-resolution allocation that would otherwise disappear between snapshots. Mirrors
+        // the Android sampler's 5 ms interval so a regression on either platform fails the same
+        // way.
+        const val SAMPLER_INTERVAL_MS = 5L
+        // 10 MB envelope — full 4000×3000 ARGB resident decode would hit ~48 MB so this is a ~5×
+        // safety margin over the expected ~hundreds-of-KB peak of the sampled-decode pipeline.
+        // Kept in lockstep with the Android constant in `ImageThumbnailDeviceTest` so a memory
+        // regression on either platform produces the same numeric assertion failure.
+        const val MAX_PEAK_DELTA_BYTES = 10L * 1024 * 1024
     }
 }
