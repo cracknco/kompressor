@@ -212,10 +212,6 @@ class UrlInputNonDeterminismInvestigationTest {
 
         val a = readBytes(firstOut)
         val b = readBytes(secondOut)
-        println(
-            "[CRA-98 Step 2 audio] novelA.size=${a.size} novelB.size=${b.size} " +
-                "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}",
-        )
         assertAvOutputStructurallyEquivalent("Step 2 audio NSURL-twice", a, b)
     }
 
@@ -245,10 +241,6 @@ class UrlInputNonDeterminismInvestigationTest {
 
         val a = readBytes(firstOut)
         val b = readBytes(secondOut)
-        println(
-            "[CRA-98 Step 2 video] novelA.size=${a.size} novelB.size=${b.size} " +
-                "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}",
-        )
         assertAvOutputStructurallyEquivalent("Step 2 video NSURL-twice", a, b)
     }
 
@@ -336,29 +328,47 @@ class UrlInputNonDeterminismInvestigationTest {
     }
 
     /**
-     * Structural-equivalence assertion mirroring [UrlInputEndToEndTest]'s helper of the same
-     * name (kept private here per the existing duplication pattern across the two other test
-     * classes that use it). Sizes MUST match exactly — AVFoundation wall-clock timestamp
-     * drift never resizes the container; if they disagree there is a real regression. The
+     * Structural-equivalence assertion analogous to [UrlInputEndToEndTest]'s and
+     * `co.crackn.kompressor.io.StreamAndBytesEndToEndTest`'s private helpers of the same
+     * name, with two intentional differences:
+     *
+     *  1. **Symmetric `(a, b)` parameter naming.** The siblings compare a *legacy* (FilePath)
+     *     output against a *novel* (NSURL/NSData/Stream) output and name their parameters
+     *     accordingly. The Step-2 case here compares two NSURL calls — both are "novel" —
+     *     so the asymmetric naming would emit `novel=… legacy=…` failure messages that
+     *     mislead triage. Neutral `a` / `b` reflects the actual semantic.
+     *  2. **`label` prefix on every `withClue`.** Lets a single failure line distinguish
+     *     `Step 2 audio NSURL-twice` from `Step 2 video NSURL-twice` without relying on the
+     *     test runner's separate test-name annotation, which can land on a different log
+     *     line than the assertion message in CI output.
+     *
+     * Bound rationale: sizes MUST match exactly — AVFoundation wall-clock timestamp drift
+     * never resizes the container, so any size mismatch is a real regression. The
      * differing-byte count MUST fit inside [AV_TIMESTAMP_BYTE_TOLERANCE], a 1.6× safety
      * margin over the worst-case ISOBMFF `mvhd`/`tkhd`/`mdhd` timestamp budget. See CRA-98
      * investigation doc for the derivation.
      */
-    private fun assertAvOutputStructurallyEquivalent(label: String, novel: ByteArray, legacy: ByteArray) {
-        withClue("$label outputs must not be empty. novel=${novel.size} legacy=${legacy.size}") {
-            (novel.isNotEmpty() && legacy.isNotEmpty()) shouldBe true
+    private fun assertAvOutputStructurallyEquivalent(label: String, a: ByteArray, b: ByteArray) {
+        withClue("$label outputs must not be empty. a=${a.size} b=${b.size}") {
+            (a.isNotEmpty() && b.isNotEmpty()) shouldBe true
         }
         withClue(
             "$label output sizes must be equal (timestamp drift does not resize the " +
-                "container). novel=${novel.size} legacy=${legacy.size}",
+                "container). a=${a.size} b=${b.size}",
         ) {
-            novel.size shouldBe legacy.size
+            a.size shouldBe b.size
         }
         var differing = 0
-        for (i in novel.indices) if (novel[i] != legacy[i]) differing++
+        for (i in a.indices) if (a[i] != b[i]) differing++
+        // Build the divergent-offsets dump once per assertion; attaching it to the failing
+        // withClue message (rather than a separate println) keeps the diagnostic on the same
+        // log line as the failure message in CI output, where stdout and assertion messages
+        // can otherwise land on different lines.
+        val divergentOffsets = firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)
         withClue(
             "$label expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation " +
-                "wall-clock `mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
+                "wall-clock `mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing " +
+                "firstDivergentOffsets=$divergentOffsets",
         ) {
             (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
         }
@@ -480,11 +490,15 @@ class UrlInputNonDeterminismInvestigationTest {
         const val ISOBMFF_SIZE_BYTES = 4
 
         /**
-         * Mirror of [UrlInputEndToEndTest.AV_TIMESTAMP_BYTE_TOLERANCE] (intentionally
-         * duplicated, matching the same const-per-class pattern in
-         * [co.crackn.kompressor.io.StreamAndBytesEndToEndTest]). Bound rationale:
-         * worst-case multi-track AVFoundation timestamp budget is ~40 B; 64 B is a 1.6×
-         * safety margin while still catching any non-timestamp byte flip.
+         * Mirror of `UrlInputEndToEndTest.AV_TIMESTAMP_BYTE_TOLERANCE` (intentionally
+         * duplicated, matching the same const-per-class pattern used in
+         * `co.crackn.kompressor.io.StreamAndBytesEndToEndTest`). The references are textual
+         * rather than `[…]`-linked because both targets sit inside `private companion`
+         * objects of test classes that Dokka does not process — turning the references into
+         * dangling KDoc links the build gate cannot resolve.
+         *
+         * Bound rationale: worst-case multi-track AVFoundation timestamp budget is ~40 B;
+         * 64 B is a 1.6× safety margin while still catching any non-timestamp byte flip.
          */
         const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
