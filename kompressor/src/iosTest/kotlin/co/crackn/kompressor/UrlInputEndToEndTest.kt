@@ -16,12 +16,12 @@ import co.crackn.kompressor.io.MediaSource
 import co.crackn.kompressor.io.of
 import co.crackn.kompressor.testutil.Mp4Generator
 import co.crackn.kompressor.testutil.WavGenerator
+import co.crackn.kompressor.testutil.assertAvOutputStructurallyEquivalent
 import co.crackn.kompressor.testutil.createTestImage
 import co.crackn.kompressor.testutil.readBytes
 import co.crackn.kompressor.testutil.writeBytes
 import co.crackn.kompressor.video.IosVideoCompressor
 import co.crackn.kompressor.video.VideoCompressionConfig
-import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -177,18 +177,17 @@ class UrlInputEndToEndTest {
      * — but on a heavily loaded `macos-latest` runner the pair can straddle a second tick (the
      * CRA-98 investigation observed exactly this on the NSURL-overload twin in
      * [UrlInputNonDeterminismInvestigationTest], release run 24935723437). The assertion is
-     * therefore the same structural-equivalence used elsewhere on this class
-     * ([assertAvOutputStructurallyEquivalent]'s logic, inlined here for clarity since this is
-     * the one symmetric back-to-back call site): sizes MUST match exactly (timestamp drift never
-     * resizes the container) and differing bytes MUST fit inside [AV_TIMESTAMP_BYTE_TOLERANCE].
+     * therefore the same structural-equivalence used elsewhere on this class — sizes MUST
+     * match exactly (timestamp drift never resizes the container) and differing bytes MUST
+     * fit inside `AV_TIMESTAMP_BYTE_TOLERANCE`.
      *
      * The test still serves as a sentinel for non-determinism *beyond* the AVFoundation
-     * wall-clock timestamp budget — any size mismatch or ≥ `AV_TIMESTAMP_BYTE_TOLERANCE + 1`
+     * wall-clock timestamp budget — any size mismatch or `> AV_TIMESTAMP_BYTE_TOLERANCE`
      * differing bytes between the two consecutive compresses would still fail, catching any
      * real regression in the legacy-path encoder pipeline.
      */
     @Test
-    fun audio_twoConsecutiveCompressesProduceIdenticalBytes() = runTest {
+    fun audio_twoConsecutiveCompresses_staysWithinTimestampBudget() = runTest {
         val inputPath = createTestWav()
         val firstOut = testDir + "first.m4a"
         val secondOut = testDir + "second.m4a"
@@ -207,64 +206,15 @@ class UrlInputEndToEndTest {
         first.isSuccess shouldBe true
         second.isSuccess shouldBe true
 
-        // Both outputs come from the same legacy path — there is no "novel" / "legacy" role to
-        // distinguish, so the inlined check uses neutral `a`/`b` naming rather than calling
-        // [assertAvOutputStructurallyEquivalent] (whose `withClue` strings would mislead with
-        // `novel=… legacy=…` for two-legacy compresses).
-        val a = readBytes(firstOut)
-        val b = readBytes(secondOut)
-        withClue("Both outputs must be non-empty. a=${a.size} b=${b.size}") {
-            (a.isNotEmpty() && b.isNotEmpty()) shouldBe true
-        }
-        withClue(
-            "Two consecutive AVFoundation legacy-path exports must produce equal-size outputs " +
-                "(timestamp drift does not resize the container). a=${a.size} b=${b.size}",
-        ) {
-            a.size shouldBe b.size
-        }
-        var differing = 0
-        for (i in a.indices) if (a[i] != b[i]) differing++
-        withClue(
-            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes between two consecutive " +
-                "legacy-path compresses (AVFoundation `mvhd`/`tkhd`/`mdhd` second rollover " +
-                "under heavy CI load — see [UrlInputNonDeterminismInvestigationTest] for the " +
-                "CRA-98 confirmation on the NSURL twin); actual=$differing",
-        ) {
-            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
-        }
-    }
-
-    /**
-     * Assert two audio/video outputs are *structurally* equivalent despite AVFoundation's
-     * wall-clock `mvhd` / `tkhd` / `mdhd` timestamp stamping (confirmed as H1 root cause by
-     * CRA-98 — see `docs/investigations/avfoundation-nsurl-divergence.md`).
-     *
-     * The file length MUST match — timestamp drift never resizes the container. The count of
-     * differing bytes MUST fit inside the per-box timestamp budget tracked by
-     * [AV_TIMESTAMP_BYTE_TOLERANCE]. This catches any real compression regression far earlier
-     * than the previous PR #143 size-delta tolerance (which accepted up to 1 KB of silent byte
-     * difference).
-     */
-    private fun assertAvOutputStructurallyEquivalent(novelPath: String, legacyPath: String) {
-        val novel = readBytes(novelPath)
-        val legacy = readBytes(legacyPath)
-        withClue("Outputs must not be empty. novel=${novel.size} legacy=${legacy.size}") {
-            (novel.isNotEmpty() && legacy.isNotEmpty()) shouldBe true
-        }
-        withClue(
-            "Output sizes must be equal (timestamp drift does not resize the container). " +
-                "novel=${novel.size} legacy=${legacy.size}",
-        ) {
-            novel.size shouldBe legacy.size
-        }
-        var differing = 0
-        for (i in novel.indices) if (novel[i] != legacy[i]) differing++
-        withClue(
-            "Expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation wall-clock " +
-                "`mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
-        ) {
-            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
-        }
+        // Both outputs come from the same legacy path — there is no "novel"/"legacy" role to
+        // distinguish, so we use the symmetric `(label, a, b)` overload of
+        // assertAvOutputStructurallyEquivalent rather than the role-named one (whose
+        // `novel=… legacy=…` failure messages would mislead triage for two-legacy compresses).
+        assertAvOutputStructurallyEquivalent(
+            label = "audio legacy-twice",
+            a = readBytes(firstOut),
+            b = readBytes(secondOut),
+        )
     }
 
     private fun createTestWav(): String {
@@ -287,26 +237,5 @@ class UrlInputEndToEndTest {
         const val VIDEO_FRAME_COUNT = 30
         const val WAV_SAMPLE_RATE = 44_100
         const val WAV_CHANNELS = 2
-
-        /**
-         * Max count of differing bytes between two iOS audio/video outputs produced by
-         * successive AVFoundation exports of the same source that straddle a 1-second
-         * wall-clock boundary. Derived from the ISOBMFF timestamp budget:
-         *
-         *  * `mvhd` (1 box) × {creation, modification} × 4 B = 8 B
-         *  * `tkhd` (1–2 tracks) × 2 timestamps × 4 B = 8–16 B
-         *  * `mdhd` (1–2 tracks) × 2 timestamps × 4 B = 8–16 B
-         *
-         * Total worst-case ≈ 40 B when every byte of every timestamp field flips on a carry
-         * cascade. In practice only LSBs flip on a 1-second rollover (observed 3 bytes on
-         * CRA-98 CI). We pick 64 as a 1.6× safety margin over the theoretical bound that
-         * still catches any real compression regression. Mirrored by the CRA-95
-         * `StreamAndBytesEndToEndTest` tolerance.
-         *
-         * Replaces the previous `AV_SIZE_TOLERANCE_BYTES = 1024L` (PR #143) — that bound
-         * was a *size*-delta tolerance even though AVFoundation timestamp drift never
-         * changes the file length, and it was an order of magnitude looser than necessary.
-         */
-        const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
 }
