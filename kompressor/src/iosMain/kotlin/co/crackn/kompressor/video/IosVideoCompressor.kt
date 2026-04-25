@@ -276,21 +276,33 @@ internal class IosVideoCompressor(
      * Uses the same `tracksWithMediaType` check the pipelines use internally; failing here means
      * callers see a clean typed error instead of racing a generic `IllegalArgumentException`
      * from deep in `execute()`.
+     *
+     * Returns the constructed [AVURLAsset] so callers (currently [thumbnailFilePath]) can reuse
+     * it rather than building a second one downstream — AVFoundation's track-discovery work is
+     * non-trivial on large 4K HDR sources, and re-constructing the asset would force it twice.
+     * Returns `null` when the asset itself can't be built (treated as "unknown" — the real
+     * pipeline will surface its own typed error from the same input).
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun validateHasVideoTrack(inputPath: String) {
-        val hasVideo = try {
+    private fun validateHasVideoTrack(inputPath: String): AVURLAsset? {
+        val asset = try {
             AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
-                .tracksWithMediaType(AVMediaTypeVideo).isNotEmpty()
         } catch (_: Throwable) {
-            // Treat probe failures as "unknown" — the real pipeline will surface its own error.
-            return
+            null
+        } ?: return null
+        val hasVideo = try {
+            asset.tracksWithMediaType(AVMediaTypeVideo).isNotEmpty()
+        } catch (_: Throwable) {
+            // Treat probe failures as "unknown" — fall through so the caller still gets the asset
+            // to reuse; the real pipeline will surface its own typed error from the same input.
+            true
         }
         if (!hasVideo) {
             throw VideoCompressionError.UnsupportedSourceFormat(
                 "Input has no video track (only audio): $inputPath",
             )
         }
+        return asset
     }
 
     /**
@@ -400,9 +412,12 @@ internal class IosVideoCompressor(
         // `UnsupportedSourceFormat` subtype `compress()` produces — without this guard the
         // failure surfaces deeper in `AVAssetImageGenerator.copyCGImageAtTime` as a
         // `DecodingFailed`, which breaks the "single `when` branch covers both APIs" contract.
-        validateHasVideoTrack(inputPath)
+        // The probe constructs an `AVURLAsset` to inspect tracks; reuse it below so we don't pay
+        // AVFoundation's track-discovery cost twice on large 4K HDR sources.
+        val probedAsset = validateHasVideoTrack(inputPath)
         runPipelineWithTypedErrors(outputPath) {
-            val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
+            val asset = probedAsset
+                ?: AVURLAsset(uRL = NSURL.fileURLWithPath(inputPath), options = null)
             val durationSec = CMTimeGetSeconds(asset.duration)
             // Only enforce the out-of-range guard when the asset actually reported a positive
             // duration. `NaN` / negative comes back from corrupted containers and some codec

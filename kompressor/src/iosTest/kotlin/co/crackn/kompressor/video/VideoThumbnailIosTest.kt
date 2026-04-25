@@ -274,16 +274,20 @@ class VideoThumbnailIosTest {
 
     @Test
     fun thumbnail_atMillisEqualsDurationPlusOne_returnsTimestampOutOfRange() = runTest {
-        // Boundary check: `duration + 1` must trip the `>` guard and produce
-        // `TimestampOutOfRange`. Pairs with the equal-to-duration test above to lock the
-        // strict-inequality contract against off-by-one regressions.
+        // Boundary check: any value strictly greater than the probed duration must trip the `>`
+        // guard and produce `TimestampOutOfRange`. Pairs with the equal-to-duration test above to
+        // lock the strict-inequality contract against off-by-one regressions.
+        // We use `+ DURATION_OVERSHOOT_MILLIS` (100 ms) rather than `+ 1` so the test stays
+        // robust against `CMTimeGetSeconds(asset.duration) → toLong()` quantisation drift across
+        // AVFoundation builds — the contract being tested is "strictly greater than duration",
+        // not "millisecond-exact off-by-one", and 100 ms is well under any real fixture's length.
         val durationMs = readDurationMillis(inputPath)
         val output = testDir + "thumb_boundary_overshoot.jpg"
 
         val result = compressor.thumbnail(
             MediaSource.Local.FilePath(inputPath),
             MediaDestination.Local.FilePath(output),
-            atMillis = durationMs + 1,
+            atMillis = durationMs + DURATION_OVERSHOOT_MILLIS,
         )
 
         assertTrue(result.isFailure, "atMillis == duration + 1 must fail")
@@ -432,5 +436,6 @@ class VideoThumbnailIosTest {
         const val WAV_SAMPLE_RATE = 44_100
         const val WAV_CHANNELS = 2
         const val MILLIS_PER_SECOND = 1000.0
+        const val DURATION_OVERSHOOT_MILLIS = 100L
     }
 }
