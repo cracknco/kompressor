@@ -118,7 +118,16 @@ class PreviewViewModel(
 
     fun onVideoPicked(file: PlatformFile) {
         videoJob?.cancel()
+        // Capture the previously-picked video's temp paths for cleanup *inside* the new job. We
+        // intentionally don't delete these from the cancelled job's catch block: the slider
+        // becomes interactive as soon as `state.video.sourcePath` is first published, so a
+        // scrubbing-driven `videoJob.cancel()` while the initial extraction is in flight would
+        // otherwise delete the temp input the *new* (scrub) job is about to read.
+        val previousSource = _state.value.video.sourcePath
+        val previousThumbnail = _state.value.video.thumbnailPath
         videoJob = viewModelScope.launch(Dispatchers.IO) {
+            previousSource?.let { runCatching { PlatformFile(it).delete(mustExist = false) } }
+            previousThumbnail?.let { runCatching { PlatformFile(it).delete(mustExist = false) } }
             val tempInput = createTempFile("preview_vid_in", file.extension.ifBlank { "mp4" })
             try {
                 _state.update {
@@ -143,9 +152,13 @@ class PreviewViewModel(
                 }
                 runFrameExtraction(tempInput.path, atMillis = 0L)
             } catch (e: CancellationException) {
-                runCatching { tempInput.delete(mustExist = false) }
+                // Do NOT delete tempInput on cancellation: it may already be referenced by
+                // `state.video.sourcePath`, and a follow-up scrub job will read from it.
+                // Cleanup happens at the next `onVideoPicked` call (above) or in `onCleared`.
                 throw e
             } catch (e: Exception) {
+                // Genuine failure (probe/copy/extraction blew up) — tempInput isn't useful for
+                // any subsequent extraction, so delete it now.
                 runCatching { tempInput.delete(mustExist = false) }
                 _state.update {
                     it.copy(

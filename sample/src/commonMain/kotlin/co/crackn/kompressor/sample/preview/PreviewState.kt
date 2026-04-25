@@ -20,6 +20,7 @@ data class PreviewState(
         get() = image.error ?: video.error ?: audio.error
 }
 
+/** Image-section state — encoded JPEG thumbnail produced by `ImageCompressor.thumbnail`. */
 data class ImagePreview(
     val sourceFileName: String? = null,
     /** File path of the encoded thumbnail JPEG, ready to be loaded by `AsyncImage`. */
@@ -28,6 +29,7 @@ data class ImagePreview(
     val error: String? = null,
 )
 
+/** Video-section state — frame extracted at [atMillis] via `VideoCompressor.thumbnail`. */
 data class VideoPreview(
     val sourceFileName: String? = null,
     val sourcePath: String? = null,
@@ -41,6 +43,7 @@ data class VideoPreview(
     val error: String? = null,
 )
 
+/** Audio-section state — normalized peak amplitudes produced by `AudioCompressor.waveform`. */
 data class AudioPreview(
     val sourceFileName: String? = null,
     /** Normalized peak amplitudes in `[0f, 1f]`, one per bucket. `null` until extraction completes. */
