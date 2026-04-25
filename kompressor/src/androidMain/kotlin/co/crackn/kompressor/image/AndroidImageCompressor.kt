@@ -283,7 +283,12 @@ internal class AndroidImageCompressor(
             orientedDims.width, orientedDims.height,
             config.maxWidth, config.maxHeight, config.keepAspectRatio,
         )
-        val bitmap = source.decodeSampledBitmap(rawDims, target, exifRotation)
+        val bitmap = source.decodeSampledBitmap(
+            rawDims = rawDims,
+            target = target,
+            exifRotation = exifRotation,
+            preferredConfig = preferredBitmapConfigFor(config.format),
+        )
         val outputSize = try {
             currentCoroutineContext().ensureActive()
             resizeAndWrite(bitmap, target, writer, config)
@@ -469,6 +474,29 @@ private fun androidAvifFormat(): Bitmap.CompressFormat =
     Bitmap.CompressFormat.valueOf("AVIF")
 
 /**
+ * Picks a `BitmapFactory.Options.inPreferredConfig` hint based on the *output* [ImageFormat].
+ *
+ * JPEG cannot carry an alpha channel, so the decoded bitmap is fed to `Bitmap.compress(JPEG, …)`
+ * which discards alpha anyway — `RGB_565` (16-bit) instead of the default `ARGB_8888` (32-bit)
+ * halves the per-pixel footprint of the sampled-decode bitmap with no observable difference in
+ * the encoded JPEG output. This is the lever the `thumbnail()` "low peak heap" contract leans on.
+ *
+ * WEBP / HEIC / AVIF can carry alpha, so we return `null` to keep the platform default
+ * `ARGB_8888` and round-trip transparency from the source. A non-alpha source encoded into an
+ * alpha-capable format would still benefit from `RGB_565`, but introspecting source alpha would
+ * cost an extra decode pass — the format-based rule is the simplest correct heuristic.
+ *
+ * Returning `null` (rather than `Bitmap.Config.ARGB_8888`) keeps the behaviour byte-identical
+ * to the pre-CRA-114 default for non-JPEG output, so this change cannot regress anything other
+ * than JPEG decode footprint.
+ */
+@OptIn(ExperimentalKompressorApi::class)
+private fun preferredBitmapConfigFor(format: ImageFormat): Bitmap.Config? = when (format) {
+    ImageFormat.JPEG -> Bitmap.Config.RGB_565
+    ImageFormat.WEBP, ImageFormat.HEIC, ImageFormat.AVIF -> null
+}
+
+/**
  * Describes the EXIF orientation transform to apply to raw pixel data.
  * Defaults to identity (no transform).
  */
@@ -500,6 +528,7 @@ private sealed interface ImageSource {
         rawDims: ImageDimensions,
         target: ImageDimensions,
         exifRotation: ExifRotation,
+        preferredConfig: Bitmap.Config?,
     ): Bitmap
 
     companion object {
@@ -540,8 +569,9 @@ private class FilePathSource(private val path: String) : ImageSource {
         rawDims: ImageDimensions,
         target: ImageDimensions,
         exifRotation: ExifRotation,
+        preferredConfig: Bitmap.Config?,
     ): Bitmap {
-        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation, preferredConfig)
         val decoded = BitmapFactory.decodeFile(path, options)
             ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $path")
         return rotateOrRecycle(decoded, exifRotation)
@@ -585,8 +615,9 @@ private class ContentUriSource(private val uri: Uri) : ImageSource {
         rawDims: ImageDimensions,
         target: ImageDimensions,
         exifRotation: ExifRotation,
+        preferredConfig: Bitmap.Config?,
     ): Bitmap {
-        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation, preferredConfig)
         val decoded = openStream().use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
                 ?: throw ImageCompressionError.DecodingFailed("Failed to decode image: $uri")
@@ -635,8 +666,9 @@ private class ByteArrayImageSource(private val bytes: ByteArray) : ImageSource {
         rawDims: ImageDimensions,
         target: ImageDimensions,
         exifRotation: ExifRotation,
+        preferredConfig: Bitmap.Config?,
     ): Bitmap {
-        val options = buildSampledDecodeOptions(rawDims, target, exifRotation)
+        val options = buildSampledDecodeOptions(rawDims, target, exifRotation, preferredConfig)
         val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             ?: throw ImageCompressionError.DecodingFailed("Failed to decode image from in-memory bytes")
         return rotateOrRecycle(decoded, exifRotation)
@@ -670,6 +702,7 @@ private fun buildSampledDecodeOptions(
     rawDims: ImageDimensions,
     target: ImageDimensions,
     exifRotation: ExifRotation,
+    preferredConfig: Bitmap.Config?,
 ): BitmapFactory.Options {
     // Apply EXIF rotation to raw dims so the sample-size heuristic targets the post-rotation
     // visible bitmap dimensions. Without this, a 4000×3000 JPEG tagged ROTATE_90 would be
@@ -681,6 +714,13 @@ private fun buildSampledDecodeOptions(
     }
     return BitmapFactory.Options().apply {
         inSampleSize = calculateInSampleSize(oriented.width, oriented.height, target.width, target.height)
+        // `inPreferredConfig` is a hint, not a guarantee — `BitmapFactory` may still return an
+        // ARGB_8888 bitmap if the source carries alpha or the platform decoder can't honour the
+        // request. Setting it to `RGB_565` for opaque-target outputs (JPEG) halves the per-pixel
+        // footprint of the sampled-decode bitmap (~4 B → 2 B), which is the entire point of the
+        // `thumbnail()` low-peak-heap promise. `null` leaves the platform default in place
+        // (ARGB_8888) so alpha-bearing outputs (WEBP / HEIC / AVIF) round-trip transparency.
+        if (preferredConfig != null) inPreferredConfig = preferredConfig
     }
 }
 

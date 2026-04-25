@@ -16,6 +16,7 @@ import co.crackn.kompressor.testutil.OutputValidators
 import co.crackn.kompressor.testutil.createExifTaggedJpeg
 import co.crackn.kompressor.testutil.createTestImage
 import io.kotest.assertions.withClue
+import io.kotest.matchers.comparables.shouldBeGreaterThanOrEqualTo
 import io.kotest.matchers.comparables.shouldBeLessThanOrEqualTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -145,6 +146,92 @@ class ImageThumbnailDeviceTest {
     }
 
     @Test
+    fun thumbnail_jpegOutputUsesAtLeastThirtyPercentLessHeapThanWebp() = runTest {
+        // CRA-114 regression guard: JPEG output now decodes with `BitmapFactory.Options
+        // .inPreferredConfig = RGB_565` (no alpha needed by the JPEG encoder) instead of the
+        // default `ARGB_8888`. WEBP output still uses `ARGB_8888` because WEBP can carry alpha.
+        // For a 4000×3000 source at maxDim=1000 the sampled-decode bitmap is 1000×750:
+        //   ARGB_8888 → 1000 × 750 × 4 ≈ 2.86 MB
+        //   RGB_565   → 1000 × 750 × 2 ≈ 1.43 MB
+        // Theoretical heap reduction is ~50 %. The DoD asks for ≥ 30 %; that envelope absorbs
+        // GC noise, native-side encoder buffers (which `Runtime.totalMemory()` doesn't see anyway
+        // since they're on the native heap), and the slight asymmetry between the JPEG and WEBP
+        // encoder paths' Java-side buffers. A regression that drops the `inPreferredConfig` hint
+        // would push JPEG back up to ~2.86 MB and the assertion would fail loudly.
+        //
+        // Cross-format comparison (JPEG vs WEBP) is the only way to exercise both decode configs
+        // without exposing a test-only seam — `inPreferredConfig` is keyed on the output format
+        // by design (`preferredBitmapConfigFor` in AndroidImageCompressor.kt).
+        val input = createTestImage(tempDir, LARGE_WIDTH, LARGE_HEIGHT)
+
+        val jpegPeak = measurePeakHeapDelta(input, "thumb_jpeg.jpg", ImageFormat.JPEG)
+        val webpPeak = measurePeakHeapDelta(input, "thumb_webp.webp", ImageFormat.WEBP)
+
+        // Guard against a degenerate WEBP measurement (e.g. baseline drift on a noisy emulator
+        // pushed the delta near 0). Without this the ratio assertion below would pass vacuously.
+        withClue(
+            "WEBP peak delta $webpPeak B is implausibly small — the sampler likely missed the " +
+                "ARGB_8888 decode bitmap. Expected at least ~$EXPECTED_WEBP_DELTA_FLOOR B for a " +
+                "1000×750 ARGB_8888 sampled bitmap.",
+        ) { webpPeak shouldBeGreaterThanOrEqualTo EXPECTED_WEBP_DELTA_FLOOR }
+
+        val ratio = jpegPeak.toDouble() / webpPeak.toDouble()
+        withClue(
+            "JPEG peak heap delta ($jpegPeak B) should be at most ${MAX_JPEG_VS_WEBP_RATIO * 100}% " +
+                "of WEBP peak heap delta ($webpPeak B) — observed ratio $ratio. " +
+                "A ratio close to 1.0 indicates `inPreferredConfig = RGB_565` is no longer being " +
+                "threaded through to the JPEG decode path.",
+        ) { ratio shouldBeLessThanOrEqualTo MAX_JPEG_VS_WEBP_RATIO }
+    }
+
+    /**
+     * Runs `thumbnail()` once for [format] at [LARGE_THUMB_MAX_DIMENSION] and returns the peak
+     * Java heap usage delta observed during the call. Mirrors the sampling strategy of
+     * [thumbnail_peakMemoryStaysUnderSampledDecodeEnvelope] — concurrent `Dispatchers.IO`
+     * sampler at [SAMPLER_INTERVAL_MS] cadence so a transient allocation that would be
+     * collected before a post-call snapshot still lands in `peakUsed`.
+     */
+    private suspend fun measurePeakHeapDelta(
+        input: File,
+        outputName: String,
+        format: ImageFormat,
+    ): Long {
+        val output = File(tempDir, outputName)
+        val runtime = Runtime.getRuntime()
+        // Drain prior-run allocations so the baseline reflects only what's resident *now*.
+        // Without this, GC of the previous run's decoded bitmap could land mid-sampling and
+        // depress the peak delta of the current run.
+        repeat(GC_ROUNDS) { runtime.gc() }
+        val baseline = runtime.totalMemory() - runtime.freeMemory()
+
+        val peakUsed = AtomicLong(baseline)
+        val samplerScope = CoroutineScope(Dispatchers.IO)
+        val sampler = samplerScope.launch {
+            while (isActive) {
+                val used = runtime.totalMemory() - runtime.freeMemory()
+                peakUsed.updateAndGet { if (used > it) used else it }
+                delay(SAMPLER_INTERVAL_MS)
+            }
+        }
+
+        val result = try {
+            compressor.thumbnail(
+                MediaSource.Local.FilePath(input.absolutePath),
+                MediaDestination.Local.FilePath(output.absolutePath),
+                maxDimension = LARGE_THUMB_MAX_DIMENSION,
+                format = format,
+            )
+        } finally {
+            sampler.cancelAndJoin()
+        }
+        val finalUsed = runtime.totalMemory() - runtime.freeMemory()
+        peakUsed.updateAndGet { if (finalUsed > it) finalUsed else it }
+
+        withClue("thumbnail($format) failed: ${result.exceptionOrNull()}") { result.isSuccess shouldBe true }
+        return peakUsed.get() - baseline
+    }
+
+    @Test
     fun thumbnail_exifRotate90_swapsDimensionsAndClamps() = runTest {
         // Mirror of `AndroidImageCompressorTest.exifOrientation_rotate90_swapsDimensionsAndRotatesPixels`
         // at the thumbnail entry point. With EXIF ORIENTATION = 6 (ROTATE_90 CW) applied to a
@@ -267,5 +354,18 @@ class ImageThumbnailDeviceTest {
         // 10 MB envelope — full 4000×3000 RGBA decode would hit ~48 MB so this is a ~5× safety
         // margin over the expected ~1–2 MB peak of the sampled-decode pipeline.
         const val MAX_PEAK_DELTA_BYTES = 10L * 1024 * 1024
+
+        // CRA-114: maxDim=1000 against 4000×3000 source → sampled bitmap = 1000×750.
+        const val LARGE_THUMB_MAX_DIMENSION = 1000
+
+        // Floor for the WEBP (ARGB_8888) peak delta — ~1 MB, well below the theoretical 2.86 MB
+        // for a 1000×750 ARGB_8888 bitmap. If the sampler misses the decode bitmap entirely the
+        // delta would land near zero; this guards against a vacuously-passing ratio assertion.
+        const val EXPECTED_WEBP_DELTA_FLOOR = 1L * 1024 * 1024
+
+        // ≤ 70% means the JPEG decode used at least 30% less heap than the WEBP decode — the DoD
+        // threshold from CRA-114. The theoretical floor is ~50% (RGB_565 is 2 B/px vs ARGB_8888's
+        // 4 B/px); the 30% margin absorbs encoder-side Java buffers and emulator GC noise.
+        const val MAX_JPEG_VS_WEBP_RATIO = 0.70
     }
 }
