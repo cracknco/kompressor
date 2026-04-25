@@ -64,7 +64,7 @@ produces byte differences in exactly the positions where the wall-clock timestam
 ### Step 2 — `audio/video_novelOverloadTwice_producesIdenticalBytes`
 
 Two back-to-back NSURL-overload compresses of the same input, executed within
-milliseconds of each other, compared bitwise.
+ milliseconds of each other, compared structurally.
 
 **Observed**:
 
@@ -73,10 +73,23 @@ milliseconds of each other, compared bitwise.
 [CRA-98 Step 2 video] novelA.size=2858  novelB.size=2858  firstDivergentOffsets=[]
 ```
 
-Both audio and video produce **bitwise-identical** output. The NSURL overload is not
-introducing any per-call non-determinism. This eliminates H3: there is nothing in
-`toIosInputPath` / coroutine dispatch that stamps a non-timestamp value differently on
-successive runs.
+Both audio and video produce **bitwise-identical** output (when both calls land in
+the same wall-clock second). The NSURL overload is not introducing any per-call
+non-determinism. This eliminates H3: there is nothing in `toIosInputPath` /
+coroutine dispatch that stamps a non-timestamp value differently on successive runs.
+
+**Slow-runner caveat (added post-conclusion).** The original Step 2 assertion was
+`a.contentEquals(b)`, which assumed the two back-to-back compresses always finish
+within the same wall-clock second. On a slow `macos-latest` runner under load the
+release pipeline observed the pair straddle a second tick and produce an H1-flavoured
+3-byte divergence at the moov-tail timestamp offsets — see GitHub Actions run
+[24935723437](https://github.com/cracknco/kompressor/actions/runs/24935723437). Because
+H3 has already been refuted (whatever that run produced was an H1 straddle, not new
+NSURL non-determinism), Step 2 was relaxed to the same `assertAvOutputStructurallyEquivalent`
+check the production-grade tests use (sizes equal + ≤ `AV_TIMESTAMP_BYTE_TOLERANCE = 64`
+differing bytes). The test now serves as an **ongoing sentinel for non-determinism
+*beyond* the timestamp budget** — any size mismatch or ≥65 differing bytes between two
+back-to-back NSURL compresses would still fail.
 
 ### Step 3 — `audio/video_legacyVsNovel_captureDivergentByteOffsets`
 

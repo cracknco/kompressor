@@ -47,8 +47,12 @@ import platform.posix.usleep
  *    tail of the file where the `moov` box lives for non-network-optimised M4A output. This
  *    matches ISOBMFF `mvhd.creation_time` / `trak.tkhd.creation_time` / `mdhd.creation_time`
  *    locations exactly.
- *  * **Step 2 (novel-overload twice within ms):** audio AND video both bitwise-identical → the
- *    NSURL dispatch path is deterministic, not a per-call divergence source.
+ *  * **Step 2 (novel-overload twice within ms):** audio AND video bitwise-identical when both
+ *    calls land in the same wall-clock second → the NSURL dispatch path is deterministic, not
+ *    a per-call divergence source. The release pipeline later observed the pair straddle a
+ *    second tick on a slow `macos-latest` runner (run 24935723437), so the assertion is now
+ *    structural (sizes equal + ≤[AV_TIMESTAMP_BYTE_TOLERANCE] differing bytes) rather than
+ *    bitwise — see Step-2 method KDoc + the investigation doc's "Slow-runner caveat" section.
  *  * **Step 3 (legacy-vs-novel single pair):** in this run both landed in the same wall-clock
  *    second and produced bitwise-identical output.
  *
@@ -164,14 +168,28 @@ class UrlInputNonDeterminismInvestigationTest {
     }
 
     /**
-     * **Step 2 — H2 vs H3 discriminator (audio).**
+     * **Step 2 — NSURL-overload determinism sentinel (audio).**
      *
-     * Two back-to-back NSURL-overload compresses of the same WAV, assert bitwise equality.
-     *  - If passes → NSURL overload is deterministic in the same wall-clock second. Combined with
-     *    the existing legacy-twice determinism, the legacy-vs-novel divergence must come from
-     *    *cross-path* effects (H2: dispatch latency pushes the two compresses into different
-     *    wall-clock seconds) or something path-specific (H3).
-     *  - If fails → NSURL overload is non-deterministic even within one second → H3 confirmed.
+     * Two back-to-back NSURL-overload compresses of the same WAV, assert structural
+     * equivalence (sizes equal + differing bytes ≤ [AV_TIMESTAMP_BYTE_TOLERANCE]).
+     *
+     * **Historical role.** Originally written as an H2-vs-H3 discriminator with a strict
+     * `contentEquals` assertion: passing meant the NSURL path is deterministic *within a
+     * wall-clock second* (refuting H3), failing would have confirmed H3. The investigation
+     * concluded H3 is refuted (initial runs were bitwise-identical) and H1 is the root
+     * cause — see class KDoc + `docs/investigations/avfoundation-nsurl-divergence.md`.
+     *
+     * **Why the assertion is now structural, not bitwise.** The release pipeline observed
+     * the pair straddle a second tick on a slow `macos-latest` runner (run 24935723437),
+     * producing the same 3-byte H1 divergence at moov-tail timestamp offsets that Step 1
+     * already proves. Asserting bitwise equality conflates "H3 confirmed" with "Step 1
+     * also reproduces here" — the latter is just AVFoundation wall-clock stamping, not
+     * new information. Switching to the production-grade
+     * [assertAvOutputStructurallyEquivalent] tolerance keeps the test as an ongoing
+     * sentinel for non-determinism *beyond* the timestamp budget (size mismatch or ≥
+     * `AV_TIMESTAMP_BYTE_TOLERANCE + 1` differing bytes between two NSURL calls would
+     * still fail) without re-flaking on the H1 mechanism the investigation is built to
+     * exclude.
      */
     @Test
     fun audio_novelOverloadTwice_producesIdenticalBytes() = runTest {
@@ -194,22 +212,17 @@ class UrlInputNonDeterminismInvestigationTest {
 
         val a = readBytes(firstOut)
         val b = readBytes(secondOut)
-        val diagnostic = "[CRA-98 Step 2 audio] novelA.size=${a.size} novelB.size=${b.size} " +
-            "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}"
-        println(diagnostic)
-
-        withClue(
-            "H2 vs H3: if the two NSURL-overload outputs are byte-identical, the NSURL path is " +
-                "deterministic and the legacy-vs-novel divergence must be a cross-path effect. " +
-                "If they differ, the NSURL path introduces per-call non-determinism (H3). " +
-                "Observed: $diagnostic",
-        ) {
-            a.contentEquals(b) shouldBe true
-        }
+        println(
+            "[CRA-98 Step 2 audio] novelA.size=${a.size} novelB.size=${b.size} " +
+                "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}",
+        )
+        assertAvOutputStructurallyEquivalent("Step 2 audio NSURL-twice", a, b)
     }
 
     /**
-     * **Step 2 — H2 vs H3 discriminator (video).** See audio twin above.
+     * **Step 2 — NSURL-overload determinism sentinel (video).** See audio twin above for
+     * the historical role and the rationale for using [assertAvOutputStructurallyEquivalent]
+     * instead of strict bitwise equality.
      */
     @Test
     fun video_novelOverloadTwice_producesIdenticalBytes() = runTest {
@@ -232,15 +245,11 @@ class UrlInputNonDeterminismInvestigationTest {
 
         val a = readBytes(firstOut)
         val b = readBytes(secondOut)
-        val diagnostic = "[CRA-98 Step 2 video] novelA.size=${a.size} novelB.size=${b.size} " +
-            "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}"
-        println(diagnostic)
-
-        withClue(
-            "Video NSURL overload determinism twin of the audio test above. Observed: $diagnostic",
-        ) {
-            a.contentEquals(b) shouldBe true
-        }
+        println(
+            "[CRA-98 Step 2 video] novelA.size=${a.size} novelB.size=${b.size} " +
+                "firstDivergentOffsets=${firstDivergentOffsets(a, b, limit = DUMP_OFFSET_LIMIT)}",
+        )
+        assertAvOutputStructurallyEquivalent("Step 2 video NSURL-twice", a, b)
     }
 
     /**
@@ -324,6 +333,35 @@ class UrlInputNonDeterminismInvestigationTest {
         val path = testDir + "input.wav"
         writeBytes(path, bytes)
         return path
+    }
+
+    /**
+     * Structural-equivalence assertion mirroring [UrlInputEndToEndTest]'s helper of the same
+     * name (kept private here per the existing duplication pattern across the two other test
+     * classes that use it). Sizes MUST match exactly — AVFoundation wall-clock timestamp
+     * drift never resizes the container; if they disagree there is a real regression. The
+     * differing-byte count MUST fit inside [AV_TIMESTAMP_BYTE_TOLERANCE], a 1.6× safety
+     * margin over the worst-case ISOBMFF `mvhd`/`tkhd`/`mdhd` timestamp budget. See CRA-98
+     * investigation doc for the derivation.
+     */
+    private fun assertAvOutputStructurallyEquivalent(label: String, novel: ByteArray, legacy: ByteArray) {
+        withClue("$label outputs must not be empty. novel=${novel.size} legacy=${legacy.size}") {
+            (novel.isNotEmpty() && legacy.isNotEmpty()) shouldBe true
+        }
+        withClue(
+            "$label output sizes must be equal (timestamp drift does not resize the " +
+                "container). novel=${novel.size} legacy=${legacy.size}",
+        ) {
+            novel.size shouldBe legacy.size
+        }
+        var differing = 0
+        for (i in novel.indices) if (novel[i] != legacy[i]) differing++
+        withClue(
+            "$label expected ≤$AV_TIMESTAMP_BYTE_TOLERANCE differing bytes (AVFoundation " +
+                "wall-clock `mvhd`/`tkhd`/`mdhd` second rollover); actual=$differing",
+        ) {
+            (differing <= AV_TIMESTAMP_BYTE_TOLERANCE) shouldBe true
+        }
     }
 
     /**
@@ -440,5 +478,14 @@ class UrlInputNonDeterminismInvestigationTest {
         const val MAX_BOX_SCAN = 16
         const val ISOBMFF_HEADER_SIZE = 8
         const val ISOBMFF_SIZE_BYTES = 4
+
+        /**
+         * Mirror of [UrlInputEndToEndTest.AV_TIMESTAMP_BYTE_TOLERANCE] (intentionally
+         * duplicated, matching the same const-per-class pattern in
+         * [co.crackn.kompressor.io.StreamAndBytesEndToEndTest]). Bound rationale:
+         * worst-case multi-track AVFoundation timestamp budget is ~40 B; 64 B is a 1.6×
+         * safety margin while still catching any non-timestamp byte flip.
+         */
+        const val AV_TIMESTAMP_BYTE_TOLERANCE: Int = 64
     }
 }
