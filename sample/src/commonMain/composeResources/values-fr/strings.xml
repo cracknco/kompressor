@@ -84,6 +84,14 @@
     <string name="error_video_encoding_failed">L\'encodage de la vidéo compressée a échoué. Votre appareil manque peut-être de ressources.</string>
     <string name="error_video_io_failed">Impossible de lire le fichier d\'entrée ou d\'écrire la sortie.</string>
 
+    <!-- Preview screen -->
+    <string name="preview_title">Aperçu</string>
+    <string name="preview_image_section">Miniature d\'image</string>
+    <string name="preview_video_section">Image vidéo</string>
+    <string name="preview_audio_section">Forme d\'onde audio</string>
+    <string name="preview_waveform_computing">Extraction de la forme d\'onde…</string>
+    <string name="preview_frame_timestamp_ms">À %1$s ms</string>
+
     <!-- Capabilities screen -->
     <string name="capabilities_title">Capacités de l\'appareil</string>
     <string name="capabilities_device">Appareil</string>

@@ -1,0 +1,113 @@
+---
+title: Thumbnails & waveforms
+description: "Memory-bounded previews — image thumbnails, video frames, and audio waveforms — without decoding the full source."
+---
+
+`Kompressor` exposes three preview APIs that all share one promise: peak memory scales with the size of the **preview** you ask for, not the size of the source. A 48 MP photo, a 4K HDR video, or a 3-hour MP3 podcast all preview in roughly the same fixed-byte budget — the platform decoders are pointed at sampled-decode primitives (`BitmapFactory.inSampleSize`, `CGImageSourceCreateThumbnailAtIndex`, `MediaMetadataRetriever.getScaledFrameAtTime`, `AVAssetImageGenerator.maximumSize`, streaming PCM peak buckets) instead of being asked to materialise the full pixel grid.
+
+That matters for any UI that shows a list of media items before the user has decided which one to open: gallery previews, voice-note bubbles, scrub bars, "did the user just import the right file?" confirmations. Pair these with [`compressBatch()`](/guides/probe-and-compatibility) when you need to enrich a whole list of items with previews — preview each input *before* the heavy compression runs, so a wrong file gets caught at picker time instead of after a 30-second transcode.
+
+## Image thumbnail
+
+`ImageCompressor.thumbnail()` produces a downscaled JPEG / HEIC / WEBP from any image input via the platform's **sampled-decode** primitive — peak heap is bounded by the requested thumbnail size, not the source's pixel count. A 4000 × 3000 photo decoded to RGBA in full is ~48 MB; the same photo at `maxDimension = 200` holds well under 1 MB during decode.
+
+```kotlin
+import co.crackn.kompressor.image.ImageFormat
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
+val result = kompressor.image.thumbnail(
+    input = MediaSource.Local.FilePath("/path/to/photo.jpg"),
+    output = MediaDestination.Local.FilePath("/path/to/photo_thumb.jpg"),
+    maxDimension = 200,
+    format = ImageFormat.JPEG,
+    quality = 80,
+).getOrThrow()
+```
+
+<Note>
+  - **EXIF rotation is preserved** — Android applies the orientation tag during sampled decode, iOS hands `kCGImageSourceCreateThumbnailWithTransform = true` to Core Graphics. A 200 × 100 landscape JPEG with `Orientation = 6` thumbnails to 100 × 200 portrait in one pass.
+  - **`maxDimension = 200` is typical for list UIs.** Aspect ratio is preserved, so the longer edge is clamped to the value and the shorter edge follows. Never upscales — sources already smaller than `maxDimension` keep their pixel dimensions.
+  - **`format = ImageFormat.HEIC` on iOS 15+** produces files ~40 % smaller than JPEG at the same perceived quality. Android falls back to JPEG when asked for HEIC.
+</Note>
+
+## Video thumbnail
+
+`VideoCompressor.thumbnail()` extracts a still frame at any millisecond offset and encodes it as an image. Both platforms default to the **nearest keyframe** (`OPTION_CLOSEST_SYNC` on Android, 100 ms after-tolerance on iOS) — fast and memory-cheap. Source orientation is preserved: a portrait recording produces a portrait thumbnail with `height > width`.
+
+```kotlin
+import co.crackn.kompressor.ExperimentalKompressorApi
+import co.crackn.kompressor.image.ImageFormat
+import co.crackn.kompressor.io.MediaDestination
+import co.crackn.kompressor.io.MediaSource
+
+@OptIn(ExperimentalKompressorApi::class)
+suspend fun extractFrame(input: String, output: String) {
+    kompressor.video.thumbnail(
+        input = MediaSource.Local.FilePath(input),
+        output = MediaDestination.Local.FilePath(output),
+        atMillis = 1_000L,
+        maxDimension = 480,
+        format = ImageFormat.JPEG,
+        quality = 80,
+    ).getOrThrow()
+}
+```
+
+<Note>
+  - **`atMillis = 0L` extracts the first keyframe** — typically the cheapest and most cache-friendly offset. Use that for a "hero shot" preview when any representative frame will do.
+  - **`maxDimension = null` keeps the source's native (oriented) resolution.** That's fine for SD inputs, but on a 4K source it lands a 4096 × 2160 JPEG on disk — set a cap (e.g. `480`) for list previews. On Android API 27+ the cap is applied during decode (`getScaledFrameAtTime`) so peak heap stays bounded on 1080p+ sources.
+  - **`atMillis > duration` raises `VideoCompressionError.TimestampOutOfRange`** — a new typed error variant added with this API. Branch on it to surface "frame past end of video" in UI rather than a generic decoding failure.
+  - The API is `@ExperimentalKompressorApi` while the keyframe-tolerance contract settles — opt in explicitly so the boundary stays visible at call sites.
+</Note>
+
+## Audio waveform
+
+`AudioCompressor.waveform()` streams PCM through a peak-bucket reducer and returns a `FloatArray` of normalized amplitudes — the mobile-UI "absolute peaks" convention used by `DSWaveformImage` (iOS), `compose-audiowaveform` / `Amplituda` (Android), WhatsApp voice notes, Apple Podcasts. Memory is `O(targetSamples)` regardless of source duration; a 1-hour podcast (~608 MB decoded) never holds more than ~64 KB of PCM in RAM.
+
+```kotlin
+import co.crackn.kompressor.io.MediaSource
+
+val peaks: FloatArray = kompressor.audio.waveform(
+    input = MediaSource.Local.FilePath("/path/to/voice_note.m4a"),
+    targetSamples = 200,
+    onProgress = { progress -> updateScrubbar(progress.fraction) },
+).getOrThrow()
+
+// Each peak is in [0f, 1f]. Render straight into a Canvas:
+//   for (i in peaks.indices) drawLine(x = i, height = peaks[i] * canvasHeight)
+```
+
+<Note>
+  - **`targetSamples = 200` is typical for a scrubbar / voice-note bubble.** Use 800–1200 for a full-width editor view, ≤ 100 for a tiny list-row indicator. The returned array may be **shorter** when the source is shorter than one bucket's duration.
+  - **`AudioCompressionError.NoAudioTrack`** is the new typed error variant — fires when the input is a valid container with zero audio tracks (image file, video-only MP4, mis-routed media). It's surfaced before the decoder is opened, so there's no init cost on the wrong file.
+  - **The `FloatArray` lives in memory, not on disk.** This is intentional — there's no file format for "200 floats" that doesn't add overhead, and consumers want the array to feed directly into a Canvas / `DSWaveformImage` / `AudioWaveform`. Cache it yourself if the source is expensive to re-decode.
+</Note>
+
+## FAQ
+
+**Why don't these methods return a `Bitmap` / `CGImage` / `UIImage`?**
+The image and video thumbnail APIs encode directly to a `MediaDestination` (file path, `okio.Sink`, in-memory bytes) so the caller decides how the bytes reach the screen — `Coil` / `AsyncImage` for Compose, `UIImageView` for UIKit, `<img>` in WebView. Returning a platform-specific bitmap would force the library to pick one display stack and would leak a heap-allocated bitmap through the `Result` boundary, defeating the memory-efficiency promise. Encode-then-display matches what every native gallery API does internally and keeps the public surface platform-neutral.
+
+**Why does `waveform()` return a `FloatArray` instead of a file?**
+Waveform consumers want pixels, not bytes — the next step is always "draw this into a Canvas" or "feed it to `DSWaveformImage`". A file format would add (de)serialization overhead with no benefit, and there's no de-facto standard for "N normalized peaks". Returning a `FloatArray` lets the caller render directly, cache as needed, or persist with their own schema. See the `AudioCompressor.waveform` KDoc for the bucket-peak math.
+
+**Can I skip the full file scan for video thumbnails?**
+Both platforms fast-path keyframe extraction: Android uses `OPTION_CLOSEST_SYNC` and iOS hands a 100 ms `requestedTimeToleranceAfter` to `AVAssetImageGenerator`. The result is a frame *near* `atMillis` rather than exactly at it, but extraction completes in tens of milliseconds even on a 4K source. Frame-accurate extraction is out of scope for v1 — open an issue if you need it.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Compress an image" icon="image" href="/guides/image">
+    Full-resolution compression with quality control and EXIF-aware rotation.
+  </Card>
+  <Card title="Compress a video" icon="video" href="/guides/video">
+    H.264 transcoding with bitrate, frame-rate, and resolution controls.
+  </Card>
+  <Card title="Compress audio" icon="music" href="/guides/audio">
+    AAC transcoding plus the waveform extraction deep-dive.
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/errors">
+    `when`-branch on `TimestampOutOfRange` and `NoAudioTrack` to surface preview-specific errors.
+  </Card>
+</CardGroup>

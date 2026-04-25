@@ -36,6 +36,7 @@
               "guides/image",
               "guides/video",
               "guides/audio",
+              "guides/thumbnails",
               "guides/probe-and-compatibility"
             ]
           },

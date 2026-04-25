@@ -20,4 +20,7 @@ sealed interface Route {
 
     @Serializable
     data object Capabilities : Route
+
+    @Serializable
+    data object Preview : Route
 }
