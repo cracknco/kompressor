@@ -84,6 +84,14 @@
     <string name="error_video_encoding_failed">Encoding the compressed output failed. Your device may be low on resources.</string>
     <string name="error_video_io_failed">Couldn\'t read the input or write the output file.</string>
 
+    <!-- Preview screen -->
+    <string name="preview_title">Preview</string>
+    <string name="preview_image_section">Image thumbnail</string>
+    <string name="preview_video_section">Video frame</string>
+    <string name="preview_audio_section">Audio waveform</string>
+    <string name="preview_waveform_computing">Extracting waveform…</string>
+    <string name="preview_frame_timestamp_ms">At %1$s ms</string>
+
     <!-- Capabilities screen -->
     <string name="capabilities_title">Device Capabilities</string>
     <string name="capabilities_device">Device</string>

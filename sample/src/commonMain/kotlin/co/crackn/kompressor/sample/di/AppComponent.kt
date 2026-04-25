@@ -10,6 +10,7 @@ import co.crackn.kompressor.createKompressor
 import co.crackn.kompressor.sample.audio.AudioCompressViewModel
 import co.crackn.kompressor.sample.capabilities.CapabilitiesViewModel
 import co.crackn.kompressor.sample.image.ImageCompressViewModel
+import co.crackn.kompressor.sample.preview.PreviewViewModel
 import co.crackn.kompressor.sample.video.VideoCompressViewModel
 import me.tatarka.inject.annotations.Component
 import me.tatarka.inject.annotations.KmpComponentCreate
@@ -26,6 +27,8 @@ abstract class AppComponent {
     abstract val videoCompressViewModelFactory: () -> VideoCompressViewModel
 
     abstract val capabilitiesViewModelFactory: () -> CapabilitiesViewModel
+
+    abstract val previewViewModelFactory: () -> PreviewViewModel
 
     @AppScope
     @Provides
