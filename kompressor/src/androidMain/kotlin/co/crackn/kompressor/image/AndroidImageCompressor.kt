@@ -71,7 +71,12 @@ internal class AndroidImageCompressor(
         // `resizeBitmapIfNeeded` when `inSampleSize` can't hit the target edge exactly.
         // Bounding both dimensions to [maxDimension] and keeping the aspect ratio gives the
         // contractual "longer edge ≤ maxDimension" + "aspect preserved" + "no upscale" shape.
-        return compress(
+        //
+        // [preferredBitmapConfigFor] picks RGB_565 for JPEG output — the halved per-pixel
+        // footprint is what tightens the "low peak heap" promise. The general [compress] path
+        // passes `null` (no override) so a quality-95 JPEG keeps full ARGB_8888 colour fidelity
+        // for archival callers; the 16-bit decode is opt-in via the thumbnail entry point only.
+        return compressInternal(
             input = input,
             output = output,
             config = ImageCompressionConfig(
@@ -81,13 +86,27 @@ internal class AndroidImageCompressor(
                 maxHeight = maxDimension,
                 keepAspectRatio = true,
             ),
+            preferredConfig = preferredBitmapConfigFor(format),
         )
     }
 
+    /**
+     * Always decodes at the platform default (`ARGB_8888`) — the [thumbnail]-scoped `RGB_565`
+     * optimisation is intentionally **not** applied here so that quality-sensitive callers
+     * (e.g. archival JPEG at quality 95) keep full 24-bit colour fidelity. See
+     * [preferredBitmapConfigFor] for the trade-off rationale.
+     */
     override suspend fun compress(
         input: MediaSource,
         output: MediaDestination,
         config: ImageCompressionConfig,
+    ): Result<CompressionResult> = compressInternal(input, output, config, preferredConfig = null)
+
+    private suspend fun compressInternal(
+        input: MediaSource,
+        output: MediaDestination,
+        config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): Result<CompressionResult> = suspendRunCatching {
         // Short-circuit: Stream/Bytes inputs decode directly from memory, no temp file. Image
         // payloads are bounded (~50 MB typical), so holding the bytes in RAM is safe and spares
@@ -98,9 +117,9 @@ internal class AndroidImageCompressor(
             else -> null
         }
         if (memoryBytes != null) {
-            compressFromBytes(memoryBytes, output, config)
+            compressFromBytes(memoryBytes, output, config, preferredConfig)
         } else {
-            compressFromPath(input, output, config)
+            compressFromPath(input, output, config, preferredConfig)
         }
     }
 
@@ -117,11 +136,12 @@ internal class AndroidImageCompressor(
         memoryBytes: ByteArray,
         output: MediaDestination,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult {
         val source = ByteArrayImageSource(memoryBytes)
         return if (output is MediaDestination.Local.Stream) {
             try {
-                doCompressDirect(source, config) { bitmap, cfg ->
+                doCompressDirect(source, config, preferredConfig) { bitmap, cfg ->
                     writeBitmapToSink(bitmap, output, cfg)
                 }
             } finally {
@@ -130,7 +150,7 @@ internal class AndroidImageCompressor(
         } else {
             val outputHandle = output.toAndroidOutputHandle()
             try {
-                val result = doCompressDirect(source, config) { bitmap, cfg ->
+                val result = doCompressDirect(source, config, preferredConfig) { bitmap, cfg ->
                     writeBitmapToPath(bitmap, outputHandle.tempPath, cfg)
                     File(outputHandle.tempPath).length()
                 }
@@ -157,13 +177,14 @@ internal class AndroidImageCompressor(
         input: MediaSource,
         output: MediaDestination,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult {
         val inputHandle = input.toAndroidInputPath(mediaType = MediaType.IMAGE, logger = logger)
         try {
             return if (output is MediaDestination.Local.Stream) {
-                compressPathToStream(inputHandle.path, output, config)
+                compressPathToStream(inputHandle.path, output, config, preferredConfig)
             } else {
-                compressPathToFileBacked(inputHandle.path, output, config)
+                compressPathToFileBacked(inputHandle.path, output, config, preferredConfig)
             }
         } finally {
             inputHandle.cleanup()
@@ -174,10 +195,11 @@ internal class AndroidImageCompressor(
         inputPath: String,
         output: MediaDestination.Local.Stream,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult {
         val source = ImageSource.of(inputPath)
         return try {
-            doCompressDirect(source, config) { bitmap, cfg ->
+            doCompressDirect(source, config, preferredConfig) { bitmap, cfg ->
                 writeBitmapToSink(bitmap, output, cfg)
             }
         } finally {
@@ -189,10 +211,11 @@ internal class AndroidImageCompressor(
         inputPath: String,
         output: MediaDestination,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult {
         val outputHandle = output.toAndroidOutputHandle()
         return try {
-            val result = compressFilePath(inputPath, outputHandle.tempPath, config)
+            val result = compressFilePath(inputPath, outputHandle.tempPath, config, preferredConfig)
             // Commit AFTER the CompressionResult is produced so `outputSize` reflects the
             // temp file we just wrote; the commit step only moves bytes, it does not mutate
             // the size reported to the caller.
@@ -212,6 +235,7 @@ internal class AndroidImageCompressor(
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult = logger.instrumentCompress(
         tag = LogTags.IMAGE,
         startMessage = {
@@ -226,7 +250,7 @@ internal class AndroidImageCompressor(
         failureMessage = { "compress() failed in=${redactPath(inputPath)}" },
     ) {
         try {
-            doCompress(inputPath, outputPath, config)
+            doCompress(inputPath, outputPath, config, preferredConfig)
         } catch (e: ImageCompressionError) {
             throw e
         } catch (e: IllegalArgumentException) {
@@ -246,9 +270,10 @@ internal class AndroidImageCompressor(
         inputPath: String,
         outputPath: String,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
     ): CompressionResult {
         val source = ImageSource.of(inputPath)
-        return doCompressDirect(source, config) { bitmap, cfg ->
+        return doCompressDirect(source, config, preferredConfig) { bitmap, cfg ->
             writeBitmapToPath(bitmap, outputPath, cfg)
             File(outputPath).length()
         }
@@ -260,10 +285,16 @@ internal class AndroidImageCompressor(
      * wrote (so [CompressionResult.outputSize] is accurate whether the destination was a file
      * or a stream). Errors are surfaced through [classifyAndroidImageError] at the outer
      * `instrumentCompress` catch-sites.
+     *
+     * [preferredConfig] is threaded from the public entry point ([thumbnail] passes
+     * `RGB_565` for JPEG output; [compress] passes `null`). Keeping it a parameter rather
+     * than recomputing it from `config.format` here means a non-thumbnail JPEG compress()
+     * call cannot accidentally inherit the 16-bit decode path.
      */
     private suspend fun doCompressDirect(
         source: ImageSource,
         config: ImageCompressionConfig,
+        preferredConfig: Bitmap.Config?,
         writer: (Bitmap, ImageCompressionConfig) -> Long,
     ): CompressionResult {
         androidOutputGate(config.format, Build.VERSION.SDK_INT)?.let { throw it }
@@ -287,7 +318,7 @@ internal class AndroidImageCompressor(
             rawDims = rawDims,
             target = target,
             exifRotation = exifRotation,
-            preferredConfig = preferredBitmapConfigFor(config.format),
+            preferredConfig = preferredConfig,
         )
         val outputSize = try {
             currentCoroutineContext().ensureActive()
@@ -475,20 +506,27 @@ private fun androidAvifFormat(): Bitmap.CompressFormat =
 
 /**
  * Picks a `BitmapFactory.Options.inPreferredConfig` hint based on the *output* [ImageFormat].
+ * Only invoked from the [AndroidImageCompressor.thumbnail] entry point; the general
+ * [AndroidImageCompressor.compress] path passes `null` directly so quality-sensitive callers
+ * never get the 16-bit decode path silently.
  *
- * JPEG cannot carry an alpha channel, so the decoded bitmap is fed to `Bitmap.compress(JPEG, …)`
- * which discards alpha anyway — `RGB_565` (16-bit) instead of the default `ARGB_8888` (32-bit)
- * halves the per-pixel footprint of the sampled-decode bitmap with no observable difference in
- * the encoded JPEG output. This is the lever the `thumbnail()` "low peak heap" contract leans on.
+ * **JPEG → `RGB_565`.** JPEG cannot carry alpha, so dropping the `A` channel of `ARGB_8888` is
+ * lossless for the encoded output. The remaining `RGB → 5-6-5` quantisation is *not*: it
+ * compresses 24 bits of colour per pixel down to 16, which can produce visible banding on
+ * smooth gradients (skies, faces). For a thumbnail (small, viewing-only) the trade is
+ * defensible — the "low peak heap" contract on `thumbnail()` is more valuable than perfect
+ * colour fidelity at preview scale. For a quality-95 archival JPEG it is *not* — that's why
+ * `compress()` opts out by passing `null`.
  *
- * WEBP / HEIC / AVIF can carry alpha, so we return `null` to keep the platform default
- * `ARGB_8888` and round-trip transparency from the source. A non-alpha source encoded into an
- * alpha-capable format would still benefit from `RGB_565`, but introspecting source alpha would
- * cost an extra decode pass — the format-based rule is the simplest correct heuristic.
+ * **WEBP / HEIC / AVIF → `null`.** These formats can carry alpha, so we keep the platform
+ * default `ARGB_8888` and round-trip transparency from the source. A non-alpha source encoded
+ * into an alpha-capable format would still benefit footprint-wise from `RGB_565`, but
+ * introspecting source alpha would cost an extra decode pass — the format-based rule is the
+ * simplest correct heuristic.
  *
- * Returning `null` (rather than `Bitmap.Config.ARGB_8888`) keeps the behaviour byte-identical
- * to the pre-CRA-114 default for non-JPEG output, so this change cannot regress anything other
- * than JPEG decode footprint.
+ * Returning `null` (rather than `Bitmap.Config.ARGB_8888`) keeps the non-JPEG decode options
+ * byte-identical to the pre-CRA-114 default. The JPEG path itself is *not* byte-identical to
+ * the pre-CRA-114 default — the colour-depth quantisation is the entire point of the change.
  */
 @OptIn(ExperimentalKompressorApi::class)
 private fun preferredBitmapConfigFor(format: ImageFormat): Bitmap.Config? = when (format) {

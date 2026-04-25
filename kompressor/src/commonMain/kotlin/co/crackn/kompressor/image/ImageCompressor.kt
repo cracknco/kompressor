@@ -58,10 +58,19 @@ public interface ImageCompressor {
      *
      *  * Android — two-pass `BitmapFactory` with `inJustDecodeBounds = true` then
      *    `inSampleSize` (power-of-2), followed by an exact final resize when the sample-sized
-     *    bitmap still exceeds [maxDimension].
+     *    bitmap still exceeds [maxDimension]. When [format] is [ImageFormat.JPEG] the decode
+     *    additionally sets `BitmapFactory.Options.inPreferredConfig = RGB_565` (16-bit) instead
+     *    of the platform-default `ARGB_8888` (32-bit) — this halves the per-pixel footprint
+     *    of the sampled-decode bitmap (the lever the "low peak heap" promise leans on) at the
+     *    cost of quantising 24-bit RGB down to 16-bit (5 R / 6 G / 5 B), which can produce
+     *    mild colour banding on smooth gradients. The trade-off is acceptable for thumbnail
+     *    previews; if you need full colour fidelity, use [compress] with a JPEG config — that
+     *    path keeps `ARGB_8888` throughout.
      *  * iOS — `CGImageSourceCreateThumbnailAtIndex` with `kCGImageSourceThumbnailMaxPixelSize
      *    = maxDimension` and `kCGImageSourceCreateThumbnailWithTransform = true` so EXIF
-     *    rotation is applied by the decoder rather than via a second pass.
+     *    rotation is applied by the decoder rather than via a second pass. Core Graphics
+     *    selects its own pixel format from the source's colour profile; there is no
+     *    user-visible analogue of the Android `RGB_565` switch.
      *
      * A 48 MP photo (4000×3000) decoded to RGBA in full occupies ~48 MB. With
      * `maxDimension = 200`, sampled decode holds <1 MB in RAM — the consumer-facing reason
