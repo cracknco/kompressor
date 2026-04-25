@@ -87,7 +87,7 @@
     <!-- Preview screen -->
     <string name="preview_title">Aperçu</string>
     <string name="preview_image_section">Miniature d\'image</string>
-    <string name="preview_video_section">Image vidéo</string>
+    <string name="preview_video_section">Image de la vidéo</string>
     <string name="preview_audio_section">Forme d\'onde audio</string>
     <string name="preview_waveform_computing">Extraction de la forme d\'onde…</string>
     <string name="preview_frame_timestamp_ms">À %1$s ms</string>
