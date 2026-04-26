@@ -7,6 +7,7 @@ package co.crackn.kompressor.sample
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
@@ -31,10 +32,12 @@ import co.crackn.kompressor.sample.audio.AudioScreen
 import co.crackn.kompressor.sample.capabilities.CapabilitiesScreen
 import co.crackn.kompressor.sample.di.AppComponent
 import co.crackn.kompressor.sample.image.ImageScreen
+import co.crackn.kompressor.sample.preview.PreviewScreen
 import co.crackn.kompressor.sample.video.VideoScreen
 import co.crackn.kompressor.sample.navigation.Route
 import co.crackn.kompressor.sample.theme.KompressorTheme
 import kompressor.sample.generated.resources.Res
+import kompressor.sample.generated.resources.preview_title
 import kompressor.sample.generated.resources.tab_audio
 import kompressor.sample.generated.resources.tab_capabilities
 import kompressor.sample.generated.resources.tab_image
@@ -52,6 +55,7 @@ private val tabs = listOf(
     TabItem(route = Route.Image, labelRes = Res.string.tab_image, icon = Icons.Filled.Image),
     TabItem(route = Route.Video, labelRes = Res.string.tab_video, icon = Icons.Filled.Videocam),
     TabItem(route = Route.Audio, labelRes = Res.string.tab_audio, icon = Icons.Filled.MusicNote),
+    TabItem(route = Route.Preview, labelRes = Res.string.preview_title, icon = Icons.Filled.GraphicEq),
     TabItem(route = Route.Capabilities, labelRes = Res.string.tab_capabilities, icon = Icons.Filled.Info),
 )
 
@@ -101,6 +105,10 @@ fun App(appComponent: AppComponent) {
                 composable<Route.Audio> {
                     val vm = viewModel { appComponent.audioCompressViewModelFactory() }
                     AudioScreen(viewModel = vm)
+                }
+                composable<Route.Preview> {
+                    val vm = viewModel { appComponent.previewViewModelFactory() }
+                    PreviewScreen(viewModel = vm)
                 }
                 composable<Route.Capabilities> {
                     val vm = viewModel { appComponent.capabilitiesViewModelFactory() }
