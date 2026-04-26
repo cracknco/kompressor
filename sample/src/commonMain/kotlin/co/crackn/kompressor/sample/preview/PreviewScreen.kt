@@ -52,10 +52,12 @@ import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import io.github.vinceglb.filekit.dialogs.openFilePicker
 import kompressor.sample.generated.resources.Res
-import kompressor.sample.generated.resources.error_compression_failed
+import kompressor.sample.generated.resources.preview_audio_failed
 import kompressor.sample.generated.resources.preview_audio_section
 import kompressor.sample.generated.resources.preview_frame_timestamp_ms
+import kompressor.sample.generated.resources.preview_image_failed
 import kompressor.sample.generated.resources.preview_image_section
+import kompressor.sample.generated.resources.preview_video_failed
 import kompressor.sample.generated.resources.preview_video_section
 import kompressor.sample.generated.resources.preview_waveform_computing
 import kompressor.sample.generated.resources.select_audio
@@ -77,12 +79,30 @@ fun PreviewScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val errorPrefix = stringResource(Res.string.error_compression_failed)
+    val imageErrorPrefix = stringResource(Res.string.preview_image_failed)
+    val videoErrorPrefix = stringResource(Res.string.preview_video_failed)
+    val audioErrorPrefix = stringResource(Res.string.preview_audio_failed)
 
-    LaunchedEffect(state.error) {
-        state.error?.let { error ->
-            snackbarHostState.showSnackbar("$errorPrefix: $error")
-            viewModel.clearError()
+    // Each section's error is observed independently. `SnackbarHostState.showSnackbar` suspends
+    // until the snackbar is dismissed, so two sections failing in the same window queue two
+    // snackbars; only the section whose snackbar finished is cleared, leaving the other two
+    // errors free to surface in turn.
+    LaunchedEffect(state.image.error) {
+        state.image.error?.let { error ->
+            snackbarHostState.showSnackbar("$imageErrorPrefix: $error")
+            viewModel.clearImageError()
+        }
+    }
+    LaunchedEffect(state.video.error) {
+        state.video.error?.let { error ->
+            snackbarHostState.showSnackbar("$videoErrorPrefix: $error")
+            viewModel.clearVideoError()
+        }
+    }
+    LaunchedEffect(state.audio.error) {
+        state.audio.error?.let { error ->
+            snackbarHostState.showSnackbar("$audioErrorPrefix: $error")
+            viewModel.clearAudioError()
         }
     }
 

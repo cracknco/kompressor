@@ -91,6 +91,9 @@
     <string name="preview_audio_section">Forme d\'onde audio</string>
     <string name="preview_waveform_computing">Extraction de la forme d\'onde…</string>
     <string name="preview_frame_timestamp_ms">À %1$s ms</string>
+    <string name="preview_image_failed">Échec de la miniature d\'image</string>
+    <string name="preview_video_failed">Échec de l\'image vidéo</string>
+    <string name="preview_audio_failed">Échec de la forme d\'onde audio</string>
 
     <!-- Capabilities screen -->
     <string name="capabilities_title">Capacités de l\'appareil</string>

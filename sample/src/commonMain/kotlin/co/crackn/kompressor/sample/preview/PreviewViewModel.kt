@@ -152,9 +152,14 @@ class PreviewViewModel(
                 }
                 runFrameExtraction(tempInput.path, atMillis = 0L)
             } catch (e: CancellationException) {
-                // Do NOT delete tempInput on cancellation: it may already be referenced by
-                // `state.video.sourcePath`, and a follow-up scrub job will read from it.
-                // Cleanup happens at the next `onVideoPicked` call (above) or in `onCleared`.
+                // tempInput is safe to delete only when it was never published to state.video
+                // .sourcePath. If it was published, a follow-up scrub job (or the next
+                // onVideoPicked's pre-cleanup) needs the file alive — see comment above. If it
+                // wasn't (cancellation landed between createTempFile and the state.update
+                // below), nobody else will ever see this path, so we own the cleanup.
+                if (_state.value.video.sourcePath != tempInput.path) {
+                    runCatching { tempInput.delete(mustExist = false) }
+                }
                 throw e
             } catch (e: Exception) {
                 // Genuine failure (probe/copy/extraction blew up) — tempInput isn't useful for
@@ -311,14 +316,16 @@ class PreviewViewModel(
         audioJob?.cancel()
     }
 
-    fun clearError() {
-        _state.update {
-            it.copy(
-                image = it.image.copy(error = null),
-                video = it.video.copy(error = null),
-                audio = it.audio.copy(error = null),
-            )
-        }
+    fun clearImageError() {
+        _state.update { it.copy(image = it.image.copy(error = null)) }
+    }
+
+    fun clearVideoError() {
+        _state.update { it.copy(video = it.video.copy(error = null)) }
+    }
+
+    fun clearAudioError() {
+        _state.update { it.copy(audio = it.audio.copy(error = null)) }
     }
 
     @OptIn(DelicateCoroutinesApi::class)

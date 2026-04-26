@@ -28,7 +28,7 @@ val result = kompressor.image.thumbnail(
 <Note>
   - **EXIF rotation is preserved** — Android applies the orientation tag during sampled decode, iOS hands `kCGImageSourceCreateThumbnailWithTransform = true` to Core Graphics. A 200 × 100 landscape JPEG with `Orientation = 6` thumbnails to 100 × 200 portrait in one pass.
   - **`maxDimension = 200` is typical for list UIs.** Aspect ratio is preserved, so the longer edge is clamped to the value and the shorter edge follows. Never upscales — sources already smaller than `maxDimension` keep their pixel dimensions.
-  - **`format = ImageFormat.HEIC` on iOS 15+** produces files ~40 % smaller than JPEG at the same perceived quality. Android falls back to JPEG when asked for HEIC.
+  - **`format = ImageFormat.HEIC` is iOS-only** (`@ExperimentalKompressorApi`, opt-in required) and produces files ~40 % smaller than JPEG at the same perceived quality. Requesting HEIC on Android returns `Result.failure(ImageCompressionError.UnsupportedOutputFormat)` — choose `JPEG` for cross-platform code or branch on platform when you need HEIC's smaller files on iOS.
 </Note>
 
 ## Video thumbnail
@@ -42,16 +42,14 @@ import co.crackn.kompressor.io.MediaDestination
 import co.crackn.kompressor.io.MediaSource
 
 @OptIn(ExperimentalKompressorApi::class)
-suspend fun extractFrame(input: String, output: String) {
-    kompressor.video.thumbnail(
-        input = MediaSource.Local.FilePath(input),
-        output = MediaDestination.Local.FilePath(output),
-        atMillis = 1_000L,
-        maxDimension = 480,
-        format = ImageFormat.JPEG,
-        quality = 80,
-    ).getOrThrow()
-}
+val result = kompressor.video.thumbnail(
+    input = MediaSource.Local.FilePath("/path/to/video.mp4"),
+    output = MediaDestination.Local.FilePath("/path/to/frame.jpg"),
+    atMillis = 1_000L,
+    maxDimension = 480,
+    format = ImageFormat.JPEG,
+    quality = 80,
+).getOrThrow()
 ```
 
 <Note>
@@ -80,7 +78,7 @@ val peaks: FloatArray = kompressor.audio.waveform(
 
 <Note>
   - **`targetSamples = 200` is typical for a scrubbar / voice-note bubble.** Use 800–1200 for a full-width editor view, ≤ 100 for a tiny list-row indicator. The returned array may be **shorter** when the source is shorter than one bucket's duration.
-  - **`AudioCompressionError.NoAudioTrack`** is the new typed error variant — fires when the input is a valid container with zero audio tracks (image file, video-only MP4, mis-routed media). It's surfaced before the decoder is opened, so there's no init cost on the wrong file.
+  - **`AudioCompressionError.NoAudioTrack`** is the new typed error variant — fires when the input is a valid container with zero audio tracks (image file, video-only MP4, mis-routed media). Surfaced via the typed-error path so callers can `when`-branch on the wrong-file case without parsing exception messages.
   - **The `FloatArray` lives in memory, not on disk.** This is intentional — there's no file format for "200 floats" that doesn't add overhead, and consumers want the array to feed directly into a Canvas / `DSWaveformImage` / `AudioWaveform`. Cache it yourself if the source is expensive to re-decode.
 </Note>
 

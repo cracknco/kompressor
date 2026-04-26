@@ -9,16 +9,15 @@ package co.crackn.kompressor.sample.preview
  * Aggregate state for the Preview screen — three sub-states, one per preview API surface
  * (`ImageCompressor.thumbnail`, `VideoCompressor.thumbnail`, `AudioCompressor.waveform`). The
  * sections are independent: the user can pick an image, a video, and an audio file in any order
- * without resetting the others.
+ * without resetting the others. Each sub-state owns its own `error: String?`; the screen
+ * observes them independently so a simultaneous failure in two sections produces two snackbars
+ * rather than silently dropping one.
  */
 data class PreviewState(
     val image: ImagePreview = ImagePreview(),
     val video: VideoPreview = VideoPreview(),
     val audio: AudioPreview = AudioPreview(),
-) {
-    val error: String?
-        get() = image.error ?: video.error ?: audio.error
-}
+)
 
 /** Image-section state — encoded JPEG thumbnail produced by `ImageCompressor.thumbnail`. */
 data class ImagePreview(

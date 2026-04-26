@@ -91,6 +91,9 @@
     <string name="preview_audio_section">Audio waveform</string>
     <string name="preview_waveform_computing">Extracting waveform…</string>
     <string name="preview_frame_timestamp_ms">At %1$s ms</string>
+    <string name="preview_image_failed">Image thumbnail failed</string>
+    <string name="preview_video_failed">Video frame failed</string>
+    <string name="preview_audio_failed">Audio waveform failed</string>
 
     <!-- Capabilities screen -->
     <string name="capabilities_title">Device Capabilities</string>
