@@ -8,10 +8,12 @@
     kotlinx.cinterop.ExperimentalForeignApi::class,
     kotlinx.cinterop.BetaInteropApi::class,
 )
-// TooManyFunctions suppressed: CRA-95 added `compress(MediaSource, MediaDestination, ...)`
-// plus the `shortCircuitBytesInput` / `shortCircuitStreamInput` / `shortCircuitNsDataInput`
-// helpers that route through `UIImage(data:)` / `CGImageSource` without a temp-file hop.
-// Splitting out would fragment the decode → transform → encode pipeline private to this file.
+// TooManyFunctions suppressed: this file hosts the public ImageCompressor entrypoints
+// (compress / thumbnail) plus their shared dispatch (dispatchImageInput, normaliseImageInput,
+// runWithOutputHandle, runImageWorker), the four CRA-47-instrumented workers (compressFilePath,
+// instrumentCompressFromData, thumbnailFilePath, thumbnailFromData), and the file-scope NSData
+// / CFDictionary / classifier helpers. Splitting out would fragment the single decode →
+// transform → encode pipeline private to this file.
 @file:Suppress("TooManyFunctions")
 
 package co.crackn.kompressor.image
@@ -884,23 +886,27 @@ private fun copyPrefixBytes(data: NSData): ByteArray {
 
 /**
  * Classifies a [Throwable] raised from the iOS image pipeline into the appropriate
- * [ImageCompressionError] subtype. Mirrors `classifyAndroidImageError` on the Android sibling.
+ * [ImageCompressionError] subtype. Shape mirrors `classifyAndroidImageError` on the Android
+ * sibling — file-scope `when`-on-`Throwable`. Coverage is intentionally narrower: iOS does not
+ * surface `IOException` (filesystem reads here are CFData / NSFileHandle, not `java.io`) and
+ * does not single out `OutOfMemoryError` (Kotlin/Native's allocator manifests memory pressure
+ * differently than the JVM heap).
  *
  * [decoderApi] names the native function used as a fallback in the NPE message when the
  * platform NPE itself carries no message (e.g. `"UIImage(contentsOfFile)"`).
  * [decoderSourceLabel] is the disambiguator appended to `(nil image…)` for in-memory decode
  * paths — `" from NSData"` for the NSData fast-path, empty for file-path workers.
  *
- * Already-typed [ImageCompressionError]s pass through unchanged; the caller's `catch` ladder
- * is expected to re-throw [IllegalArgumentException] / [CancellationException] before this
- * runs (see [IosImageCompressor.runImageWorker]).
+ * The caller's `catch` ladder is expected to re-throw [ImageCompressionError] /
+ * [IllegalArgumentException] / [CancellationException] before this runs, so this `when` only
+ * needs to discriminate among the genuinely raw platform throwables — see
+ * [IosImageCompressor.runImageWorker].
  */
 private fun classifyIosImageError(
     e: Throwable,
     decoderApi: String,
     decoderSourceLabel: String,
 ): ImageCompressionError = when (e) {
-    is ImageCompressionError -> e
     // Kotlin/Native wraps Obj-C `nil` returns as non-null bindings, so a malformed JPEG that
     // `UIImage(contentsOfFile=)` / `UIImage(data:)` / `CGImageSourceCreateWith…` can't decode
     // surfaces as an NPE when the caller subsequently dereferences a member. Classify it as
