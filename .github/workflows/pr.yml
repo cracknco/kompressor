@@ -171,8 +171,10 @@ jobs:
 
   # ── iOS simulator tests ──────────────────────────────────
   # Runs the Kotlin/Native simulator tests on every PR. macos-latest is arm64
-  # with Xcode pre-installed; ~6-10 min per run. Same command is repeated in
-  # release.yml:test-native as a belt-and-suspenders gate before publishing.
+  # with Xcode pre-installed; ~6-10 min per run. This is the SOLE iOS sim gate
+  # for the merge commit — the previous duplicate release.yml:test-native job
+  # was removed in CRA-85 (branch protection on main ensures the SHA reaching
+  # release.yml already passed this check). See docs/ci-benchmarks.md.
   ios-simulator-tests:
     name: iOS simulator tests
     runs-on: macos-latest
