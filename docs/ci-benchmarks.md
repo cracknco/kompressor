@@ -9,12 +9,40 @@ the audit re-surfaces.
 Cross-referenced from [`CLAUDE.md`](../CLAUDE.md) and
 [`docs/adr/002-decline-level-3-supply-chain.md`](adr/002-decline-level-3-supply-chain.md).
 
+## Pre-merge admin checklist (one-time setup)
+
+The CI dedup in `release.yml` (see § 1 below) is safe in two layers:
+in-CI enforcement via `verify-ios-sim-passed`, plus branch protection.
+Both should be configured for defence-in-depth; in-CI alone is enough
+to prevent a publish without iOS sim coverage, but branch protection
+prevents the precondition job from ever needing to fire.
+
+When operating this repo, an admin should verify that on `main`:
+
+- [ ] Branch protection is enabled with **Require pull request before merging**.
+- [ ] **Require status checks to pass before merging** is enabled, with
+      `iOS simulator tests` (the `pr.yml` job name) listed as required.
+- [ ] **Require branches to be up to date before merging** is enabled, so
+      a PR can't be merged with a stale base SHA whose iOS sim run
+      doesn't apply to the actual merge commit.
+- [ ] **Do not allow bypassing the above settings** — even for admins —
+      unless there's an explicit operational reason (in which case
+      `verify-ios-sim-passed` is the seatbelt that catches the bypass
+      at release time and refuses to publish).
+
+The repo doesn't track these settings in source — they're configured
+under *Settings → Branches → Branch protection rules* on the GitHub UI.
+Restate the checklist in your release runbook so it doesn't drift.
+
 ## Origin audit (2026-04-17)
 
 The original audit (against `main` commit `43e2876`, before ADR-002 landed
-in PR #104) flagged five sources of CI waste totalling ~45 min/week of
-redundant compilation across `pr.yml`, `release.yml`, and the
-device-test workflows:
+in PR #104) flagged five candidate sources of CI waste across `pr.yml`,
+`release.yml`, and the device-test workflows. Items 1–3 and 5 were real;
+item 4 was paper-only and turned out never to have existed in this repo
+(see § N/A note below). The original estimate of "~45 min/week of
+redundant compilation" was therefore an upper bound that overstated the
+real waste:
 
 1. **iOS-sim test duplicated** — `pr.yml:ios-simulator-tests` and
    `release.yml:test-native` both ran `iosSimulatorArm64Test` on the same
@@ -25,8 +53,12 @@ device-test workflows:
 3. **`merged-coverage` recompiled to report** — re-invoked
    `koverXmlReport -PkoverMergedGate=true` instead of merging the host
    `.xml` and device `.ec` reports directly via the JaCoCo CLI.
-4. **`fastlane/Fastfile` forced `--no-configuration-cache` on publish** —
-   blocked configuration-cache reuse on releases.
+4. **(speculative)** `fastlane/Fastfile` *would* force
+   `--no-configuration-cache` on publish — listed in the audit as a
+   hypothetical concern, but no `fastlane/` directory has ever existed in
+   this repo's git history. The item was an audit error, not a fixed
+   regression. Carried forward in this list for traceability with the
+   original CRA-85 ticket; see § N/A row in the table below.
 5. **No cross-job `actions/cache`** — `~/.gradle/caches/modules-*`,
    `.kotlin/`, `~/.konan/` were not persisted across jobs.
 
@@ -37,7 +69,7 @@ architecture had moved on. The relevance of each audit item now:
 
 | # | Audit item                                | Status       | Reason |
 |---|-------------------------------------------|--------------|--------|
-| 1 | iOS-sim test duplicated in `release.yml`  | **Fixed**    | `test-native` job removed (this PR). |
+| 1 | iOS-sim test duplicated in `release.yml`  | **Fixed**    | `test-native` job replaced by `verify-ios-sim-passed` precondition check (this PR). See § 1 below. |
 | 2 | Android device-test job recompiles        | **Obsolete** | Device-test PR job retired in [ADR-002](adr/002-decline-level-3-supply-chain.md); `leak-tests.yml` is now `workflow_dispatch`-only. |
 | 3 | `merged-coverage` recompiles to report    | **Obsolete** | `merged-coverage` job retired in ADR-002. Only the host `koverVerify` (≥85%) gate remains. |
 | 4 | Fastlane forces `--no-configuration-cache`| **N/A**      | No `fastlane/` directory exists. The flag survives only on the `release.yml:publish` step (see § Configuration-cache below). |
@@ -45,25 +77,59 @@ architecture had moved on. The relevance of each audit item now:
 
 ## Change log (CRA-85)
 
-### 1. Removed `release.yml:test-native`
+### 1. Replaced `release.yml:test-native` with an in-CI precondition check
 
 Previous shape: `release.yml` ran iOS sim tests on `macos-latest` before the
-`release` and `publish` jobs.
+`release` and `publish` jobs (~6–10 min per release).
 
-New shape: `release.yml` starts directly from the `release` job. Branch
-protection on `main` + required PR + the required
-`pr.yml:ios-simulator-tests` status check together guarantee that the SHA
-which lands on `main` (and triggers `release.yml`) has already passed iOS
-sim tests at PR-merge time. Re-running them on the same SHA was pure
-cycle burn.
+New shape: `release.yml` starts with a cheap `verify-ios-sim-passed` job
+on `ubuntu-latest` that queries the GitHub check-runs API for the SHA
+that triggered the workflow (`github.sha` — the merge commit pushed to
+`main`) and asserts the `iOS simulator tests` check from `pr.yml`
+already concluded as `success` on that exact commit. If the check is
+missing, failed, cancelled, or timed out, the precondition job exits 1
+with a `::error::` annotation and the `release` + `publish` jobs never
+start.
 
-Expected impact: **~6–10 min saved per release**, ~1 fewer `macos-latest`
-runner-minute bill per release.
+```yaml
+gh api "repos/${GH_REPO}/commits/${SHA}/check-runs" --paginate \
+  --jq '[.check_runs[] | select(.name == "iOS simulator tests"
+                              and .status == "completed")] |
+        sort_by(.completed_at) | last | .conclusion // "missing"'
+```
 
-Risk surface: an admin direct-push to `main` (bypass branch protection)
-would skip the iOS sim gate entirely. Mitigation: branch protection is
-the canonical gate; if it's ever relaxed, restore this job rather than
-treat `release.yml` as the safety net.
+The `--paginate` + `select(.status == "completed")` + `sort_by(.completed_at) | last`
+combination handles the realistic edge cases: a re-run of the iOS sim
+test job leaves multiple check-runs on the same SHA; we want the latest
+completed one, not whichever happens to come first in the API response.
+The fallback `// "missing"` (jq alternative operator) yields a string
+the bash equality check handles, rather than a null that would silently
+pass through `[ "" != "success" ]`.
+
+This converts the dedup's safety from an admin-side setting (branch
+protection, invisible from the repo) into an in-CI invariant enforced
+by the release pipeline itself. Branch protection remains the
+*intended* canonical gate (see § Pre-merge admin checklist below) — the
+precondition check is the seatbelt for the case where it's bypassed
+(admin direct-push, force-push, or someone disabling the required-check
+rule).
+
+Expected impact: **~6–10 min saved per release** (≈ 6–10 fewer
+`macos-latest` runner-minutes per release, billed at the macOS multiplier
+on private repos; OSS public repos pay nothing). One fewer `macos-latest`
+job invocation per release.
+
+Risk surface: a direct push to `main` that bypasses branch protection
+(admin override, force-push) would, on its own, skip the iOS sim gate.
+Two layers of mitigation now stand in for the removed test-native job:
+
+1. **Branch protection on `main`** is the *intended* canonical gate (see
+   § Pre-merge admin checklist below).
+2. **In-CI precondition check** — `release.yml:verify-ios-sim-passed`
+   queries the GitHub API for the iOS sim test conclusion on the merge
+   SHA before letting `release` start. This is enforced *inside* the
+   release pipeline, so it survives even if branch protection is ever
+   relaxed by accident. Implemented in CRA-85.
 
 ### 2. Gradle cache analysis — no code change
 
@@ -160,7 +226,7 @@ contributor adoption blocker.
 | Pipeline       | Before CRA-85 | After CRA-85 | Saving |
 |----------------|---------------|--------------|--------|
 | PR (full)      | ~10–15 min    | unchanged    | 0 (PR pipeline already optimised; ADR-002 retired the heavy device-test path) |
-| Release        | ~14–20 min    | ~7–10 min    | **~6–10 min** (test-native removed) |
+| Release        | ~14–20 min    | ~7–10 min    | **~6–10 min** (test-native removed; `verify-ios-sim-passed` adds back ~10 s on `ubuntu-latest`) |
 
 Cache hit-rate is not exposed as a structured metric — the per-job
 markdown summary that `gradle/actions/setup-gradle` writes to the
@@ -174,9 +240,10 @@ If you want concrete numbers before changing the pipeline shape:
 1. Pick a representative recent PR that triggered all of `pr.yml`'s jobs.
 2. Note each job's duration from the GitHub Actions run summary.
 3. For release: for a baseline, look at the most recent successful
-   release **before** CRA-85 (it had a `test-native` job); for the
-   current shape, look at any release **after** CRA-85 (`release` +
-   `publish` only).
+   release **before** CRA-85 (it had a `test-native` job that ran iOS
+   sim tests on `macos-latest`); for the current shape, look at any
+   release **after** CRA-85 (`verify-ios-sim-passed` ~10 s on
+   `ubuntu-latest`, then `release` + `publish`).
 4. Cross-check against the table in § Estimated impact summary.
 
 Avoid micro-benchmarking individual cache hits — the variance from

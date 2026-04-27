@@ -10,16 +10,51 @@ concurrency:
 
 jobs:
 
+  # ── Verify iOS sim tests passed for this SHA ─────────────
+  # CRA-85: replaces the removed `test-native` job. Instead of re-running
+  # `iosSimulatorArm64Test` on `macos-latest` (~6–10 min) we query the GitHub
+  # check-runs API for the SHA that triggered this workflow and assert that
+  # the `iOS simulator tests` check from `pr.yml` already succeeded on it.
+  # That check ran at PR merge time on the same commit; re-executing it would
+  # spend macOS minutes for the same signal. The branch-protection rule on
+  # `main` is the *intended* canonical gate, but this job enforces the same
+  # invariant *inside* the release pipeline so the safety doesn't depend on
+  # an admin-side setting that's invisible from the repo.
+  #
+  # Runs in ~10 s on `ubuntu-latest`. See `docs/ci-benchmarks.md` § 1.
+  verify-ios-sim-passed:
+    name: Verify iOS sim tests passed for this SHA
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+    steps:
+      - name: Assert iOS simulator tests succeeded on ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        # Picks the latest completed `iOS simulator tests` check-run on the SHA
+        # (sorted by completed_at to handle re-runs) and reads its conclusion.
+        # `// "missing"` falls through to a helpful error when the check never
+        # ran for this commit (admin direct-push, force-push, branch-protection
+        # disabled). No user-controlled input reaches the shell — `$SHA` and
+        # `$GH_REPO` come from `github.*` context, not from PR/comment bodies.
+        run: |
+          set -euo pipefail
+          conclusion=$(gh api "repos/${GH_REPO}/commits/${SHA}/check-runs" \
+            --paginate \
+            --jq '[.check_runs[] | select(.name == "iOS simulator tests" and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
+          echo "iOS simulator tests on ${SHA}: ${conclusion}"
+          if [ "${conclusion}" != "success" ]; then
+            echo "::error title=iOS sim gate not satisfied::Latest 'iOS simulator tests' check-run on ${SHA} is '${conclusion}' (expected 'success'). Refusing to publish. If branch protection is enabled this is unreachable; if you see it, branch protection on 'main' was bypassed and the PR-time iOS sim gate was skipped."
+            exit 1
+          fi
+
   # ── GitHub Release (semantic-release) ────────────────────
-  # CRA-85: the previous `test-native` job that re-ran `iosSimulatorArm64Test`
-  # ahead of this one was removed. Branch protection on `main` + required PR +
-  # required `pr.yml:ios-simulator-tests` status guarantee that the SHA which
-  # lands on `main` — and therefore triggers this workflow — already passed iOS
-  # sim tests at PR merge time. Re-running them on the same commit added zero
-  # signal at a cost of ~6–10 min per release. See `docs/ci-benchmarks.md`.
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
+    needs: [ verify-ios-sim-passed ]
     permissions:
       contents: write
     outputs:
