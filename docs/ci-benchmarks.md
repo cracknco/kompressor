@@ -162,9 +162,10 @@ contributor adoption blocker.
 | PR (full)      | ~10–15 min    | unchanged    | 0 (PR pipeline already optimised; ADR-002 retired the heavy device-test path) |
 | Release        | ~14–20 min    | ~7–10 min    | **~6–10 min** (test-native removed) |
 
-Cache hit-rate is not directly observable in `gradle/actions/setup-gradle`
-without enabling Develocity or parsing the action's job summary; any
-quantification beyond "warm vs cold" would be theatre.
+Cache hit-rate is not exposed as a structured metric — the per-job
+markdown summary that `gradle/actions/setup-gradle` writes to the
+GitHub Actions Job Summary is the only signal. Any quantification
+beyond "warm vs cold" would be theatre.
 
 ## How to re-measure
 
@@ -172,8 +173,10 @@ If you want concrete numbers before changing the pipeline shape:
 
 1. Pick a representative recent PR that triggered all of `pr.yml`'s jobs.
 2. Note each job's duration from the GitHub Actions run summary.
-3. For release: pick the most recent successful `release.yml` run and
-   note `test-native` (now removed) + `release` + `publish` durations.
+3. For release: for a baseline, look at the most recent successful
+   release **before** CRA-85 (it had a `test-native` job); for the
+   current shape, look at any release **after** CRA-85 (`release` +
+   `publish` only).
 4. Cross-check against the table in § Estimated impact summary.
 
 Avoid micro-benchmarking individual cache hits — the variance from
