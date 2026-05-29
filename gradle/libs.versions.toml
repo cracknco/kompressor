@@ -32,7 +32,7 @@ lifecycleViewmodelCompose = "2.10.0"
 gadulka = "1.11.0"
 composeMultiplatformMediaPlayer = "1.0.53"
 binaryCompatibilityValidator = "0.18.1"
-mockk = "1.14.9"
+mockk = "1.14.11"
 # LeakCanary — memory-leak detection for androidDeviceTest only. Scoped strictly to the
 # instrumentation test classpath (`leakcanary-android-instrumentation`); never lands in
 # the published `:kompressor` artifact. Bump in lockstep with ShARK/Kotlin support matrix.
